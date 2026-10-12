@@ -1,0 +1,3 @@
+# expect: a is an input; it gets its value from the page
+input a
+a = 1

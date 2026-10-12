@@ -1,0 +1,4 @@
+# expect: a mux has 2, 4, 8, 16 or 32 data inputs, not 3
+input s[2], a, b, c
+output y
+y = mux(a, b, c, sel = s)

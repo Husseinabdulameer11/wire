@@ -1,0 +1,25 @@
+circuit "Every part once"
+
+input  x[4], s[2], j, k, t
+clock  clk (hz = 1)
+led    lt (color = blue), eq (color = green), gt (color = red)
+led    v, qjk, qt
+output m0, m3, enc[2], cat[6]
+
+dm  = demux(1, sel = s)
+m0  = dm[0]
+m3  = dm[3]
+
+e   = encoder(x)
+enc = e
+v   = e.valid
+
+c   = compare(x, 0b0101)
+lt  = c.lt
+eq  = c.eq
+gt  = c.gt
+
+qjk = jkff(j, k, clk)
+qt  = tff(t, clk)
+
+cat = {s, x}

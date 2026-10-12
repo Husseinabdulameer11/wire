@@ -1,0 +1,4 @@
+# expect: every input of and must be 4 bits, but b is 1 bit
+input a[4], b
+output y
+y = and(a, b)

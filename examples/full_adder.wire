@@ -1,0 +1,8 @@
+circuit "Full adder"
+
+input  a, b, cin
+output sum, cout
+
+x1   = xor(a, b)
+sum  = xor(x1, cin)
+cout = or(and(a, b), and(x1, cin))

@@ -1,0 +1,4 @@
+# expect: bit 1 of y is never given a value
+input a
+output y[2]
+y[0] = a

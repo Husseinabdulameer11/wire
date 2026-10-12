@@ -1,0 +1,4 @@
+# expect: there is no component called andd
+input a, b
+output y
+y = andd(a, b)

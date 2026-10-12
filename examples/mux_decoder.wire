@@ -1,0 +1,20 @@
+circuit "Mux, decoder, splitter"
+
+input  data[8], sel[3]
+output picked
+led    l0, l1, l2, l3, l4, l5, l6, l7
+
+# pick one bit of data with an 8-way mux
+picked = mux(data[0], data[1], data[2], data[3],
+             data[4], data[5], data[6], data[7], sel = sel)
+
+# and light the LED for the selected line
+d = decoder(sel)
+l0 = d[0]
+l1 = d[1]
+l2 = d[2]
+l3 = d[3]
+l4 = d[4]
+l5 = d[5]
+l6 = d[6]
+l7 = d[7]

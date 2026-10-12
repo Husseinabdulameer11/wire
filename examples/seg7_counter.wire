@@ -1,0 +1,12 @@
+circuit "4-bit counter on a 7-segment display"
+
+clock  clk (hz = 2)
+button reset
+output n[4]
+hex    digit
+led    wrap (color = red)
+
+c = counter(clk, rst = reset, bits = 4)
+n = c.q
+c.q -> digit
+wrap = c.carry

@@ -1,0 +1,4 @@
+# expect: 5 does not fit in 2 bits
+input a[2]
+output y[2]
+y = a & 5

@@ -1,0 +1,4 @@
+# expect: q is not defined
+input a
+output y
+y = nand(a, q)

@@ -1,0 +1,5 @@
+# expect: y is already given a value on line 4
+input a, b
+output y
+y = a
+y = b

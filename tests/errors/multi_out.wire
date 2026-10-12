@@ -1,0 +1,4 @@
+# expect: compare has several outputs; pick one with .lt
+input a[4], b[4]
+output y
+y = compare(a, b)

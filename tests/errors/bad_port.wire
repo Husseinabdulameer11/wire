@@ -1,0 +1,5 @@
+# expect: add has no output called carry; it has sum and cout
+input a[4], b[4]
+output y
+s = add(a, b)
+y = s.carry

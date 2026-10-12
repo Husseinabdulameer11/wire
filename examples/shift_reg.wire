@@ -1,0 +1,11 @@
+circuit "Shift register"
+
+input  din
+clock  clk (hz = 1)
+output q[4]
+
+q0 = dff(din, clk)
+q1 = dff(q0, clk)
+q2 = dff(q1, clk)
+q3 = dff(q2, clk)
+q = {q3, q2, q1, q0}

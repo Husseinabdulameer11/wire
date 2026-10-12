@@ -1,0 +1,1322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wire circuit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+<style>
+:root {
+  --paper: #f3f6f8;
+  --grid: #dfe6ec;
+  --grid-major: #cfd9e2;
+  --ink: #1d2b3a;
+  --ink-soft: #5b6b7c;
+  --body: #ffffff;
+  --panel: #ffffff;
+  --panel-line: #c9d3dc;
+  --hi: #e09a12;           /* selection, LEDs */
+  --hi-soft: rgba(224,154,18,.18);
+  --on: #1fae4b;           /* a 1 on a wire */
+  --off: #155c2c;          /* a 0 on a wire */
+  --unknown: #2f6fd6;
+  --bus: #1d2b3a;
+  --bad: #c8322b;
+  --seg-on: #e2321f;
+  --seg-off: #e9eef2;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #121a23; --grid: #1a2430; --grid-major: #222e3c;
+    --ink: #d4dde7; --ink-soft: #8797a8; --body: #18222d; --panel: #18222d; --panel-line: #2c3a4a;
+    --hi: #f0b23a; --hi-soft: rgba(240,178,58,.2);
+    --on: #3ddc6f; --off: #1f5c34; --unknown: #5b93f0; --bus: #c7d2de; --bad: #ef5a52;
+    --seg-on: #ff4a33; --seg-off: #222e3a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #121a23; --grid: #1a2430; --grid-major: #222e3c;
+  --ink: #d4dde7; --ink-soft: #8797a8; --body: #18222d; --panel: #18222d; --panel-line: #2c3a4a;
+  --hi: #f0b23a; --hi-soft: rgba(240,178,58,.2);
+  --on: #3ddc6f; --off: #1f5c34; --unknown: #5b93f0; --bus: #c7d2de; --bad: #ef5a52;
+  --seg-on: #ff4a33; --seg-off: #222e3a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.4 "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+#sheet { position: fixed; inset: 0; touch-action: none; cursor: grab; display: block; width: 100%; height: 100%; }
+#sheet.panning { cursor: grabbing; }
+.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+/* the toolbar sits on the sheet like a strip of tape */
+#bar {
+  position: fixed; top: max(10px, env(safe-area-inset-top)); left: 10px; right: 10px;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center; pointer-events: none;
+}
+#bar > * { pointer-events: auto; }
+.group { display: flex; gap: 0; border: 1px solid var(--panel-line); background: var(--panel); border-radius: 6px; overflow: hidden; }
+.group button + button { border-left: 1px solid var(--panel-line); }
+button {
+  font: inherit; font-weight: 500; color: var(--ink); background: transparent; border: 0;
+  padding: 7px 12px; min-height: 36px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+button:hover { background: var(--hi-soft); }
+button:focus-visible { outline: 2px solid var(--hi); outline-offset: -2px; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+button svg { width: 14px; height: 14px; }
+select { font: inherit; color: var(--ink); background: transparent; border: 0; border-left: 1px solid var(--panel-line); padding: 0 8px; min-height: 36px; }
+.spacer { flex: 1; pointer-events: none; }
+#warn {
+  display: none; background: var(--bad); color: #fff; border-radius: 6px; padding: 7px 12px; font-weight: 500;
+}
+
+/* the drafting title block, bottom right */
+#titleblock {
+  position: fixed; right: 10px; bottom: max(10px, env(safe-area-inset-bottom));
+  background: var(--panel); border: 1.5px solid var(--ink); min-width: 230px; max-width: min(360px, calc(100vw - 20px));
+  display: grid; grid-template-columns: auto 1fr; font-size: 12px; pointer-events: auto;
+}
+#titleblock > div { padding: 4px 8px; border-top: 1px solid var(--ink); }
+#titleblock .k { color: var(--ink-soft); border-right: 1px solid var(--ink); }
+#titleblock .name { grid-column: 1 / -1; border-top: 0; font-size: 19px; font-weight: 600; line-height: 1.15; padding: 7px 8px 6px; letter-spacing: -.01em; }
+#titleblock .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* tooltip for wires */
+#tip {
+  position: fixed; pointer-events: none; display: none; background: var(--ink); color: var(--paper);
+  padding: 5px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; z-index: 5;
+}
+#tip b { font-weight: 600; }
+
+/* sheets that slide up: truth table and source */
+.drawer {
+  position: fixed; left: 0; right: 0; bottom: 0; max-height: 58vh; background: var(--panel);
+  border-top: 1.5px solid var(--ink); display: none; flex-direction: column; z-index: 4;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.drawer.open { display: flex; }
+@media (min-width: 900px) {
+  .drawer { left: auto; top: 0; width: 420px; max-height: none; border-top: 0; border-left: 1.5px solid var(--ink); }
+}
+.drawer header { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--panel-line); }
+.drawer header h2 { font-size: 16px; font-weight: 600; margin: 0; flex: 1; }
+.drawer .scroll { overflow: auto; flex: 1; }
+.drawer .note { padding: 10px 14px; color: var(--ink-soft); max-width: 60ch; }
+
+#src { margin: 0; padding: 8px 0; font: 13px/1.55 "IBM Plex Mono", ui-monospace, monospace; }
+#src .ln { display: flex; padding: 0 14px 0 0; cursor: pointer; }
+#src .ln:hover { background: var(--hi-soft); }
+#src .ln.sel { background: var(--hi-soft); box-shadow: inset 3px 0 var(--hi); }
+#src .no { width: 3.2em; text-align: right; padding-right: 1em; color: var(--ink-soft); flex: none; user-select: none; }
+#src .tx { white-space: pre; }
+#src .cm { color: var(--ink-soft); }
+
+table.tt { border-collapse: collapse; font: 13px "IBM Plex Mono", ui-monospace, monospace; margin: 0 0 8px; min-width: 100%; }
+table.tt th { position: sticky; top: 0; background: var(--panel); font: 600 13px "IBM Plex Sans Condensed", sans-serif; text-align: center; padding: 6px 10px; border-bottom: 1.5px solid var(--ink); }
+table.tt td { text-align: center; padding: 3px 10px; border-bottom: 1px solid var(--grid); }
+table.tt .sep { border-left: 1.5px solid var(--ink); }
+table.tt tr.row { cursor: pointer; }
+table.tt tr.row:hover td { background: var(--hi-soft); }
+table.tt tr.cur td { background: var(--hi-soft); font-weight: 500; }
+table.tt td.one { color: var(--on); font-weight: 500; }
+
+/* drawing */
+.part-body { fill: var(--body); stroke: var(--ink); stroke-width: 1.6; }
+.part-line { fill: none; stroke: var(--ink); stroke-width: 1.6; }
+.part-text { fill: var(--ink); font: 11px "IBM Plex Sans Condensed", sans-serif; }
+.part-small { fill: var(--ink-soft); font: 9px "IBM Plex Sans Condensed", sans-serif; }
+.part-label { fill: var(--ink); font: 500 12px "IBM Plex Sans Condensed", sans-serif; }
+.bitv { font: 500 11px "IBM Plex Mono", monospace; }
+.part { cursor: move; }
+.part.selected .part-body, .part.selected .sel-ring { stroke: var(--hi); }
+.sel-ring { fill: none; stroke: transparent; stroke-width: 2; stroke-dasharray: 4 3; }
+.part.selected .sel-ring { stroke: var(--hi); }
+.hit { cursor: pointer; }
+.wire { fill: none; stroke-linecap: square; stroke-linejoin: miter; }
+.wire-hit { fill: none; stroke: transparent; stroke-width: 12; cursor: help; }
+.wire.lit { filter: drop-shadow(0 0 2px var(--hi)); }
+@media (prefers-reduced-motion: no-preference) {
+  .led-glow { transition: opacity .08s; }
+}
+</style>
+</head>
+<body>
+<svg id="sheet" xmlns="http://www.w3.org/2000/svg" aria-label="Circuit">
+  <defs>
+    <pattern id="g1" width="10" height="10" patternUnits="userSpaceOnUse">
+      <path d="M10 0H0V10" fill="none" stroke="var(--grid)" stroke-width=".6"/>
+    </pattern>
+    <pattern id="g5" width="50" height="50" patternUnits="userSpaceOnUse">
+      <rect width="50" height="50" fill="url(#g1)"/>
+      <path d="M50 0H0V50" fill="none" stroke="var(--grid-major)" stroke-width=".8"/>
+    </pattern>
+  </defs>
+  <rect id="gridrect" fill="url(#g5)"/>
+  <g id="world"><g id="wires"></g><g id="parts"></g><g id="dots"></g></g>
+</svg>
+
+<div id="bar">
+  <div class="group" id="clockgroup" hidden>
+    <button id="run" aria-pressed="false" title="Run the clock">
+      <svg viewBox="0 0 14 14"><path id="runicon" d="M3 2l9 5-9 5z" fill="currentColor"/></svg><span id="runlabel">Run</span>
+    </button>
+    <button id="step" title="One clock cycle">Step</button>
+    <select id="speed" aria-label="Clock speed">
+      <option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option>
+      <option value="4">4×</option><option value="10">10×</option>
+    </select>
+  </div>
+  <div class="group">
+    <button id="reset" title="Inputs to 0, flip-flops cleared">Reset</button>
+    <button id="tablebtn" title="Truth table">Truth table</button>
+    <button id="srcbtn" title="Show the .wire source">Source</button>
+  </div>
+  <div class="group">
+    <button id="fit" title="Fit the circuit on screen">Fit</button>
+    <button id="tidy" title="Lay the circuit out again">Tidy</button>
+  </div>
+  <div id="warn" role="status"></div>
+  <span class="spacer"></span>
+</div>
+
+<div id="titleblock" aria-label="Title block">
+  <div class="name" id="tb-name"></div>
+  <div class="k">File</div><div class="v mono" id="tb-file"></div>
+  <div class="k">Parts</div><div class="v" id="tb-parts"></div>
+  <div class="k">Clock</div><div class="v" id="tb-clock">none</div>
+</div>
+
+<div id="tip"></div>
+
+<section class="drawer" id="tabledrawer" aria-label="Truth table">
+  <header><h2>Truth table</h2><button data-close="tabledrawer">Close</button></header>
+  <div class="scroll" id="tablebody"></div>
+</section>
+<section class="drawer" id="srcdrawer" aria-label="Source">
+  <header><h2 id="srctitle">Source</h2><button data-close="srcdrawer">Close</button></header>
+  <div class="scroll"><div id="src"></div></div>
+</section>
+
+<script>
+"use strict";
+const D = /*WIRE_DATA*/;
+
+/* ================================================================== model */
+const SVGNS = "http://www.w3.org/2000/svg";
+const nets = D.nets.map((n, i) => ({ id: i, w: n.w, name: n.name, v: 0, k: 0, driver: null, readers: [] }));
+const nodes = D.nodes.map((n, i) => Object.assign({ id: i, x: 0, y: 0, state: 0, lastClk: 0 }, n));
+const SOURCES = new Set(["input", "button", "clock"]);
+const SINKS = new Set(["output", "led", "seg7", "hex"]);
+const SEQ = new Set(["dff", "tff", "jkff", "counter"]);
+const GATES = new Set(["and", "or", "nand", "nor", "xor", "xnor"]);
+nodes.forEach(n => {
+  n.out.forEach((net, p) => { nets[net].driver = { node: n.id, port: p }; });
+  n.in.forEach((net, p) => nets[net].readers.push({ node: n.id, port: p }));
+});
+
+const mask = w => w >= 32 ? 0xFFFFFFFF : ((1 << w) >>> 0) - 1;
+const u32 = x => x >>> 0;
+
+/* ================================================================ geometry */
+/* every part: size, and where its ports are (inputs left, outputs right) */
+function geom(n) {
+  const k = n.kind, ni = n.in.length, no = n.out.length;
+  const g = { w: 60, h: 40, ins: [], outs: [] };
+  const left = (y, name) => g.ins.push({ x: 0, y, name });
+  const right = (y, name) => g.outs.push({ x: g.w, y, name });
+  if (GATES.has(k)) {
+    g.w = 60; g.h = Math.max(40, ni * 20);
+    for (let i = 0; i < ni; i++) left(10 + i * 20 + (ni === 2 ? 0 : 0));
+    if (ni === 2) { g.ins[0].y = 10; g.ins[1].y = 30; }
+    right(g.h / 2);
+  } else if (k === "not" || k === "buf") {
+    g.w = 40; g.h = 20; left(10); right(10);
+  } else if (k === "mux") {
+    const nd = ni - 1;
+    g.w = 40; g.h = nd * 20 + 30;
+    for (let i = 0; i < nd; i++) left(10 + i * 20, String(i));
+    left(nd * 20 + 20, "sel");
+    right(nd * 10 + (nd % 2 ? 0 : 0));
+    g.outs[0].y = Math.round(nd * 20 / 2 / 10) * 10;
+  } else if (k === "demux") {
+    g.w = 40; g.h = no * 20 + 30;
+    left(Math.round(no * 10 / 10) * 10, "d");
+    left(no * 20 + 20, "sel");
+    for (let i = 0; i < no; i++) right(10 + i * 20, String(i));
+  } else if (k === "decoder" || k === "encoder" || k === "add" || k === "compare" || SEQ.has(k)) {
+    g.w = SEQ.has(k) ? 60 : 50;
+    const top = SEQ.has(k) || k === "add" ? 20 : 30;     /* room for the title on top */
+    const rows = Math.max(ni, no, SEQ.has(k) ? 3 : 2);
+    g.h = rows * 20 + top;
+    n.in.forEach((_, i) => left(top + i * 20, n.inNames[i]));
+    if (no === 2 && rows > 2 && SEQ.has(k)) { right(top, n.outNames[0]); right(g.h - 20, n.outNames[1]); }
+    else n.out.forEach((_, i) => right(top + i * 20, n.outNames[i]));
+  } else if (k === "split") {
+    const order = n.ranges.map((r, i) => i).sort((a, b) => n.ranges[a][1] - n.ranges[b][1]);
+    g.w = 30; g.h = Math.max(20, no * 20);
+    g.outs = new Array(no);
+    order.forEach((p, slot) => { g.outs[p] = { x: 30, y: 10 + slot * 20 }; });
+    left(Math.floor(g.h / 20) * 10);
+    if (no === 1) g.ins[0].y = 10;
+  } else if (k === "merge") {
+    const order = n.ranges.map((r, i) => i).sort((a, b) => n.ranges[a][1] - n.ranges[b][1]);
+    g.w = 30; g.h = Math.max(20, ni * 20);
+    g.ins = new Array(ni);
+    order.forEach((p, slot) => { g.ins[p] = { x: 0, y: 10 + slot * 20 }; });
+    right(Math.floor(g.h / 20) * 10);
+    if (ni === 1) g.outs[0].y = 10;
+  } else if (k === "const") {
+    const t = constText(n);
+    g.w = Math.max(20, Math.ceil((t.length * 7 + 10) / 10) * 10); g.h = 20; right(10);
+  } else if (k === "input" || k === "output") {
+    const w = nets[k === "input" ? n.out[0] : n.in[0]].w;
+    if (w === 1) { g.w = 30; g.h = 20; }
+    else { g.w = Math.ceil((w * 13 + 10) / 10) * 10; g.h = 40; }
+    if (k === "input") right(g.h === 20 ? 10 : 20); else left(g.h === 20 ? 10 : 20);
+  } else if (k === "button" || k === "clock") {
+    g.w = 30; g.h = 20; right(10);
+  } else if (k === "led") {
+    g.w = 20; g.h = 20; left(10);
+  } else if (k === "seg7" || k === "hex") {
+    g.w = 40; g.h = 60; left(30);
+  }
+  return g;
+}
+function constText(n) {
+  const w = nets[n.out[0]].w;
+  return w <= 4 ? n.value.toString(2).padStart(w, "0") : "0x" + n.value.toString(16).toUpperCase();
+}
+nodes.forEach(n => { n.g = geom(n); });
+
+/* =============================================================== simulation */
+function rd(n, p) { const net = nets[n.in[p]]; return net; }
+function inByName(n, name) { const i = n.inNames.indexOf(name); return i < 0 ? null : nets[n.in[i]]; }
+function setOut(n, p, v, k) {
+  const net = nets[n.out[p]], m = mask(net.w);
+  k = u32(k & m); v = u32(v & k);
+  if (net.v !== v || net.k !== k) { net.v = v; net.k = k; return true; }
+  return false;
+}
+const known = net => net.k === mask(net.w);
+
+function evalNode(n) {
+  const k = n.kind;
+  let v, kn, ch = false;
+  switch (k) {
+  case "input": case "button": case "clock":
+    return setOut(n, 0, n.state, 0xFFFFFFFF);
+  case "const":
+    return setOut(n, 0, n.value, 0xFFFFFFFF);
+  case "and": case "nand": case "or": case "nor": case "xor": case "xnor": {
+    const w = nets[n.out[0]].w, m = mask(w);
+    let a = rd(n, 0); v = a.v; kn = a.k;
+    for (let i = 1; i < n.in.length; i++) {
+      const b = rd(n, i);
+      if (k === "and" || k === "nand") { const nk = (kn & b.k) | (kn & ~v) | (b.k & ~b.v); v = v & b.v & nk; kn = nk; }
+      else if (k === "or" || k === "nor") { const nk = (kn & b.k) | (kn & v) | (b.k & b.v); v = (v | b.v) & nk; kn = nk; }
+      else { kn = kn & b.k; v = (v ^ b.v) & kn; }
+    }
+    if (k === "nand" || k === "nor" || k === "xnor") v = ~v & kn & m;
+    return setOut(n, 0, v, kn);
+  }
+  case "not": { const a = rd(n, 0); return setOut(n, 0, ~a.v & a.k, a.k); }
+  case "buf": { const a = rd(n, 0); return setOut(n, 0, a.v, a.k); }
+  case "mux": {
+    const sel = nets[n.in[n.in.length - 1]];
+    if (!known(sel)) return setOut(n, 0, 0, 0);
+    const d = rd(n, sel.v); return setOut(n, 0, d.v, d.k);
+  }
+  case "demux": {
+    const d = rd(n, 0), sel = rd(n, 1);
+    for (let i = 0; i < n.out.length; i++)
+      ch = (known(sel) ? (i === sel.v ? setOut(n, i, d.v, d.k) : setOut(n, i, 0, 0xFFFFFFFF)) : setOut(n, i, 0, 0)) || ch;
+    return ch;
+  }
+  case "decoder": {
+    const sel = rd(n, 0), en = inByName(n, "en");
+    if (en && known(en) && !en.v) return setOut(n, 0, 0, 0xFFFFFFFF);
+    if (!known(sel) || (en && !known(en))) return setOut(n, 0, 0, 0);
+    return setOut(n, 0, u32(1 << sel.v), 0xFFFFFFFF);
+  }
+  case "encoder": {
+    const a = rd(n, 0);
+    if (!known(a)) return setOut(n, 0, 0, 0) | setOut(n, 1, 0, 0);
+    let hi = 0; for (let b = 0; b < a.w; b++) if ((a.v >>> b) & 1) hi = b;
+    return setOut(n, 0, hi, 0xFFFFFFFF) | setOut(n, 1, a.v ? 1 : 0, 1);
+  }
+  case "add": {
+    const a = rd(n, 0), b = rd(n, 1), c = inByName(n, "cin"), w = a.w;
+    if (!known(a) || !known(b) || (c && !known(c))) return setOut(n, 0, 0, 0) | setOut(n, 1, 0, 0);
+    const s = a.v + b.v + (c ? c.v : 0);
+    return setOut(n, 0, s, 0xFFFFFFFF) | setOut(n, 1, w >= 32 ? (s > 0xFFFFFFFF ? 1 : 0) : (s >>> w) & 1, 1);
+  }
+  case "compare": {
+    const a = rd(n, 0), b = rd(n, 1);
+    if (!known(a) || !known(b)) return setOut(n, 0, 0, 0) | setOut(n, 1, 0, 0) | setOut(n, 2, 0, 0);
+    return setOut(n, 0, a.v < b.v ? 1 : 0, 1) | setOut(n, 1, a.v === b.v ? 1 : 0, 1) | setOut(n, 2, a.v > b.v ? 1 : 0, 1);
+  }
+  case "dff": case "tff": case "jkff": case "counter": {
+    const rst = inByName(n, "rst");
+    if (rst && known(rst) && rst.v) n.state = 0;
+    const w = nets[n.out[0]].w;
+    ch = setOut(n, 0, n.state, 0xFFFFFFFF);
+    if (k === "counter") {
+      const en = inByName(n, "en"), on = !en || (known(en) && en.v);
+      ch = setOut(n, 1, on && n.state === mask(w) ? 1 : 0, 1) || ch;
+    } else ch = setOut(n, 1, ~n.state & mask(w), 0xFFFFFFFF) || ch;
+    return ch;
+  }
+  case "split": {
+    const a = rd(n, 0);
+    n.ranges.forEach((r, i) => {
+      const m = mask(r[0] - r[1] + 1);
+      ch = setOut(n, i, (a.v >>> r[1]) & m, (a.k >>> r[1]) & m) || ch;
+    });
+    return ch;
+  }
+  case "merge": {
+    v = 0; kn = 0;
+    n.ranges.forEach((r, i) => { const a = rd(n, i); v |= a.v << r[1]; kn |= a.k << r[1]; });
+    return setOut(n, 0, v, kn);
+  }
+  }
+  return false;
+}
+/* the next state of a flip-flop on a rising clock edge */
+function nextState(n) {
+  const w = nets[n.out[0]].w, en = inByName(n, "en");
+  if (en && !(known(en) && en.v)) return n.state;
+  const val = name => { const x = inByName(n, name); return x ? x.v : 0; };
+  switch (n.kind) {
+  case "dff": return rd(n, 0).v;
+  case "tff": return val("t") ? n.state ^ 1 : n.state;
+  case "jkff": { const j = val("j"), kk = val("k"); return j && kk ? n.state ^ 1 : j ? 1 : kk ? 0 : n.state; }
+  case "counter": return (n.state + 1) & mask(w);
+  }
+  return n.state;
+}
+
+let order = [];        /* evaluation order (sources first, then topological) */
+const seqNodes = nodes.filter(n => SEQ.has(n.kind));
+let unstable = false;
+function settle() {
+  for (let pass = 0; pass < 200; pass++) {
+    let ch = false;
+    for (const n of order) if (evalNode(n)) ch = true;
+    if (!ch) { unstable = false; return true; }
+  }
+  unstable = true;
+  return false;
+}
+/* settle, then clock every flip-flop that saw a rising edge; repeat for
+ * ripple counters, where one flip-flop clocks the next */
+function simulate() {
+  settle();
+  for (let round = 0; round < 64; round++) {
+    const fire = [];
+    for (const n of seqNodes) {
+      const c = inByName(n, "clk"), now = c && known(c) ? c.v : 0;
+      if (!n.lastClk && now) fire.push(n);
+      n.lastClk = now;
+    }
+    if (!fire.length) break;
+    const next = fire.map(nextState);
+    fire.forEach((n, i) => { n.state = next[i]; });
+    settle();
+  }
+  redraw();
+}
+
+/* ================================================================== layout */
+let layers = [], dummies = [], back = new Set(), layerOf = [];
+function layout() {
+  const N = nodes.length;
+  /* edges u -> v (with the net and port) */
+  const edges = [];
+  nodes.forEach(v => v.in.forEach((net, p) => {
+    const d = nets[net].driver; if (d) edges.push({ u: d.node, v: v.id, net, p });
+  }));
+  const outE = nodes.map(() => []), inE = nodes.map(() => []);
+  edges.forEach((e, i) => { outE[e.u].push(i); inE[e.v].push(i); });
+  /* depth-first search from the inputs marks the edges that close a loop */
+  back = new Set();
+  const state = new Array(N).fill(0);
+  const visit = s => {
+    const stack = [[s, 0]]; state[s] = 1;
+    while (stack.length) {
+      const top = stack[stack.length - 1], u = top[0];
+      if (top[1] < outE[u].length) {
+        const ei = outE[u][top[1]++], v = edges[ei].v;
+        if (state[v] === 1) back.add(ei);
+        else if (state[v] === 0) { state[v] = 1; stack.push([v, 0]); }
+      } else { state[u] = 2; stack.pop(); }
+    }
+  };
+  nodes.filter(n => SOURCES.has(n.kind)).forEach(n => { if (!state[n.id]) visit(n.id); });
+  nodes.filter(n => n.kind === "const").forEach(n => { if (!state[n.id]) visit(n.id); });
+  nodes.forEach(n => { if (!state[n.id]) visit(n.id); });
+  /* topological order of the rest, and the longest path for columns */
+  const indeg = new Array(N).fill(0);
+  edges.forEach((e, i) => { if (!back.has(i)) indeg[e.v]++; });
+  const topo = [], q = nodes.filter(n => !indeg[n.id]).map(n => n.id);
+  while (q.length) {
+    const u = q.shift(); topo.push(u);
+    outE[u].forEach(ei => { if (!back.has(ei) && --indeg[edges[ei].v] === 0) q.push(edges[ei].v); });
+  }
+  order = topo.map(i => nodes[i]);
+  const L = new Array(N).fill(0);
+  for (const u of topo) {
+    const n = nodes[u];
+    if (SOURCES.has(n.kind) || n.kind === "const") { L[u] = 0; continue; }
+    let l = 1;
+    inE[u].forEach(ei => { if (!back.has(ei) && nodes[edges[ei].u].kind !== "const") l = Math.max(l, L[edges[ei].u] + 1); });
+    L[u] = l;
+  }
+  let maxL = 0;
+  nodes.forEach(n => { if (!SINKS.has(n.kind)) maxL = Math.max(maxL, L[n.id]); });
+  nodes.forEach(n => { if (SINKS.has(n.kind)) L[n.id] = maxL + 1; });
+  nodes.forEach(n => {
+    if (n.kind !== "const") return;
+    let m = Infinity;
+    outE[n.id].forEach(ei => { m = Math.min(m, L[edges[ei].v]); });
+    L[n.id] = m === Infinity ? 0 : Math.max(0, m - 1);
+  });
+  if (!nodes.some(n => SINKS.has(n.kind))) maxL = Math.max(...L, 0) - 1;
+  const nL = Math.max(...L, 0) + 1;
+  layerOf = L;
+
+  /* a net that skips columns gets a pass-through point in each one */
+  dummies = [];
+  const dummyAt = new Map();
+  nets.forEach(net => {
+    if (!net.driver) return;
+    const ld = L[net.driver.node];
+    let far = ld;
+    net.readers.forEach(r => { if (L[r.node] > ld) far = Math.max(far, L[r.node]); });
+    for (let l = ld + 1; l < far; l++) {
+      const d = { dummy: true, net: net.id, layer: l, y: 0, h: 0 };
+      dummies.push(d); dummyAt.set(net.id + ":" + l, d);
+    }
+  });
+  layers = Array.from({ length: nL }, () => []);
+  nodes.forEach(n => layers[L[n.id]].push(n));
+  dummies.forEach(d => layers[d.layer].push(d));
+
+  /* order inside each column: barycentre sweeps */
+  const leftOf = it => {   /* [item, port y offset on it] to the left */
+    if (it.dummy) {
+      const prev = dummyAt.get(it.net + ":" + (it.layer - 1));
+      if (prev) return [[prev, 0]];
+      const d = nets[it.net].driver; return [[nodes[d.node], nodes[d.node].g.outs[d.port].y]];
+    }
+    const res = [];
+    it.in.forEach((net, p) => {
+      const d = nets[net].driver; if (!d) return;
+      const dl = L[d.node], me = L[it.id];
+      if (dl === me - 1) res.push([nodes[d.node], nodes[d.node].g.outs[d.port].y]);
+      else if (dl < me - 1) { const dm = dummyAt.get(net + ":" + (me - 1)); if (dm) res.push([dm, 0]); }
+    });
+    return res;
+  };
+  const rightOf = it => {
+    const res = [], me = it.dummy ? it.layer : L[it.id];
+    const nl = it.dummy ? [it.net] : it.out;
+    nl.forEach(net => {
+      const dm = dummyAt.get(net + ":" + (me + 1)); if (dm) res.push([dm, 0]);
+      nets[net].readers.forEach(r => { if (L[r.node] === me + 1) res.push([nodes[r.node], nodes[r.node].g.ins[r.port].y]); });
+    });
+    return res;
+  };
+  const pos = new Map();
+  const index = () => layers.forEach(col => col.forEach((it, i) => pos.set(it, i)));
+  index();
+  for (let it = 0; it < 8; it++) {
+    const fwd = it % 2 === 0;
+    const seq = fwd ? layers.map((_, i) => i).slice(1) : layers.map((_, i) => i).reverse().slice(1);
+    for (const l of seq) {
+      const col = layers[l];
+      const key = new Map();
+      col.forEach(item => {
+        const nb = fwd ? leftOf(item) : rightOf(item);
+        key.set(item, nb.length ? nb.reduce((s, [o]) => s + pos.get(o), 0) / nb.length : pos.get(item));
+      });
+      col.sort((a, b) => key.get(a) - key.get(b));
+      col.forEach((item, i) => pos.set(item, i));
+    }
+  }
+  /* sources and sinks: keep them in the order they were declared */
+  [0, nL - 1].forEach(l => {
+    const real = layers[l].filter(x => !x.dummy && (SOURCES.has(x.kind) || SINKS.has(x.kind)));
+    if (real.length === layers[l].filter(x => !x.dummy).length && l === 0)
+      layers[l].sort((a, b) => (a.dummy ? 1e9 : a.id) - (b.dummy ? 1e9 : b.id));
+  });
+
+  /* heights: align each part with what feeds it, then with what it feeds */
+  const hOf = it => it.dummy ? 0 : it.g.h;
+  const gapAfter = (a, b) => (a.dummy || b.dummy) ? 20 : 30;
+  layers.forEach(col => { let y = 0; col.forEach(it => { it.y = y; y += hOf(it) + 30; }); });
+  const place = (col, desired) => {
+    let prev = null;
+    col.forEach((it, i) => {
+      let y = desired[i];
+      if (prev) y = Math.max(y, prev.y + hOf(prev) + gapAfter(prev, it));
+      it.y = Math.round(y / 10) * 10;
+      if (prev && it.y < prev.y + hOf(prev) + gapAfter(prev, it)) it.y += 10;
+      prev = it;
+    });
+    /* pull a stack that was pushed down back up toward its targets */
+    for (let i = col.length - 2; i >= 0; i--) {
+      const a = col[i], b = col[i + 1];
+      const lim = b.y - hOf(a) - gapAfter(a, b);
+      const want = Math.round(desired[i] / 10) * 10;
+      if (a.y < want && lim > a.y) a.y = Math.min(want, lim);
+    }
+  };
+  const desired = (it, fwd) => {
+    const nb = fwd ? leftOf(it) : rightOf(it);
+    if (!nb.length) return it.y;
+    let s = 0;
+    nb.forEach(([o, off]) => {
+      const mine = it.dummy ? 0 : fwd ? portY(it, nb, o, true) : portY(it, nb, o, false);
+      s += o.y + off - mine;
+    });
+    return s / nb.length;
+  };
+  /* which of my ports connects to neighbour o */
+  function portY(it, nb, o, fwd) {
+    if (fwd) {
+      for (let p = 0; p < it.in.length; p++) {
+        const d = nets[it.in[p]].driver; if (!d) continue;
+        if (o.dummy ? o.net === it.in[p] : d.node === o.id) return it.g.ins[p].y;
+      }
+      return it.g.h / 2;
+    }
+    for (let p = 0; p < it.out.length; p++) {
+      const net = it.out[p];
+      if (o.dummy ? o.net === net : nets[net].readers.some(r => r.node === o.id)) return it.g.outs[p].y;
+    }
+    return it.g.h / 2;
+  }
+  for (let it = 0; it < 9; it++) {
+    const fwd = it % 2 === 0;
+    const idx = layers.map((_, i) => i);
+    (fwd ? idx : idx.reverse()).forEach(l => {
+      const col = layers[l];
+      place(col, col.map(x => desired(x, fwd)));
+    });
+  }
+  let minY = Infinity;
+  layers.forEach(col => col.forEach(it => { minY = Math.min(minY, it.y); }));
+  layers.forEach(col => col.forEach(it => { it.y -= minY; }));
+
+  /* columns: width of the widest part plus room for the wires between */
+  let x = 0;
+  const tracksIn = channelTracks();
+  layers.forEach((col, l) => {
+    const real = col.filter(it => !it.dummy);
+    const cw = Math.max(0, ...real.map(n => n.g.w));
+    real.forEach(n => { n.x = (l === 0) ? x + cw - n.g.w : x; });
+    x += cw + Math.max(50, 30 + tracksIn[l] * 10);
+  });
+}
+/* how many vertical tracks the wires after column l need */
+function channelTracks() {
+  const r = route(true);
+  return r;
+}
+
+/* ================================================================= routing */
+let wirePaths = [], junctions = [];
+function colBounds() {
+  const left = [], right = [];
+  layers.forEach((col, l) => {
+    const real = col.filter(it => !it.dummy);
+    left[l] = Math.min(...real.map(n => n.x));
+    right[l] = Math.max(...real.map(n => n.x + n.g.w));
+  });
+  return { left, right };
+}
+/* countOnly: return the track count per channel (x positions not known yet) */
+function route(countOnly) {
+  const nL = layers.length, L = layerOf;
+  const { left, right } = countOnly ? { left: [], right: [] } : colBounds();
+  const ends = layers.map(() => new Map());   /* channel -> net -> endpoints */
+  const add = (ch, net, e) => {
+    if (ch < 0 || ch >= nL - 1) return;
+    let m = ends[ch].get(net); if (!m) ends[ch].set(net, m = []); m.push(e);
+  };
+  const straight = new Map();   /* net -> [x1, y, x2] runs through columns */
+  let maxBottom = 0;
+  nodes.forEach(n => { maxBottom = Math.max(maxBottom, n.y + n.g.h); });
+  dummies.forEach(d => { maxBottom = Math.max(maxBottom, d.y); });
+  const feedback = [];
+  nets.forEach(net => {
+    if (!net.driver || !net.readers.length) return;
+    const dn = nodes[net.driver.node], ld = L[dn.id], op = dn.g.outs[net.driver.port];
+    add(ld, net.id, { side: "L", x: dn.x + op.x, y: dn.y + op.y });
+    let fb = null;
+    net.readers.forEach(r => {
+      const rn = nodes[r.node], ip = rn.g.ins[r.port], lr = L[rn.id];
+      if (lr > ld) add(lr - 1, net.id, { side: "R", x: rn.x + ip.x, y: rn.y + ip.y });
+      else {
+        if (!fb) { fb = { net: net.id, from: ld, to: lr - 1 }; feedback.push(fb); }
+        fb.to = Math.min(fb.to, lr - 1);
+        add(lr - 1, net.id, { side: "R", x: rn.x + ip.x, y: rn.y + ip.y });
+      }
+    });
+  });
+  dummies.forEach(d => {
+    add(d.layer - 1, d.net, { side: "R", x: left[d.layer], y: d.y });
+    add(d.layer, d.net, { side: "L", x: right[d.layer], y: d.y });
+  });
+  feedback.forEach((f, i) => {
+    f.y = maxBottom + 40 + i * 10;
+    add(f.from, f.net, { side: "D", y: f.y });
+    if (f.to >= 0 && f.to !== f.from) add(f.to, f.net, { side: "D", y: f.y });
+  });
+
+  const counts = [];
+  const trunkX = new Map();
+  for (let ch = 0; ch < nL - 1; ch++) {
+    /* nets that need a vertical piece in this channel */
+    const ivs = [];
+    ends[ch].forEach((es, net) => {
+      const ys = es.map(e => e.y);
+      const lo = Math.min(...ys), hi = Math.max(...ys);
+      if (hi === lo && es.length === 2 && es.some(e => e.side === "L") && es.some(e => e.side === "R")) {
+        trunkX.set(ch + ":" + net, null); return;
+      }
+      ivs.push({ net, lo, hi, es, down: (es.find(e => e.side === "L") || es[0]).y <= lo });
+    });
+    /* order the vertical pieces left to right so their turns do not cross:
+     * wires turning down put the higher one further right, wires turning up
+     * the lower one, and each sits just right of the ones it overlaps */
+    ivs.forEach(iv => {
+      const l = iv.es.find(e => e.side === "L");
+      const ly = l ? l.y : iv.hi;
+      const rs = iv.es.filter(e => e.side !== "L");
+      const avg = rs.reduce((s, e) => s + e.y, 0) / Math.max(1, rs.length);
+      iv.key = avg >= ly ? -ly : 1e6 + ly;
+    });
+    ivs.sort((a, b) => a.key - b.key);
+    const placed = [];
+    ivs.forEach(iv => {
+      let t = 0;
+      placed.forEach(o => { if (o.lo <= iv.hi + 5 && iv.lo <= o.hi + 5) t = Math.max(t, o.t + 1); });
+      iv.t = t;
+      placed.push(iv);
+    });
+    const tracks = [];
+    ivs.forEach(iv => { tracks[iv.t] = 1; });
+    counts[ch] = tracks.length;
+    if (countOnly) continue;
+    const a = right[ch], b = left[ch + 1], T = tracks.length;
+    const span = b - a - 30;
+    const step = T > 1 ? Math.min(10, span / (T - 1)) : 0;
+    const start = a + 15 + Math.max(0, (span - step * (T - 1)) / 2);
+    ivs.forEach(iv => trunkX.set(ch + ":" + iv.net, Math.round(start + iv.t * step)));
+  }
+  if (countOnly) return counts.concat([0]);
+
+  /* paths */
+  const segs = new Map();     /* net -> path data */
+  const pts = new Map();      /* "x,y" -> degree, for junction dots */
+  const seg = (net, d) => segs.set(net, (segs.get(net) || "") + d);
+  const deg = (x, y, n) => { const k = x + "," + y; pts.set(k, (pts.get(k) || 0) + n); };
+  for (let ch = 0; ch < nL - 1; ch++) {
+    ends[ch].forEach((es, net) => {
+      const tx = trunkX.get(ch + ":" + net);
+      if (tx === null) {
+        const l = es.find(e => e.side === "L"), r = es.find(e => e.side === "R");
+        seg(net, `M${l.x} ${l.y}H${r.x}`);
+        return;
+      }
+      const ys = es.map(e => e.y), lo = Math.min(...ys), hi = Math.max(...ys);
+      if (hi > lo) { seg(net, `M${tx} ${lo}V${hi}`); deg(tx, lo, 1); deg(tx, hi, 1); ys.forEach(y => { if (y > lo && y < hi) deg(tx, y, 2); }); }
+      es.forEach(e => {
+        if (e.side === "D") return;
+        seg(net, `M${e.x} ${e.y}H${tx}`);
+        deg(tx, e.y, 1);
+      });
+    });
+  }
+  dummies.forEach(d => seg(d.net, `M${left[d.layer]} ${d.y}H${right[d.layer]}`));
+  feedback.forEach(f => {
+    const x1 = trunkX.get(f.from + ":" + f.net), x0 = f.to >= 0 ? trunkX.get(f.to + ":" + f.net) : x1;
+    if (x1 == null || x0 == null) return;
+    seg(f.net, `M${Math.min(x0, x1)} ${f.y}H${Math.max(x0, x1)}`);
+  });
+  junctions = [];
+  pts.forEach((n, k) => { if (n >= 3) { const [x, y] = k.split(",").map(Number); junctions.push({ x, y, key: k }); } });
+  /* a junction belongs to a net: find it by its trunk */
+  wirePaths = segs;
+  return null;
+}
+
+/* ================================================================= drawing */
+const $ = id => document.getElementById(id);
+const el = (tag, attrs, parent) => {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const a in attrs) e.setAttribute(a, attrs[a]);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const world = $("world"), wiresG = $("wires"), partsG = $("parts"), dotsG = $("dots");
+const fmtBits = net => {
+  let s = "";
+  for (let b = net.w - 1; b >= 0; b--) s += (net.k >>> b) & 1 ? ((net.v >>> b) & 1) : "x";
+  return s;
+};
+const fmtVal = net => {
+  if (!known(net)) return fmtBits(net);
+  if (net.w === 1) return String(net.v);
+  return "0x" + net.v.toString(16).toUpperCase().padStart(Math.ceil(net.w / 4), "0") + " = " + net.v;
+};
+const wireColor = net => net.w > 1 ? (known(net) ? "var(--bus)" : "var(--unknown)") : !known(net) ? "var(--unknown)" : net.v ? "var(--on)" : "var(--off)";
+
+function gatePath(kind, g) {
+  const cy = g.h / 2, top = cy - 20, bot = cy + 20;
+  const or = kind === "or" || kind === "nor" || kind === "xor" || kind === "xnor";
+  if (!or) return `M14 ${top}H30A20 20 0 0 1 30 ${bot}H14Z`;
+  return `M14 ${top}Q38 ${top} 50 ${cy}Q38 ${bot} 14 ${bot}Q24 ${cy} 14 ${top}Z`;
+}
+function backX(kind, dy) {          /* where an input stub meets the gate's back */
+  const or = kind === "or" || kind === "nor" || kind === "xor" || kind === "xnor";
+  if (!or) return 14;
+  if (Math.abs(dy) >= 20) return 14;
+  return 14 + 5 * (1 - (dy / 20) * (dy / 20));
+}
+const SEG = { a: "M8 6h24", b: "M33 8v20", c: "M33 32v20", d: "M8 54h24", e: "M7 32v20", f: "M7 8v20", g: "M8 30h24" };
+const HEXSEG = [0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F, 0x77, 0x7C, 0x39, 0x5E, 0x79, 0x71];
+
+const sinkNames = new Set(nodes.filter(n => SINKS.has(n.kind)).map(n => n.name));
+function buildPart(n) {
+  const g = n.g, k = n.kind;
+  const shown = sinkNames.has(n.name) ? "" : n.name;   /* the output beside it already says it */
+  const root = el("g", { class: "part" }, partsG);
+  root.dataset.id = n.id;
+  n.el = root;
+  const upd = [];
+  el("rect", { class: "sel-ring", x: -4, y: -4, width: g.w + 8, height: g.h + 8, rx: 3 }, root);
+  const label = (txt, x, y, anchor) => { const t = el("text", { class: "part-label", x, y, "text-anchor": anchor || "middle" }, root); t.textContent = txt; return t; };
+
+  if (GATES.has(k)) {
+    const cy = g.h / 2;
+    g.ins.forEach(p => el("path", { class: "part-line", d: `M0 ${p.y}H${backX(k, p.y - cy)}` }, root));
+    if (g.h > 40) el("path", { class: "part-line", d: `M14 ${g.ins[0].y}V${cy - 20}M14 ${cy + 20}V${g.ins[g.ins.length - 1].y}` }, root);
+    if (k === "xor" || k === "xnor") el("path", { class: "part-line", d: `M8 ${cy - 20}Q18 ${cy} 8 ${cy + 20}` }, root);
+    el("path", { class: "part-body", d: gatePath(k, g) }, root);
+    if (k === "nand" || k === "nor" || k === "xnor") { el("circle", { class: "part-body", cx: 54, cy, r: 4 }, root); }
+    else el("path", { class: "part-line", d: `M50 ${cy}H60` }, root);
+    if (shown) label(shown, 30, cy - 24);
+  } else if (k === "not" || k === "buf") {
+    el("path", { class: "part-line", d: "M0 10H10" }, root);
+    el("path", { class: "part-body", d: "M10 0L30 10L10 20Z" }, root);
+    if (k === "not") el("circle", { class: "part-body", cx: 34, cy: 10, r: 4 }, root);
+    else el("path", { class: "part-line", d: "M30 10H40" }, root);
+    if (shown) label(shown, 20, -6);
+  } else if (k === "mux" || k === "demux") {
+    const nd = k === "mux" ? n.in.length - 1 : n.out.length, H = nd * 20;
+    const d = k === "mux" ? `M10 -4L34 6V${H - 6}L10 ${H + 4}Z` : `M10 6L34 -4V${H + 4}L10 ${H - 6}Z`;
+    el("path", { class: "part-body", d }, root);
+    if (k === "mux") { g.ins.slice(0, nd).forEach((p, i) => { el("path", { class: "part-line", d: `M0 ${p.y}H10` }, root); const t = el("text", { class: "part-small", x: 13, y: p.y + 3 }, root); t.textContent = i; }); el("path", { class: "part-line", d: `M34 ${g.outs[0].y}H40` }, root); }
+    else { el("path", { class: "part-line", d: `M0 ${g.ins[0].y}H10` }, root); g.outs.forEach((p, i) => { el("path", { class: "part-line", d: `M34 ${p.y}H40` }, root); const t = el("text", { class: "part-small", x: 31, y: p.y + 3, "text-anchor": "end" }, root); t.textContent = i; }); }
+    const sp = g.ins[g.ins.length - 1];
+    el("path", { class: "part-line", d: `M0 ${sp.y}H22V${H}` }, root);
+    const t = el("text", { class: "part-small", x: 24, y: sp.y + 3 }, root); t.textContent = "sel";
+    if (shown) label(shown, 22, -10);
+  } else if (k === "split" || k === "merge") {
+    const ports = k === "split" ? g.outs : g.ins, ys = ports.map(p => p.y);
+    const lo = Math.min(...ys), hi = Math.max(...ys), mid = (k === "split" ? g.ins[0] : g.outs[0]).y;
+    el("path", { class: "part-line", d: `M15 ${Math.min(lo, mid)}V${Math.max(hi, mid)}`, "stroke-width": 4, "stroke-linecap": "round" }, root);
+    if (k === "split") el("path", { class: "part-line", d: `M0 ${mid}H15`, "stroke-width": 3 }, root);
+    else el("path", { class: "part-line", d: `M15 ${mid}H30`, "stroke-width": 3 }, root);
+    ports.forEach((p, i) => {
+      const r = n.ranges[i];
+      el("path", { class: "part-line", d: k === "split" ? `M15 ${p.y}H30` : `M0 ${p.y}H15` }, root);
+      const t = el("text", { class: "part-small", x: k === "split" ? 19 : 2, y: p.y - 3 }, root);
+      t.textContent = r[0] === r[1] ? r[0] : r[0] + ":" + r[1];
+    });
+  } else if (k === "const") {
+    el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 2 }, root);
+    const t = el("text", { class: "part-text bitv", x: g.w / 2, y: 14, "text-anchor": "middle" }, root);
+    t.textContent = constText(n);
+  } else if (k === "input" || k === "output") {
+    const net = nets[k === "input" ? n.out[0] : n.in[0]], isIn = k === "input";
+    if (net.w === 1) {
+      const body = el("rect", { class: "part-body", x: 0, y: 0, width: 30, height: 20, rx: isIn ? 3 : 10 }, root);
+      const t = el("text", { class: "bitv", x: 15, y: 14, "text-anchor": "middle" }, root);
+      if (isIn) { body.classList.add("hit"); t.classList.add("hit"); body.dataset.bit = 0; t.dataset.bit = 0; }
+      upd.push(() => {
+        const one = known(net) && net.v;
+        body.style.fill = one ? "var(--on)" : "var(--body)";
+        t.style.fill = one ? "#fff" : "var(--ink)";
+        t.textContent = known(net) ? net.v : "x";
+      });
+    } else {
+      el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 3 }, root);
+      const cells = [];
+      for (let b = net.w - 1; b >= 0; b--) {
+        const cx = 5 + (net.w - 1 - b) * 13;
+        const r = el("rect", { x: cx, y: 4, width: 12, height: 16, rx: 2, fill: "var(--body)", stroke: "var(--panel-line)" }, root);
+        const t = el("text", { class: "bitv", x: cx + 6, y: 16, "text-anchor": "middle" }, root);
+        if (isIn) { r.classList.add("hit"); t.classList.add("hit"); r.dataset.bit = b; t.dataset.bit = b; }
+        cells.push([b, r, t]);
+      }
+      const vt = el("text", { class: "part-small", x: g.w / 2, y: 33, "text-anchor": "middle", style: "font-size:10px" }, root);
+      if (isIn) { vt.classList.add("hit"); vt.dataset.type = "1"; }
+      upd.push(() => {
+        cells.forEach(([b, r, t]) => {
+          const kn = (net.k >>> b) & 1, one = kn && ((net.v >>> b) & 1);
+          r.style.fill = one ? "var(--on)" : "var(--body)";
+          t.style.fill = one ? "#fff" : "var(--ink)";
+          t.textContent = kn ? ((net.v >>> b) & 1) : "x";
+        });
+        vt.textContent = fmtVal(net) + (isIn ? "  ✎" : "");
+      });
+    }
+    if (isIn) label(n.name, -8, g.h / 2 + 4, "end"); else label(n.name, g.w + 8, g.h / 2 + 4, "start");
+  } else if (k === "button") {
+    const body = el("rect", { class: "part-body hit", x: 0, y: 0, width: 30, height: 20, rx: 10 }, root);
+    el("circle", { class: "hit", cx: 15, cy: 10, r: 5, fill: "var(--ink-soft)" }, root);
+    upd.push(() => { body.style.fill = n.state ? "var(--on)" : "var(--body)"; });
+    label(n.name, -8, 14, "end");
+  } else if (k === "clock") {
+    const body = el("rect", { class: "part-body hit", x: 0, y: 0, width: 30, height: 20, rx: 2 }, root);
+    const wave = el("path", { class: "hit", d: "M5 14H10V6H17V14H24V6", fill: "none", "stroke-width": 1.6 }, root);
+    upd.push(() => {
+      body.style.fill = n.state ? "var(--on)" : "var(--body)";
+      wave.setAttribute("stroke", n.state ? "#fff" : "var(--ink)");
+    });
+    label(n.name, -8, 14, "end");
+  } else if (k === "led") {
+    const net = nets[n.in[0]];
+    const col = n.color ? cssColor(n.color) : "var(--hi)";
+    const glow = el("circle", { class: "led-glow", cx: 10, cy: 10, r: 15, fill: col, opacity: 0 }, root);
+    glow.style.filter = "blur(4px)";
+    const body = el("circle", { class: "part-body", cx: 10, cy: 10, r: 10 }, root);
+    upd.push(() => {
+      const on = known(net) && net.v;
+      body.style.fill = on ? col : !known(net) ? "var(--unknown)" : "var(--body)";
+      glow.setAttribute("opacity", on ? .45 : 0);
+    });
+    label(n.name, 10, -7);
+  } else if (k === "seg7" || k === "hex") {
+    const net = nets[n.in[0]];
+    el("rect", { class: "part-body", x: 0, y: 0, width: 40, height: 60, rx: 3 }, root);
+    const segs = "abcdefg".split("").map(s => el("path", { d: SEG[s], "stroke-width": 4.5, "stroke-linecap": "round" }, root));
+    const dp = el("circle", { cx: 36.5, cy: 55, r: 2.2 }, root);
+    upd.push(() => {
+      let bits = net.v, kn = known(net);
+      if (k === "hex") bits = kn ? HEXSEG[net.v & 15] : 0;
+      segs.forEach((s, i) => s.setAttribute("stroke", kn && (bits >>> i) & 1 ? "var(--seg-on)" : "var(--seg-off)"));
+      dp.setAttribute("fill", k === "seg7" && net.w === 8 && kn && (net.v >>> 7) & 1 ? "var(--seg-on)" : "var(--seg-off)");
+    });
+    label(n.name, 20, -7);
+  } else {
+    /* boxes: decoder, encoder, add, compare, flip-flops, counter */
+    el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 2 }, root);
+    const title = { decoder: "DEC", encoder: "ENC", add: "+", compare: "CMP", dff: "D", tff: "T", jkff: "JK", counter: "CTR" }[k];
+    const mid = SEQ.has(k) || k === "add";   /* plenty of room in the middle; others go on top */
+    const tt = el("text", { class: "part-text", x: g.w / 2, y: mid ? g.h / 2 + 4 : 14, "text-anchor": "middle", style: "font-weight:600;font-size:" + (k === "add" ? 18 : 12) + "px" }, root);
+    tt.textContent = title;
+    g.ins.forEach(p => {
+      if (p.name === "clk") el("path", { class: "part-line", d: `M0 ${p.y - 5}L7 ${p.y}L0 ${p.y + 5}` }, root);
+      else { const t = el("text", { class: "part-small", x: 4, y: p.y + 3 }, root); t.textContent = p.name; }
+    });
+    g.outs.forEach(p => {
+      const t = el("text", { class: "part-small", x: g.w - 4, y: p.y + 3, "text-anchor": "end" }, root);
+      t.textContent = p.name === "out" ? "" : p.name === "nq" ? "q" : p.name;
+      if (p.name === "nq") t.setAttribute("text-decoration", "overline");
+    });
+    if (SEQ.has(k)) {
+      const st = el("text", { class: "part-small bitv", x: g.w / 2, y: g.h - 6, "text-anchor": "middle" }, root);
+      upd.push(() => { st.textContent = "= " + n.state; });
+    }
+    if (shown) label(shown, g.w / 2, -7);
+  }
+  n.update = () => upd.forEach(f => f());
+  place(n);
+}
+function cssColor(c) {
+  const map = { red: "#e2321f", green: "#1fae4b", blue: "#2f6fd6", yellow: "#f0c419", orange: "#ef7d1a", white: "#f4f6f8", amber: "var(--hi)" };
+  return map[c] || (/^#[0-9a-fA-F]{3,8}$/.test(c) ? c : "var(--hi)");
+}
+function place(n) { n.el.setAttribute("transform", `translate(${n.x},${n.y})`); }
+
+let wireEls = new Map();
+function drawWires() {
+  route(false);
+  wiresG.textContent = "";
+  dotsG.textContent = "";
+  wireEls = new Map();
+  wirePaths.forEach((d, id) => {
+    const net = nets[id];
+    const p = el("path", { class: "wire", d, "stroke-width": net.w > 1 ? 3.4 : 2 }, wiresG);
+    const h = el("path", { class: "wire-hit", d }, wiresG);
+    h.dataset.net = id;
+    wireEls.set(id, p);
+  });
+  /* junction dots take the colour of the wire under them */
+  junctions.forEach(j => {
+    const c = el("circle", { cx: j.x, cy: j.y, r: 3.4 }, dotsG);
+    j.el = c;
+    j.net = netAt(j.x, j.y);
+  });
+  recolor();
+}
+function netAt(x, y) {
+  for (const [id, d] of wirePaths) {
+    const re = /M(-?[\d.]+) (-?[\d.]+)([HV])(-?[\d.]+)/g; let m;
+    while ((m = re.exec(d))) {
+      const x0 = +m[1], y0 = +m[2], t = m[3], v = +m[4];
+      if (t === "H" && y0 === y && x >= Math.min(x0, v) && x <= Math.max(x0, v)) return id;
+      if (t === "V" && x0 === x && y >= Math.min(y0, v) && y <= Math.max(y0, v)) return id;
+    }
+  }
+  return null;
+}
+function recolor() {
+  wireEls.forEach((p, id) => p.setAttribute("stroke", wireColor(nets[id])));
+  junctions.forEach(j => j.el.setAttribute("fill", j.net == null ? "var(--ink)" : wireColor(nets[j.net])));
+}
+function redraw() {
+  nodes.forEach(n => n.update());
+  recolor();
+  const w = $("warn");
+  if (unstable) { w.style.display = "block"; w.textContent = "This circuit oscillates: it never settles"; }
+  else w.style.display = "none";
+  if (tableOpen) markRow();
+}
+
+/* ================================================================ view */
+let view = { x: 0, y: 0, s: 1 };
+const sheet = $("sheet");
+function applyView() {
+  world.setAttribute("transform", `translate(${view.x},${view.y}) scale(${view.s})`);
+  const gr = $("gridrect"), s = view.s;
+  gr.setAttribute("x", -view.x / s); gr.setAttribute("y", -view.y / s);
+  gr.setAttribute("width", sheet.clientWidth / s); gr.setAttribute("height", sheet.clientHeight / s);
+  gr.setAttribute("transform", world.getAttribute("transform"));
+}
+function bbox() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  nodes.forEach(n => {
+    const lw = n.name ? n.name.length * 7 + 12 : 0;
+    const extraL = n.kind === "input" || n.kind === "button" || n.kind === "clock" ? lw : 0;
+    const extraR = n.kind === "output" ? lw : 0;
+    x0 = Math.min(x0, n.x - extraL); y0 = Math.min(y0, n.y - 22);
+    x1 = Math.max(x1, n.x + n.g.w + extraR); y1 = Math.max(y1, n.y + n.g.h + 10);
+  });
+  const b = wiresG.getBBox();
+  if (b.width || b.height) { x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height); }
+  return { x0, y0, x1, y1 };
+}
+function fit() {
+  const b = bbox();
+  let W = sheet.clientWidth, H = sheet.clientHeight;
+  const open = document.querySelector(".drawer.open");
+  if (open) { const r = open.getBoundingClientRect(); if (r.top < 10) W -= r.width; else H = r.top; }
+  const top = $("bar").getBoundingClientRect().bottom + 16;
+  const tb = $("titleblock").getBoundingClientRect();
+  const availW = W - 40, availH = H - top - (open && H < sheet.clientHeight ? 16 : tb.height + 24);
+  const s = Math.min(2, availW / (b.x1 - b.x0), availH / (b.y1 - b.y0));
+  view.s = s;
+  view.x = (W - (b.x1 - b.x0) * s) / 2 - b.x0 * s;
+  view.y = top + Math.max(0, (availH - (b.y1 - b.y0) * s) / 2) - b.y0 * s;
+  applyView();
+}
+const toWorld = (cx, cy) => ({ x: (cx - view.x) / view.s, y: (cy - view.y) / view.s });
+
+/* ================================================================ saving */
+const key = "wire-layout:" + hash(D.source);
+function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+function save() {
+  try { localStorage.setItem(key, JSON.stringify({ n: nodes.map(n => [n.x, n.y]), d: dummies.map(d => d.y) })); } catch (e) {}
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(key) || "null");
+    if (!s || s.n.length !== nodes.length || s.d.length !== dummies.length) return false;
+    nodes.forEach((n, i) => { n.x = s.n[i][0]; n.y = s.n[i][1]; });
+    dummies.forEach((d, i) => { d.y = s.d[i]; });
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ============================================================ interaction */
+const pointers = new Map();
+let drag = null, pinch = null, selected = null;
+function partOf(t) { while (t && t !== sheet) { if (t.classList && t.classList.contains("part")) return t; t = t.parentNode; } return null; }
+
+sheet.addEventListener("pointerdown", e => {
+  sheet.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  hideTip();
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), s: view.s, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, vx: view.x, vy: view.y };
+    if (drag && drag.press) release(drag.node);
+    drag = null; return;
+  }
+  const pe = partOf(e.target);
+  if (pe) {
+    const n = nodes[+pe.dataset.id], w = toWorld(e.clientX, e.clientY);
+    drag = { node: n, sx: e.clientX, sy: e.clientY, ox: w.x - n.x, oy: w.y - n.y, moved: false, target: e.target };
+    if (n.kind === "button") { drag.press = true; n.state = 1; simulate(); }
+  } else {
+    drag = { pan: true, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false, target: e.target };
+    sheet.classList.add("panning");
+  }
+});
+sheet.addEventListener("pointermove", e => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y), s = Math.max(.2, Math.min(4, pinch.s * d / pinch.d));
+    const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+    view.s = s;
+    view.x = cx - (pinch.cx - pinch.vx) * s / pinch.s;
+    view.y = cy - (pinch.cy - pinch.vy) * s / pinch.s;
+    applyView(); return;
+  }
+  if (!drag) { hover(e); return; }
+  const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+  if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+  drag.moved = true;
+  if (drag.pan) { view.x = drag.vx + dx; view.y = drag.vy + dy; applyView(); return; }
+  if (drag.press) { release(drag.node); drag.press = false; }
+  const w = toWorld(e.clientX, e.clientY), n = drag.node;
+  n.x = Math.round((w.x - drag.ox) / 10) * 10;
+  n.y = Math.round((w.y - drag.oy) / 10) * 10;
+  place(n);
+  drawWires();
+});
+function release(n) { n.state = 0; simulate(); }
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pinch) { if (pointers.size < 2) pinch = null; return; }
+  sheet.classList.remove("panning");
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.press) release(d.node);
+  if (d.moved) { if (!d.pan) save(); return; }
+  if (d.pan) {
+    if (d.target.dataset && d.target.dataset.net != null) showTip(+d.target.dataset.net, e.clientX, e.clientY);
+    else select(null);
+    return;
+  }
+  click(d.node, d.target);
+}
+sheet.addEventListener("pointerup", endPointer);
+sheet.addEventListener("pointercancel", endPointer);
+sheet.addEventListener("wheel", e => {
+  e.preventDefault();
+  const f = Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0015)), s = Math.max(.2, Math.min(4, view.s * f));
+  view.x = e.clientX - (e.clientX - view.x) * s / view.s;
+  view.y = e.clientY - (e.clientY - view.y) * s / view.s;
+  view.s = s; applyView();
+}, { passive: false });
+
+function click(n, target) {
+  if (n.kind === "input") {
+    const net = nets[n.out[0]];
+    if (target.dataset.type) {
+      const v = prompt(`Value for ${n.name} (${net.w} bits). Decimal, 0x.. or 0b..`, String(n.state));
+      if (v == null) return;
+      const t = v.trim().replace(/_/g, "");
+      const x = /^0x[0-9a-f]+$/i.test(t) ? parseInt(t.slice(2), 16) : /^0b[01]+$/i.test(t) ? parseInt(t.slice(2), 2) : /^\d+$/.test(t) ? parseInt(t, 10) : NaN;
+      if (isNaN(x)) return;
+      n.state = u32(x & mask(net.w));
+    } else if (target.dataset.bit != null) n.state = u32(n.state ^ (1 << +target.dataset.bit));
+    else { select(n); return; }
+    simulate(); select(n); return;
+  }
+  if (n.kind === "clock") { n.state ^= 1; simulate(); select(n); return; }
+  select(n);
+}
+function select(n) {
+  if (selected) selected.el.classList.remove("selected");
+  selected = n;
+  if (n) n.el.classList.add("selected");
+  markSource(n ? n.line : 0);
+}
+
+/* wire values on hover (mouse) or tap (touch) */
+const tip = $("tip");
+function showTip(id, x, y) {
+  const net = nets[id];
+  tip.innerHTML = "";
+  const b = document.createElement("b"); b.textContent = net.name || "wire";
+  tip.append(b, document.createTextNode(`  ${net.w} bit${net.w > 1 ? "s" : ""}  `));
+  const v = document.createElement("span"); v.className = "mono";
+  v.textContent = net.w > 1 ? fmtBits(net) + (known(net) ? "  (" + fmtVal(net) + ")" : "") : fmtVal(net);
+  tip.append(v);
+  tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  tip.style.left = Math.min(window.innerWidth - r.width - 8, x + 12) + "px";
+  tip.style.top = Math.max(8, y - r.height - 10) + "px";
+  wireEls.forEach((p, k) => p.classList.toggle("lit", k === id));
+}
+function hideTip() { tip.style.display = "none"; wireEls.forEach(p => p.classList.remove("lit")); }
+function hover(e) {
+  if (e.pointerType !== "mouse") return;
+  const t = e.target;
+  if (t.dataset && t.dataset.net != null) showTip(+t.dataset.net, e.clientX, e.clientY);
+  else hideTip();
+}
+
+/* ================================================================ clock */
+const clocks = nodes.filter(n => n.kind === "clock");
+let timer = null;
+function setRun(on) {
+  clearInterval(timer); timer = null;
+  $("run").setAttribute("aria-pressed", on);
+  $("runlabel").textContent = on ? "Pause" : "Run";
+  $("runicon").setAttribute("d", on ? "M3 2h3v10H3zM8 2h3v10H8z" : "M3 2l9 5-9 5z");
+  if (!on) return;
+  const hz = (clocks[0] && clocks[0].hz || 1) * +$("speed").value;
+  timer = setInterval(() => { clocks.forEach(c => { c.state ^= 1; }); simulate(); }, Math.max(15, 500 / hz));
+}
+function stepClock() {
+  if (timer) setRun(false);
+  clocks.forEach(c => { c.state = 1; }); simulate();
+  clocks.forEach(c => { c.state = 0; }); simulate();
+}
+if (clocks.length) {
+  $("clockgroup").hidden = false;
+  $("tb-clock").textContent = clocks.map(c => `${c.name} ${+c.hz} Hz`).join(", ");
+}
+$("run").onclick = () => setRun(!timer);
+$("step").onclick = stepClock;
+$("speed").onchange = () => { if (timer) setRun(true); };
+$("reset").onclick = () => {
+  setRun(false);
+  nodes.forEach(n => { if (SOURCES.has(n.kind) || SEQ.has(n.kind)) n.state = 0; n.lastClk = 0; });
+  nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
+  simulate();
+};
+
+/* =========================================================== truth table */
+const ttIn = nodes.filter(n => n.kind === "input" || n.kind === "button");
+const ttOut = nodes.filter(n => SINKS.has(n.kind));
+const ttBits = ttIn.reduce((s, n) => s + nets[n.out[0]].w, 0);
+let tableOpen = false, tableRows = [];
+function buildTable() {
+  const box = $("tablebody");
+  box.textContent = "";
+  const note = t => { const p = document.createElement("p"); p.className = "note"; p.textContent = t; box.append(p); };
+  if (seqNodes.length || clocks.length) return note("This circuit has memory (flip-flops or a clock), so its outputs depend on more than the inputs. Truth tables are for circuits without memory.");
+  if (!ttIn.length) return note("This circuit has no inputs.");
+  if (ttBits > 12) return note(`The inputs add up to ${ttBits} bits, which is ${2 ** ttBits} rows. Truth tables are shown up to 12 input bits.`);
+  const saved = ttIn.map(n => n.state);
+  const t = document.createElement("table"); t.className = "tt";
+  const hr = t.insertRow();
+  ttIn.forEach(n => { const th = document.createElement("th"); th.textContent = n.name; hr.append(th); });
+  ttOut.forEach((n, i) => { const th = document.createElement("th"); th.textContent = n.name; if (!i) th.className = "sep"; hr.append(th); });
+  tableRows = [];
+  for (let r = 0; r < 2 ** ttBits; r++) {
+    let shift = ttBits;
+    const vals = ttIn.map(n => { const w = nets[n.out[0]].w; shift -= w; return (r >>> shift) & mask(w); });
+    ttIn.forEach((n, i) => { n.state = vals[i]; });
+    settle();
+    const tr = t.insertRow(); tr.className = "row";
+    const cell = (net, v, sep) => {
+      const td = tr.insertCell();
+      td.textContent = net.w === 1 ? v : net.w <= 4 ? v.toString(2).padStart(net.w, "0") : "0x" + v.toString(16).toUpperCase();
+      if (net.w === 1 && v) td.className = "one";
+      if (sep) td.classList.add("sep");
+    };
+    ttIn.forEach((n, i) => cell(nets[n.out[0]], vals[i]));
+    ttOut.forEach((n, i) => { const net = nets[n.in[0]]; const td = tr.insertCell(); td.textContent = known(net) ? (net.w === 1 ? net.v : net.w <= 4 ? fmtBits(net) : "0x" + net.v.toString(16).toUpperCase()) : fmtBits(net); if (net.w === 1 && net.v && known(net)) td.className = "one"; if (!i) td.classList.add("sep"); });
+    tr.onclick = () => { ttIn.forEach((n, i) => { n.state = vals[i]; }); simulate(); };
+    tableRows.push({ tr, vals });
+  }
+  ttIn.forEach((n, i) => { n.state = saved[i]; });
+  settle();
+  box.append(t);
+}
+function markRow() {
+  tableRows.forEach(r => r.tr.classList.toggle("cur", r.vals.every((v, i) => v === ttIn[i].state)));
+}
+function openDrawer(id) {
+  ["tabledrawer", "srcdrawer"].forEach(d => $(d).classList.toggle("open", d === id));
+  tableOpen = id === "tabledrawer";
+  $("tablebtn").setAttribute("aria-pressed", tableOpen);
+  $("srcbtn").setAttribute("aria-pressed", id === "srcdrawer");
+  requestAnimationFrame(fit);
+}
+$("tablebtn").onclick = () => { if (tableOpen) return openDrawer(null); buildTable(); openDrawer("tabledrawer"); markRow(); };
+$("srcbtn").onclick = () => openDrawer($("srcdrawer").classList.contains("open") ? null : "srcdrawer");
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => openDrawer(null));
+
+/* ================================================================ source */
+function buildSource() {
+  const box = $("src");
+  D.source.replace(/\n$/, "").split("\n").forEach((line, i) => {
+    const row = document.createElement("div"); row.className = "ln"; row.dataset.line = i + 1;
+    const no = document.createElement("span"); no.className = "no"; no.textContent = i + 1;
+    const tx = document.createElement("span"); tx.className = "tx";
+    const c = line.search(/#|\/\//);
+    if (c >= 0) { tx.append(line.slice(0, c)); const s = document.createElement("span"); s.className = "cm"; s.textContent = line.slice(c); tx.append(s); }
+    else tx.textContent = line || " ";
+    row.append(no, tx);
+    row.onclick = () => {
+      const hit = nodes.filter(n => n.line === i + 1 && !n.dummy);
+      if (hit.length) select(hit.find(n => n.name) || hit[0]);
+      markSource(i + 1);
+    };
+    box.append(row);
+  });
+  $("srctitle").textContent = D.file;
+}
+function markSource(line) {
+  document.querySelectorAll("#src .ln").forEach(r => r.classList.toggle("sel", +r.dataset.line === line));
+  const r = document.querySelector(`#src .ln[data-line="${line}"]`);
+  if (r && $("srcdrawer").classList.contains("open")) r.scrollIntoView({ block: "nearest" });
+}
+
+/* ================================================================ start */
+document.title = D.title || D.file;
+$("tb-name").textContent = D.title || D.file.replace(/\.wire$/, "");
+$("tb-file").textContent = D.file;
+const comps = nodes.filter(n => !SOURCES.has(n.kind) && !SINKS.has(n.kind) && n.kind !== "split" && n.kind !== "merge" && n.kind !== "const").length;
+$("tb-parts").textContent = `${comps} part${comps === 1 ? "" : "s"}, ${ttIn.length + clocks.length} in, ${ttOut.length} out`;
+
+layout();
+if (load()) {}
+nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
+nodes.forEach(buildPart);
+drawWires();
+buildSource();
+simulate();
+requestAnimationFrame(fit);
+$("fit").onclick = fit;
+$("tidy").onclick = () => {
+  try { localStorage.removeItem(key); } catch (e) {}
+  layout();
+  nodes.forEach(place);
+  drawWires();
+  fit();
+};
+addEventListener("resize", applyView);
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === " " && clocks.length) { e.preventDefault(); stepClock(); }
+  if (e.key === "f") fit();
+  if (e.key === "Escape") { openDrawer(null); select(null); }
+});
+</script>
+</body>
+</html>

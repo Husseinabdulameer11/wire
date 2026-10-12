@@ -1,0 +1,45 @@
+# Wire - a language for describing digital circuits (wire.c).
+# Semicolons are optional; `#` and `//` start comments.
+
+program  <- stmt* ;
+stmt     <^ title / decl / assign / connect ;
+
+title    <- ~CIRCUIT string ~';'? ;
+
+# input a, b[4]      led ok, err (color = red)      clock clk (hz = 2)
+decl     <- dkind item (~',' item)* ~';'? ;
+item     <- ident range? opts? ;
+opts     <- ~'(' opt (~',' opt)* ~')' ;
+opt      <- ident ~'=' (number / ident / string) ;
+
+assign   <- target ~'=' !'=' expr ~';'? ;
+connect  <- expr ~'->' target (~',' target)* ~';'? ;
+target   <- ident range? ;
+range    <- ~'[' number (~':' number)? ~']' ;
+
+# Operators, loosest first: |  ^  &  ~
+expr     <^ orx ;
+orx      <^ xorx (~'|' xorx)* ;
+xorx     <^ andx (~'^' andx)* ;
+andx     <^ unary (~'&' unary)* ;
+unary    <^ notx / post ;
+notx     <- ~('~' / '!') unary ;
+post     <^ primary (port / range)* ;
+port     <- ~'.' ident ;
+primary  <^ call / concat / number / ident / ~'(' expr ~')' ;
+call     <- ident ~'(' (arg (~',' arg)*)? ~')' ;
+arg      <^ named / expr ;
+named    <- ident ~'=' !'=' expr ;
+concat   <- ~'{' expr (~',' expr)* ~'}' ;
+
+# ---- tokens ------------------------------------------------------------
+number   <= '0b' [01_]+ / '0x' [0-9a-fA-F_]+ / [0-9]+ ;
+string   <= '"' [^"\n]* '"' ;
+ident    <= !keyword [A-Za-z_] [A-Za-z0-9_]* ;
+dkind    <= ('input' / 'output' / 'wire' / 'led' / 'seg7' / 'hex'
+            / 'button' / 'clock') ![A-Za-z0-9_] ;
+CIRCUIT  <= 'circuit' ![A-Za-z0-9_] ;
+keyword  <= ('input' / 'output' / 'wire' / 'led' / 'seg7' / 'hex'
+            / 'button' / 'clock' / 'circuit') ![A-Za-z0-9_] ;
+
+skip     <= ([ \t\r\n] / '#' [^\n]* / '//' [^\n]*)* ;

@@ -1,0 +1,4 @@
+# expect: sel of mux must be 1 bit, but s is 2 bits
+input s[2], a, b
+output y
+y = mux(a, b, sel = s)
