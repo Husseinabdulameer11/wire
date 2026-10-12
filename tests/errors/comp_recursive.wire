@@ -1,0 +1,5 @@
+# expect: loop uses itself
+component loop(a) -> (y) { y = loop(a) }
+input a
+output y
+y = a

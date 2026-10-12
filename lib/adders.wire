@@ -1,0 +1,34 @@
+# Adders, built up from gates.
+#   half_adder -> full_adder -> add4 -> add8
+
+# adds two bits: s is the sum bit, c is the carry
+component half_adder(a, b) -> (s, c) {
+    s = a ^ b
+    c = a & b
+}
+
+# adds two bits and a carry in, using two half adders
+component full_adder(a, b, cin) -> (s, cout) {
+    h1   = half_adder(a, b)
+    h2   = half_adder(h1.s, cin)
+    s    = h2.s
+    cout = h1.c | h2.c
+}
+
+# 4-bit ripple-carry adder: the carry ripples from bit 0 to bit 3
+component add4(x[4], y[4], cin) -> (sum[4], cout) {
+    f0 = full_adder(x[0], y[0], cin)
+    f1 = full_adder(x[1], y[1], f0.cout)
+    f2 = full_adder(x[2], y[2], f1.cout)
+    f3 = full_adder(x[3], y[3], f2.cout)
+    sum  = {f3.s, f2.s, f1.s, f0.s}
+    cout = f3.cout
+}
+
+# 8-bit adder from two 4-bit ones
+component add8(x[8], y[8], cin) -> (sum[8], cout) {
+    lo   = add4(x[3:0], y[3:0], cin)
+    hi   = add4(x[7:4], y[7:4], lo.cout)
+    sum  = {hi.sum, lo.sum}
+    cout = hi.cout
+}

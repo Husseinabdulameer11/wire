@@ -1,0 +1,5 @@
+# expect: input x of add4 must be 4 bits, but a is 8 bits
+import "adders.wire"
+input a[8], b[4]
+output y[4]
+y = add4(a, b, 0)

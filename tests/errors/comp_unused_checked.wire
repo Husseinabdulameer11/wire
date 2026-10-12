@@ -1,0 +1,5 @@
+# expect: output y of noout is never given a value
+component noout(a) -> (y) { z = a }
+input a
+output y
+y = a

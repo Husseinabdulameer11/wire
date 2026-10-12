@@ -1,0 +1,8 @@
+# expect: a is an input of c; its value comes from where c is used
+component c(a) -> y {
+  a = 1
+  y = a
+}
+input a
+output y
+y = c(a)

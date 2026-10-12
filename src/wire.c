@@ -4,13 +4,17 @@
  *   wire -o page.html circuit.wire
  *   wire --json circuit.wire       prints the netlist
  *
- * The program is read in three passes:
+ * Files are loaded first, following `import`s, and every `component` is
+ * collected. Then each scope (the circuit, and every use of a component)
+ * is read in three passes:
  *   1. collect   every name (declarations and assignment targets) gets a net
- *   2. widths    bit widths are inferred, so only inputs need `[n]`
- *   3. build     expressions become components (nodes) and nets; slices of
- *                the same bus are grouped into one splitter
- * The netlist is then written as JSON into a copy of the viewer page
- * (wire_view.html), which lays the circuit out, draws and simulates it. */
+ *   2. widths    bit widths are inferred, so only inputs and ports need `[n]`
+ *   3. build     expressions become parts (nodes) and nets
+ * A component is expanded where it is used, as an instance: its ports
+ * become pin nodes at the boundary, so the netlist stays flat for the
+ * simulator while the page can still show each instance as a chip and open
+ * it. Slices of one bus are grouped into a splitter. The netlist is written
+ * as JSON into a copy of the viewer page (wire_view.html). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,9 +29,23 @@
 
 #define MAXW   32   /* widest bus */
 #define MAXIO  40   /* most inputs or outputs on one component */
+#define NAMEW  32   /* longest port name */
 
-static const char *src_name, *src_text;
-static size_t src_len;
+/* ---- files ------------------------------------------------------------- */
+
+#define MAXFILES 64
+typedef struct { const char *name; const char *text; size_t len; } File;
+static File files[MAXFILES];
+static int nfiles;
+static const char *src_name;   /* the file named on the command line */
+
+static int file_of(const gram_node *at)
+{
+    int i;
+    for (i = 0; at && i < nfiles; i++)
+        if (at->text >= files[i].text && at->text <= files[i].text + files[i].len) return i;
+    return 0;
+}
 
 /* ---- errors ------------------------------------------------------------ */
 
@@ -35,8 +53,9 @@ static void fail(const gram_node *at, const char *f, ...)
 {
     va_list ap;
     size_t line = 0, col = 0;
-    if (at) gram_locate(src_text, src_len, (size_t)(at->text - src_text), &line, &col);
-    fprintf(stderr, "%s:", src_name);
+    File *fl = &files[file_of(at)];
+    if (at) gram_locate(fl->text, fl->len, (size_t)(at->text - fl->text), &line, &col);
+    fprintf(stderr, "%s:", fl->name);
     if (at) fprintf(stderr, "%lu:%lu:", (unsigned long)line, (unsigned long)col);
     fputs(" error: ", stderr);
     va_start(ap, f);
@@ -49,8 +68,10 @@ static void fail(const gram_node *at, const char *f, ...)
 static int line_of(const gram_node *at)
 {
     size_t line = 0;
+    File *fl;
     if (!at) return 0;
-    gram_locate(src_text, src_len, (size_t)(at->text - src_text), &line, NULL);
+    fl = &files[file_of(at)];
+    gram_locate(fl->text, fl->len, (size_t)(at->text - fl->text), &line, NULL);
     return (int)line;
 }
 
@@ -102,7 +123,10 @@ enum {
     K_DFF, K_TFF, K_JKFF, K_COUNTER,
     /* not callable: */
     K_INPUT, K_BUTTON, K_CLOCK, K_OUTPUT, K_LED, K_SEG7, K_HEX,
-    K_CONST, K_SPLIT, K_MERGE, K_COUNT
+    K_CONST, K_SPLIT, K_MERGE,
+    K_PIN_IN, K_PIN_OUT,          /* the edge of an instance */
+    K_USER,                       /* a call of a component written in Wire */
+    K_COUNT
 };
 
 static const char *kind_names[K_COUNT] = {
@@ -110,7 +134,7 @@ static const char *kind_names[K_COUNT] = {
     "mux", "demux", "decoder", "encoder", "add", "compare",
     "dff", "tff", "jkff", "counter",
     "input", "button", "clock", "output", "led", "seg7", "hex",
-    "const", "split", "merge"
+    "const", "split", "merge", "pin_in", "pin_out", "component"
 };
 
 typedef struct {
@@ -119,8 +143,9 @@ typedef struct {
     int line;
     int nin, nout;
     int in[MAXIO], out[MAXIO];
-    char inname[MAXIO][8], outname[MAXIO][8];
+    char inname[MAXIO][NAMEW], outname[MAXIO][NAMEW];
     int range[MAXIO][2];          /* split: per output, merge: per input */
+    int inst, file;               /* which instance it belongs to; its source file */
     unsigned long value;          /* const */
     int bits;                     /* counter */
     const char *opt; int optlen;  /* led colour */
@@ -129,6 +154,11 @@ typedef struct {
 } Node;
 
 static Node *nodes; static int nnodes, capnodes;
+static int cur_inst;              /* instance being built, 0 = the circuit */
+
+/* instances: where each use of a component sits (0 is the circuit itself) */
+typedef struct { int comp, parent; const char *name; int nlen; int line, file; } Inst;
+static Inst *insts; static int ninsts, capinsts;
 
 static Node *new_node(int kind, const gram_node *at)
 {
@@ -138,6 +168,8 @@ static Node *new_node(int kind, const gram_node *at)
     memset(n, 0, sizeof *n);
     n->kind = kind;
     n->line = line_of(at);
+    n->file = file_of(at);
+    n->inst = cur_inst;
     return n;
 }
 
@@ -155,9 +187,10 @@ static void node_out(Node *n, const char *name, int net)
 
 /* ---- names ------------------------------------------------------------- */
 
-enum { D_NONE, D_INPUT, D_OUTPUT, D_WIRE, D_LED, D_SEG7, D_HEX, D_BUTTON, D_CLOCK };
+enum { D_NONE, D_INPUT, D_OUTPUT, D_WIRE, D_LED, D_SEG7, D_HEX, D_BUTTON, D_CLOCK,
+       D_PIN_IN, D_PIN_OUT };   /* ports, inside a component */
 static const char *dkind_names[] = {
-    "", "input", "output", "wire", "led", "seg7", "hex", "button", "clock"
+    "", "input", "output", "wire", "led", "seg7", "hex", "button", "clock", "input", "output"
 };
 
 typedef struct Part { int hi, lo; gram_node *expr, *at; int net; } Part;
@@ -173,7 +206,17 @@ typedef struct {
     int net, w, state;        /* state: 0 new, 1 inferring, 2 done */
 } Sym;
 
-static Sym *syms; static int nsyms, capsyms;
+/* `c.cout`, `dm[2]`: output ports of a named component, created on first use */
+typedef struct { void *sym; char port[NAMEW]; int net; gram_node *at; } PortRef;
+
+/* the names of one scope: the circuit, or one instance of a component */
+typedef struct {
+    Sym *syms; int nsyms, capsyms;
+    PortRef *prefs; int nprefs, capprefs;
+    int comp;                     /* -1 for the circuit */
+} Scope;
+static Scope top_scope = { 0, 0, 0, 0, 0, 0, -1 };
+static Scope *sc = &top_scope;
 
 static int same(const gram_node *id, const char *s, int len)
 {
@@ -183,8 +226,8 @@ static int same(const gram_node *id, const char *s, int len)
 static Sym *lookup(const gram_node *id)
 {
     int i;
-    for (i = 0; i < nsyms; i++)
-        if (same(id, syms[i].name, syms[i].len)) return &syms[i];
+    for (i = 0; i < sc->nsyms; i++)
+        if (same(id, sc->syms[i].name, sc->syms[i].len)) return &sc->syms[i];
     return NULL;
 }
 
@@ -192,8 +235,8 @@ static Sym *intern(gram_node *id)
 {
     Sym *s = lookup(id);
     if (s) return s;
-    syms = (Sym *)grow(syms, &capsyms, nsyms + 1, sizeof *syms);
-    s = &syms[nsyms++];
+    sc->syms = (Sym *)grow(sc->syms, &sc->capsyms, sc->nsyms + 1, sizeof *sc->syms);
+    s = &sc->syms[sc->nsyms++];
     memset(s, 0, sizeof *s);
     s->name = id->text;
     s->len = (int)id->len;
@@ -205,9 +248,6 @@ static Sym *intern(gram_node *id)
 #define NAME(s) (s)->len, (s)->name
 #define TEXT(n) (int)(n)->len, (n)->text
 
-/* `c.cout`, `dm[2]`: output ports of a named component, created on first use */
-typedef struct { Sym *sym; char port[8]; int net; gram_node *at; } PortRef;
-static PortRef *prefs; static int nprefs, capprefs;
 
 static gram_node *sym_call(Sym *s);
 static int is_default_port(gram_node *call, const char *port);
@@ -216,14 +256,14 @@ static int port_net(Sym *s, const char *port, gram_node *at)
 {
     int i;
     if (sym_call(s) && is_default_port(sym_call(s), port)) return s->net;
-    for (i = 0; i < nprefs; i++)
-        if (prefs[i].sym == s && !strcmp(prefs[i].port, port)) return prefs[i].net;
-    prefs = (PortRef *)grow(prefs, &capprefs, nprefs + 1, sizeof *prefs);
-    prefs[nprefs].sym = s;
-    strcpy(prefs[nprefs].port, port);
-    prefs[nprefs].net = new_net(0);
-    prefs[nprefs].at = at;
-    return prefs[nprefs++].net;
+    for (i = 0; i < sc->nprefs; i++)
+        if (sc->prefs[i].sym == (void *)s && !strcmp(sc->prefs[i].port, port)) return sc->prefs[i].net;
+    sc->prefs = (PortRef *)grow(sc->prefs, &sc->capprefs, sc->nprefs + 1, sizeof *sc->prefs);
+    sc->prefs[sc->nprefs].sym = s;
+    strcpy(sc->prefs[sc->nprefs].port, port);
+    sc->prefs[sc->nprefs].net = new_net(0);
+    sc->prefs[sc->nprefs].at = at;
+    return sc->prefs[sc->nprefs++].net;
 }
 
 /* ---- numbers ----------------------------------------------------------- */
@@ -277,14 +317,39 @@ typedef struct {
     gram_node *sel, *en, *rst, *cin;
     int bits;
     /* computed: */
-    int nin; gram_node *in[MAXIO]; char inname[MAXIO][8]; int inw[MAXIO];
-    int nout; char outname[MAXIO][8]; int outw[MAXIO];
+    int nin; gram_node *in[MAXIO]; char inname[MAXIO][NAMEW]; int inw[MAXIO];
+    int nout; char outname[MAXIO][NAMEW]; int outw[MAXIO];
+    int comp;              /* K_USER: which component */
+    const char *kname;     /* name for messages */
     int defport;   /* output used when the component is used as a value, -1 none */
     int indexed;   /* outputs o0..oN: `x[i]` picks one */
 } Call;
 
 static int ew(gram_node *e);
 static int sym_width(Sym *s);
+
+/* ---- components written in Wire ---------------------------------------- */
+
+typedef struct {
+    char *name;
+    gram_node *node, *id, *body;
+    int nin, nout;
+    gram_node *inid[MAXIO], *outid[MAXIO];
+    int inw[MAXIO], outw[MAXIO];
+    char inname[MAXIO][NAMEW], outname[MAXIO][NAMEW];
+    int used;
+} Comp;
+#define MAXCOMPS 512
+static Comp comps[MAXCOMPS];
+static int ncomps;
+
+static int comp_find(const gram_node *id)
+{
+    int i;
+    for (i = 0; i < ncomps; i++)
+        if ((int)id->len == (int)strlen(comps[i].name) && !memcmp(id->text, comps[i].name, id->len)) return i;
+    return -1;
+}
 
 static int kind_of(const gram_node *id)
 {
@@ -336,7 +401,7 @@ static int log2_exact(int n)
 static void need_args(Call *c, int lo, int hi, const char *how)
 {
     if (c->npos < lo || c->npos > hi)
-        fail(c->call, "%s takes %s, not %d", kind_names[c->kind], how, c->npos);
+        fail(c->call, "%s takes %s, not %d", c->kname, how, c->npos);
 }
 
 /* the width an input will have; 0 if it adapts (a decimal constant) */
@@ -349,7 +414,43 @@ static void want_width(Call *c, gram_node *e, int w, const char *what)
     aw = argw(e);
     if (aw && aw != w)
         fail(e, "%s of %s must be %d bit%s, but %.*s is %d bit%s",
-             what, kind_names[c->kind], w, plural(w), TEXT(e), aw, plural(aw));
+             what, c->kname, w, plural(w), TEXT(e), aw, plural(aw));
+}
+
+/* a component written in Wire: its ports fix every width */
+static void analyze_user(Call *c, int check)
+{
+    Comp *cp = &comps[c->comp];
+    gram_node *a, *by[MAXIO];
+    int i, npos = 0, named = 0;
+    char what[NAMEW + 16];
+    c->kind = K_USER;
+    c->kname = cp->name;
+    memset(by, 0, sizeof by);
+    for (a = c->id->next; a; a = a->next) {
+        if (a->rule == WIRE_R_named) {
+            gram_node *k = a->child;
+            for (i = 0; i < cp->nin; i++)
+                if (same(k, cp->inname[i], (int)strlen(cp->inname[i]))) break;
+            if (i == cp->nin) fail(k, "%s has no input called %.*s", cp->name, TEXT(k));
+            if (by[i]) fail(k, "input %s of %s is given twice", cp->inname[i], cp->name);
+            by[i] = k->next;
+            named = 1;
+        } else {
+            if (named) fail(a, "put inputs by position before named ones");
+            if (npos >= cp->nin)
+                fail(a, "%s has %d input%s, but more are given here", cp->name, cp->nin, plural(cp->nin));
+            by[npos++] = a;
+        }
+    }
+    for (i = 0; i < cp->nin; i++) {
+        if (!by[i]) fail(c->call, "input %s of %s is not connected", cp->inname[i], cp->name);
+        sprintf(what, "input %s", cp->inname[i]);
+        if (check) want_width(c, by[i], cp->inw[i], what);
+        add_in(c, by[i], cp->inname[i], cp->inw[i]);
+    }
+    for (i = 0; i < cp->nout; i++) add_out(c, cp->outname[i], cp->outw[i]);
+    c->defport = cp->nout ? 0 : -1;
 }
 
 /* look at a call: its arguments, and the widths of its inputs and outputs.
@@ -364,10 +465,16 @@ static void analyze(gram_node *call, Call *c, int check)
     c->id = call->child;
     c->kind = kind_of(c->id);
     c->defport = 0;
+    if (c->kind < 0 && (c->comp = comp_find(c->id)) >= 0) {
+        analyze_user(c, check);
+        return;
+    }
     if (c->kind < 0) {
         say_kinds(buf);
-        fail(c->id, "there is no component called %.*s (there are: %s)", TEXT(c->id), buf);
+        fail(c->id, "there is no part or component called %.*s. Built in: %s.%s", TEXT(c->id), buf,
+             ncomps ? "" : " Components you write (or import) can be used too.");
     }
+    c->kname = kind_names[c->kind];
     for (a = c->id->next; a; a = a->next) {
         if (a->rule == WIRE_R_named) {
             gram_node *k = a->child, *v = a->child->next;
@@ -379,7 +486,7 @@ static void analyze(gram_node *call, Call *c, int check)
                 if (v->rule != WIRE_R_number) fail(v, "bits must be a number");
                 c->bits = number(v);
                 if (c->bits < 1 || c->bits > MAXW) fail(v, "a counter has 1 to %d bits", MAXW);
-            } else fail(k, "%s has no setting called %.*s", kind_names[c->kind], TEXT(k));
+            } else fail(k, "%s has no setting called %.*s", c->kname, TEXT(k));
         } else {
             if (c->npos >= MAXIO - 2) fail(a, "too many inputs");
             c->pos[c->npos++] = a;
@@ -512,7 +619,7 @@ static void analyze(gram_node *call, Call *c, int check)
     if (check)
         for (i = 0; i < c->nout; i++)
             if (c->outw[i] > MAXW) fail(c->call, "%s would be %d bits wide; the limit is %d",
-                                        kind_names[c->kind], c->outw[i], MAXW);
+                                        c->kname, c->outw[i], MAXW);
 }
 
 static void port_list(Call *c, char *buf)
@@ -610,7 +717,7 @@ static int ew(gram_node *e)
             Call cl;
             analyze(call, &cl, 0);
             if (c->rule == WIRE_R_port) {
-                char p[8];
+                char p[NAMEW];
                 snprintf(p, sizeof p, "%.*s", TEXT(c->child));
                 w = port_width(s, call, p);
                 c = c->next;
@@ -631,7 +738,7 @@ static int ew(gram_node *e)
 
 /* ---- building ---------------------------------------------------------- */
 
-typedef struct { int src, hi, lo, out; const gram_node *at; } Tap;
+typedef struct { int src, hi, lo, out, inst; const gram_node *at; } Tap;
 static Tap *taps; static int ntaps, captaps;
 
 static void join(int a, int b)
@@ -691,12 +798,15 @@ static int build_const(gram_node *e, int dst, int want)
 
 /* build a call; the output in `dst` is the default port, other ports of a
  * named component (`s`) use the nets made for `s.port` references */
+static Node *instantiate(Call *c, int dst, Sym *s);
+
 static Node *build_call(gram_node *call, int dst, Sym *s)
 {
     Call c;
     Node *n;
     int i, k;
     analyze(call, &c, 1);
+    if (c.kind == K_USER) return instantiate(&c, dst, s);
     k = nnodes;
     new_node(c.kind, call);
     for (i = 0; i < c.nin; i++) {
@@ -734,6 +844,7 @@ static int tap(int src, int hi, int lo, int dst, const gram_node *at)
     taps[ntaps].lo = lo;
     taps[ntaps].out = out_net(dst, hi - lo + 1, at);
     taps[ntaps].at = at;
+    taps[ntaps].inst = cur_inst;
     return taps[ntaps++].out;
 }
 
@@ -749,7 +860,7 @@ static int build_post(gram_node *e, int dst)
     } else if (base->rule == WIRE_R_call) call = base;
 
     if (c->rule == WIRE_R_port) {
-        char p[8], buf[200];
+        char p[NAMEW], buf[400];
         Call cl;
         if (!call) fail(c, "%.*s is not a component, so it has no .%.*s",
                         TEXT(base), TEXT(c->child));
@@ -758,7 +869,7 @@ static int build_post(gram_node *e, int dst)
         if (c->child->len >= sizeof p || find_port(&cl, p) < 0) {
             port_list(&cl, buf);
             fail(c->child, "%s has no output called %.*s; it has %s",
-                 kind_names[cl.kind], TEXT(c->child), buf);
+                 cl.kname, TEXT(c->child), buf);
         }
         if (s) net = port_net(s, p, c);
         else {
@@ -770,10 +881,10 @@ static int build_post(gram_node *e, int dst)
         Call cl;
         analyze(call, &cl, 0);
         if (cl.indexed) {   /* dm[2] is output o2 of a demux */
-            char p[8];
+            char p[NAMEW];
             int i = number(c->child);
-            if (c->child->next) fail(c, "pick one output of %s: [i], not a range", kind_names[cl.kind]);
-            if (i >= cl.nout) fail(c, "%s has outputs 0 to %d", kind_names[cl.kind], cl.nout - 1);
+            if (c->child->next) fail(c, "pick one output of %s: [i], not a range", cl.kname);
+            if (i >= cl.nout) fail(c, "%s has outputs 0 to %d", cl.kname, cl.nout - 1);
             sprintf(p, "o%d", i);
             if (s) net = port_net(s, p, c);
             else net = build_call(call, -1, NULL)->out[i];
@@ -808,12 +919,12 @@ static int build(gram_node *e, int dst, int want)
         call = sym_call(s);
         if (call) {
             Call cl;
-            char buf[200];
+            char buf[400];
             analyze(call, &cl, 0);
             if (cl.defport < 0) {
                 port_list(&cl, buf);
                 fail(e, "%.*s is a %s with several outputs; pick one: %s",
-                     TEXT(e), kind_names[cl.kind], buf);
+                     TEXT(e), cl.kname, buf);
             }
         }
         if (dst >= 0) { join(dst, s->net); return dst; }
@@ -851,12 +962,12 @@ static int build(gram_node *e, int dst, int want)
         return nodes[k].out[0];
     case WIRE_R_call: {
         Call cl;
-        char buf[200];
+        char buf[400];
         analyze(e, &cl, 0);
         if (cl.defport < 0) {
             port_list(&cl, buf);
             fail(e, "%s has several outputs; pick one with .%s (outputs: %s)",
-                 kind_names[cl.kind], cl.outname[0], buf);
+                 cl.kname, cl.outname[0], buf);
         }
         n = build_call(e, dst, NULL);
         return n->out[cl.defport];
@@ -941,6 +1052,9 @@ static void assign_to(gram_node *target, gram_node *expr, gram_node *at, int pre
     if (s->dkind == D_INPUT || s->dkind == D_BUTTON || s->dkind == D_CLOCK)
         fail(id, "%.*s is an %s; it gets its value from the page, not from the circuit",
              TEXT(id), dkind_names[s->dkind]);
+    if (s->dkind == D_PIN_IN)
+        fail(id, "%.*s is an input of %s; its value comes from where %s is used",
+             TEXT(id), comps[sc->comp].name, comps[sc->comp].name);
     if (!r) {
         if (s->expr)
             fail(id, "%.*s is already given a value on line %d", TEXT(id), line_of(s->at));
@@ -999,7 +1113,30 @@ static void write_json(void)
     fputs(",\"file\":", jf);
     jcstr(src_name);
     fputs(",\"source\":", jf);
-    jstr(src_text, (int)src_len);
+    jstr(files[0].text, (int)files[0].len);
+    fputs(",\"files\":[", jf);
+    for (i = 0; i < nfiles; i++) {
+        if (i) fputc(',', jf);
+        fputs("{\"name\":", jf);
+        jcstr(files[i].name);
+        fputs(",\"source\":", jf);
+        jstr(files[i].text, (int)files[i].len);
+        fputc('}', jf);
+    }
+    fputs("],\"insts\":[", jf);
+    for (i = 0; i < ninsts; i++) {
+        Inst *in = &insts[i];
+        if (i) fputs(",\n", jf);
+        fputs("{\"comp\":", jf);
+        jcstr(in->comp >= 0 ? comps[in->comp].name : "");
+        fputs(",\"name\":", jf);
+        if (in->name) jstr(in->name, in->nlen); else jcstr("");
+        fprintf(jf, ",\"parent\":%d,\"line\":%d,\"file\":%d", in->parent, in->line, in->file);
+        if (in->comp >= 0)
+            fprintf(jf, ",\"defFile\":%d,\"defLine\":%d", file_of(comps[in->comp].node), line_of(comps[in->comp].node));
+        fputc('}', jf);
+    }
+    fputc(']', jf);
     fputs(",\"nets\":[", jf);
     for (i = 0; i < nnets; i++) {
         if (canon[i] < 0) continue;
@@ -1017,7 +1154,7 @@ static void write_json(void)
         jcstr(kind_names[n->kind]);
         fputs(",\"name\":", jf);
         if (n->name) jstr(n->name, n->nlen); else jcstr("");
-        fprintf(jf, ",\"line\":%d,\"in\":[", n->line);
+        fprintf(jf, ",\"line\":%d,\"file\":%d,\"inst\":%d,\"in\":[", n->line, n->file, n->inst);
         for (j = 0; j < n->nin; j++) fprintf(jf, "%s%d", j ? "," : "", canon[find(n->in[j])]);
         fputs("],\"inNames\":[", jf);
         for (j = 0; j < n->nin; j++) { if (j) fputc(',', jf); jcstr(n->inname[j]); }
@@ -1105,36 +1242,139 @@ static void opt_color(Node *n, gram_node *opts)
     }
 }
 
-static void build_all(gram_node *prog)
+/* ---- instances --------------------------------------------------------- */
+
+static int expanding[64], depth;
+static int n_in, n_out;
+
+static void compile_scope(gram_node *first, int top);
+
+/* Expand component `ci` once, its inputs coming from the nets `outer`.
+ * Returns the new instance; inner_out gets the nets that hold its outputs
+ * inside it. Pin nodes mark the boundary, so the page can draw it as a chip. */
+static int expand(int ci, const int *outer, int *inner_out, const gram_node *at, Sym *named)
+{
+    Comp *cp = &comps[ci];
+    Scope scope, *saved = sc;
+    int id, saved_inst = cur_inst, i;
+    for (i = 0; i < depth; i++)
+        if (expanding[i] == ci) fail(at, "%s uses itself, so it would never end", cp->name);
+    if (depth >= 64) fail(at, "components are nested more than 64 deep");
+    insts = (Inst *)grow(insts, &capinsts, ninsts + 1, sizeof *insts);
+    id = ninsts++;
+    insts[id].comp = ci;
+    insts[id].parent = cur_inst;
+    insts[id].name = named ? named->name : NULL;
+    insts[id].nlen = named ? named->len : 0;
+    insts[id].line = line_of(at);
+    insts[id].file = file_of(at);
+    expanding[depth++] = ci;
+    cur_inst = id;
+    memset(&scope, 0, sizeof scope);
+    scope.comp = ci;
+    sc = &scope;
+    for (i = 0; i < cp->nin + cp->nout; i++) {
+        int isin = i < cp->nin, k = isin ? i : i - cp->nin;
+        gram_node *pid = isin ? cp->inid[k] : cp->outid[k];
+        Sym *ps = intern(pid);
+        ps->dkind = isin ? D_PIN_IN : D_PIN_OUT;
+        ps->dw = isin ? cp->inw[k] : cp->outw[k];
+        ps->decl = pid;
+        ps->net = new_net(ps->dw);
+        nets[ps->net].name = ps->name;
+        nets[ps->net].nlen = ps->len;
+        nets[ps->net].at = pid;
+        if (isin) {
+            Node *n = new_node(K_PIN_IN, pid);
+            name_node(n, ps);
+            node_in(n, "", outer[k]);
+            node_out(n, "", ps->net);
+        }
+    }
+    compile_scope(cp->body->child, 0);
+    for (i = 0; i < cp->nout; i++) {
+        Sym *ps = lookup(cp->outid[i]);
+        if (!ps->expr && !ps->nparts)
+            fail(cp->outid[i], "output %s of %s is never given a value", cp->outname[i], cp->name);
+        inner_out[i] = ps->net;
+    }
+    sc = saved;
+    depth--;
+    cur_inst = saved_inst;
+    return id;
+}
+
+/* a call of a component: build its inputs here, expand it, and connect
+ * its outputs through pins to this scope */
+static Node uresult;
+static Node *instantiate(Call *c, int dst, Sym *s)
+{
+    Comp *cp = &comps[c->comp];
+    int outer[MAXIO], inner[MAXIO], i, id, saved;
+    for (i = 0; i < c->nin; i++) {
+        outer[i] = build(c->in[i], -1, c->inw[i]);
+        set_width(outer[i], c->inw[i], c->in[i]);
+    }
+    id = expand(c->comp, outer, inner, c->call, s);
+    cp->used = 1;
+    memset(&uresult, 0, sizeof uresult);
+    saved = cur_inst;
+    cur_inst = id;
+    for (i = 0; i < c->nout; i++) {
+        int net;
+        Node *n;
+        if (i == c->defport && dst >= 0) net = dst;
+        else if (s) net = port_net(s, c->outname[i], c->call);
+        else net = new_net(0);
+        net = out_net(net, c->outw[i], c->call);
+        n = new_node(K_PIN_OUT, cp->outid[i]);
+        n->name = cp->outname[i];
+        n->nlen = (int)strlen(cp->outname[i]);
+        node_in(n, "", inner[i]);
+        node_out(n, "", net);
+        uresult.out[uresult.nout++] = net;
+    }
+    cur_inst = saved;
+    return &uresult;
+}
+
+/* one scope: the circuit (top) or the body of a component */
+static void compile_scope(gram_node *first, int top)
 {
     gram_node *st;
-    int i, j, in = 0, out = 0;
+    int i, j;
 
     /* 1. names */
-    for (st = prog->child; st; st = st->next) {
+    for (st = first; st; st = st->next) {
         if (st->rule == WIRE_R_title) {
             if (title) fail(st, "the circuit already has a name");
             title = st->child->text; titlelen = (int)st->child->len;
-        } else if (st->rule == WIRE_R_decl) declare(st);
+        } else if (st->rule == WIRE_R_decl) {
+            if (!top && !same(st->child, "wire", 4))
+                fail(st, "inside a component, declare only wires; its inputs and outputs "
+                         "go in the header: component %s(a, b) -> (y) { ... }", comps[sc->comp].name);
+            declare(st);
+        }
     }
-    for (st = prog->child; st; st = st->next) {
+    for (st = first; st; st = st->next) {
         if (st->rule == WIRE_R_assign) assign_to(st->child, st->child->next, st, -1);
         else if (st->rule == WIRE_R_connect) {
             gram_node *t;
             for (t = st->child->next; t; t = t->next) assign_to(t, st->child, st, -2); /* built later */
         }
     }
-    for (i = 0; i < nsyms; i++) {
-        syms[i].net = new_net(0);
-        nets[syms[i].net].name = syms[i].name;
-        nets[syms[i].net].nlen = syms[i].len;
-        nets[syms[i].net].at = syms[i].decl;
+    for (i = 0; i < sc->nsyms; i++) {
+        if (sc->syms[i].net >= 0) continue;        /* ports already have one */
+        sc->syms[i].net = new_net(0);
+        nets[sc->syms[i].net].name = sc->syms[i].name;
+        nets[sc->syms[i].net].nlen = sc->syms[i].len;
+        nets[sc->syms[i].net].at = sc->syms[i].decl;
     }
 
     /* 2. widths */
-    for (i = 0; i < nsyms; i++) sym_width(&syms[i]);
-    for (i = 0; i < nsyms; i++) {
-        Sym *s = &syms[i];
+    for (i = 0; i < sc->nsyms; i++) sym_width(&sc->syms[i]);
+    for (i = 0; i < sc->nsyms; i++) {
+        Sym *s = &sc->syms[i];
         if (s->dkind == D_SEG7 && s->w != 7 && s->w != 8)
             fail(s->decl, "a seg7 needs 7 bits (segments a..g) or 8 (with the dot), not %d", s->w);
         if (s->dkind == D_HEX && s->w > 4) fail(s->decl, "a hex display shows 4 bits, not %d", s->w);
@@ -1143,8 +1383,8 @@ static void build_all(gram_node *prog)
     }
 
     /* sources: the page drives these */
-    for (i = 0; i < nsyms; i++) {
-        Sym *s = &syms[i];
+    for (i = 0; i < sc->nsyms; i++) {
+        Sym *s = &sc->syms[i];
         Node *n;
         int kind = s->dkind == D_INPUT ? K_INPUT : s->dkind == D_BUTTON ? K_BUTTON
                  : s->dkind == D_CLOCK ? K_CLOCK : -1;
@@ -1153,18 +1393,28 @@ static void build_all(gram_node *prog)
         name_node(n, s);
         if (kind == K_CLOCK) n->hz = opt_hz(s->opts);
         node_out(n, "out", s->net);
-        in++;
+        n_in++;
     }
 
     /* 3. build, in the order written */
-    for (st = prog->child; st; st = st->next) {
+    for (st = first; st; st = st->next) {
         if (st->rule == WIRE_R_assign) {
             gram_node *t = st->child, *e = t->next;
             Sym *s = lookup(t->child);
             if (!t->child->next) {
                 int ew_ = is_const(e) ? 0 : ew(e);
-                if (s->w && ew_ && s->w != ew_ && !sym_call(s))
+                if (s->w && ew_ && s->w != ew_ && !sym_call(s)) {
+                    if (s->dkind == D_PIN_OUT)
+                        fail(e, "output %.*s of %s is %d bit%s, but this is %d bit%s", NAME(s),
+                             comps[sc->comp].name, s->w, plural(s->w), ew_, plural(ew_));
                     fail(e, "%.*s is %d bit%s, but this is %d bit%s", NAME(s), s->w, plural(s->w), ew_, plural(ew_));
+                }
+                if (s->dw && ew_ && s->dw != ew_ && sym_call(s)) {
+                    Call cl;
+                    analyze(e, &cl, 0);
+                    fail(e, "%.*s is %d bit%s, but %s gives %d (its output %s)", NAME(s), s->dw, plural(s->dw),
+                         cl.kname, ew_, cl.outname[cl.defport]);
+                }
                 if (e->rule == WIRE_R_call) {
                     Call cl;
                     analyze(e, &cl, 0);
@@ -1192,8 +1442,8 @@ static void build_all(gram_node *prog)
     }
 
     /* single-bit assignments: y[0] = ..., y[3:1] = ... -> one merge */
-    for (i = 0; i < nsyms; i++) {
-        Sym *s = &syms[i];
+    for (i = 0; i < sc->nsyms; i++) {
+        Sym *s = &sc->syms[i];
         Node *n;
         int w = s->w, b, order[MAXIO];
         unsigned long have = 0;
@@ -1226,21 +1476,22 @@ static void build_all(gram_node *prog)
     }
 
     /* ports of named components that were used but do not exist */
-    for (i = 0; i < nprefs; i++) {
-        gram_node *call = sym_call(prefs[i].sym);
+    for (i = 0; i < sc->nprefs; i++) {
+        Sym *ps = (Sym *)sc->prefs[i].sym;
+        gram_node *call = sym_call(ps);
         Call cl;
-        char buf[200];
-        if (!call) fail(prefs[i].at, "%.*s is not a component", NAME(prefs[i].sym));
+        char buf[400];
+        if (!call) fail(sc->prefs[i].at, "%.*s is not a component", NAME(ps));
         analyze(call, &cl, 0);
-        if (find_port(&cl, prefs[i].port) < 0) {
+        if (find_port(&cl, sc->prefs[i].port) < 0) {
             port_list(&cl, buf);
-            fail(prefs[i].at, "%s has no output called %s; it has %s", kind_names[cl.kind], prefs[i].port, buf);
+            fail(sc->prefs[i].at, "%s has no output called %s; it has %s", cl.kname, sc->prefs[i].port, buf);
         }
     }
 
     /* sinks: the page shows these */
-    for (i = 0; i < nsyms; i++) {
-        Sym *s = &syms[i];
+    for (i = 0; i < sc->nsyms; i++) {
+        Sym *s = &sc->syms[i];
         Node *n;
         int kind = s->dkind == D_OUTPUT ? K_OUTPUT : s->dkind == D_LED ? K_LED
                  : s->dkind == D_SEG7 ? K_SEG7 : s->dkind == D_HEX ? K_HEX : -1;
@@ -1251,8 +1502,30 @@ static void build_all(gram_node *prog)
         name_node(n, s);
         if (kind == K_LED) opt_color(n, s->opts);
         node_in(n, "in", s->net);
-        out++;
+        n_out++;
     }
+}
+
+
+/* a component that is never used is still checked: expand it once on
+ * scratch nets, then throw the result away */
+static void check_unused(void)
+{
+    int ci, i;
+    for (ci = 0; ci < ncomps; ci++) {
+        Comp *cp = &comps[ci];
+        int outer[MAXIO], inner[MAXIO], nn = nnodes, nt = nnets, ntp = ntaps, ni = ninsts;
+        if (cp->used) continue;
+        for (i = 0; i < cp->nin; i++) outer[i] = new_net(cp->inw[i]);
+        expand(ci, outer, inner, cp->id, NULL);
+        nnodes = nn; nnets = nt; ntaps = ntp; ninsts = ni;
+    }
+}
+
+/* after every scope is built: share gates, make splitters, check drivers */
+static void finish(void)
+{
+    int i, j;
 
     /* `~b` written in ten places is one inverter: share identical unnamed
      * gates (same kind, same inputs), until nothing changes */
@@ -1264,7 +1537,7 @@ static void build_all(gram_node *prog)
             for (j = i + 1; j < nnodes; j++) {
                 Node *b = &nodes[j];
                 int k, eq = 1;
-                if (b->dead || b->name || b->kind != a->kind || b->nin != a->nin) continue;
+                if (b->dead || b->name || b->kind != a->kind || b->nin != a->nin || b->inst != a->inst) continue;
                 for (k = 0; k < a->nin && eq; k++) if (find(a->in[k]) != find(b->in[k])) eq = 0;
                 if (!eq) continue;
                 join(a->out[0], b->out[0]);
@@ -1280,11 +1553,12 @@ static void build_all(gram_node *prog)
         Node *n;
         int src = find(taps[i].src);
         if (taps[i].src < 0) continue;
+        cur_inst = taps[i].inst;
         n = new_node(K_SPLIT, taps[i].at);
         node_in(n, "in", src);
         for (j = i; j < ntaps; j++) {
             int k, dup = -1;
-            if (taps[j].src < 0 || find(taps[j].src) != src) continue;
+            if (taps[j].src < 0 || find(taps[j].src) != src || taps[j].inst != taps[i].inst) continue;
             for (k = 0; k < n->nout; k++)
                 if (n->range[k][0] == taps[j].hi && n->range[k][1] == taps[j].lo) dup = k;
             if (dup >= 0) join(n->out[dup], taps[j].out);
@@ -1296,6 +1570,7 @@ static void build_all(gram_node *prog)
             taps[j].src = -1;
         }
     }
+    cur_inst = 0;
 
     /* every net that is read must be driven, by exactly one thing */
     for (i = 0; i < nnodes; i++) {
@@ -1322,10 +1597,163 @@ static void build_all(gram_node *prog)
         canon[i] = (find(i) == i && (nets[i].drivers || nets[i].readers)) ? j++ : -1;
 
     {
-        int comps = -in - out;
-        for (i = 0; i < nnodes; i++) comps += !nodes[i].dead;
-        fprintf(stderr, "%s: %d input%s, %d output%s, %d part%s, %d wire%s\n", src_name,
-                in, plural(in), out, plural(out), comps, plural(comps), j, plural(j));
+        int parts = -n_in - n_out, chips = ninsts - 1;
+        for (i = 0; i < nnodes; i++) parts += !nodes[i].dead && nodes[i].kind != K_PIN_IN && nodes[i].kind != K_PIN_OUT;
+        fprintf(stderr, "%s: %d input%s, %d output%s, %d part%s, %d chip%s, %d wire%s\n", src_name,
+                n_in, plural(n_in), n_out, plural(n_out), parts, plural(parts), chips, plural(chips), j, plural(j));
+    }
+}
+
+/* ---- loading files ------------------------------------------------------ */
+
+static gram_grammar *grammar;
+static gram_arena arena;
+static gram_node *progs[MAXFILES];
+static const char *incdirs[16];
+static int nincdirs;
+static char exedir[1024];
+
+#ifdef _WIN32
+#define PATHSEP ';'
+#else
+#define PATHSEP ':'
+#endif
+
+static int is_abs(const char *p)
+{
+    return p[0] == '/' || p[0] == '\\' || (p[0] && p[1] == ':');
+}
+
+static char *join_path(const char *dir, int dlen, const char *name)
+{
+    char *p = (char *)malloc((size_t)dlen + strlen(name) + 2);
+    memcpy(p, dir, (size_t)dlen);
+    if (dlen && dir[dlen - 1] != '/' && dir[dlen - 1] != '\\') p[dlen++] = '/';
+    strcpy(p + dlen, name);
+    return p;
+}
+
+static int dir_len(const char *path)
+{
+    int i, d = 0;
+    for (i = 0; path[i]; i++) if (path[i] == '/' || path[i] == '\\') d = i + 1;
+    return d;
+}
+
+static void collect_components(int fi);
+
+/* read and parse a file; library files may only hold components and imports */
+static int load(const char *path, char *text, size_t len, const gram_node *from)
+{
+    gram_error err;
+    gram_node *st;
+    int i, fi;
+    for (i = 0; i < nfiles; i++)     /* the same file imported twice, by any path */
+        if (files[i].len == len && !memcmp(files[i].text, text, len)) { free(text); return i; }
+    if (nfiles >= MAXFILES) fail(from, "too many files imported");
+    fi = nfiles++;
+    files[fi].name = path;
+    files[fi].text = text;
+    files[fi].len = len;
+    progs[fi] = gram_parse(grammar, NULL, text, len, &arena, &err);
+    if (!progs[fi]) { fprintf(stderr, "%s:", path); gram_error_print(&err, put, stderr); exit(1); }
+    for (st = progs[fi]->child; st; st = st->next) {
+        if (st->rule == WIRE_R_import) {
+            char name[1024], *cand[24], *t = NULL;
+            int n = 0, k, dl;
+            const char *env = getenv("WIRE_PATH");
+            size_t l;
+            snprintf(name, sizeof name, "%.*s", (int)st->child->len - 2, st->child->text + 1);
+            if (is_abs(name)) cand[n++] = join_path("", 0, name);
+            else {
+                cand[n++] = join_path(path, dir_len(path), name);
+                for (k = 0; k < nincdirs; k++) cand[n++] = join_path(incdirs[k], (int)strlen(incdirs[k]), name);
+                while (env && *env && n < 20) {
+                    const char *e = strchr(env, PATHSEP);
+                    dl = e ? (int)(e - env) : (int)strlen(env);
+                    if (dl) cand[n++] = join_path(env, dl, name);
+                    env = e ? e + 1 : NULL;
+                }
+                if (exedir[0]) {
+                    char lib[1100];
+                    snprintf(lib, sizeof lib, "%s../lib", exedir);
+                    cand[n++] = join_path(lib, (int)strlen(lib), name);
+                    snprintf(lib, sizeof lib, "%s../share/wire/lib", exedir);
+                    cand[n++] = join_path(lib, (int)strlen(lib), name);
+                }
+            }
+            for (k = 0; k < n; k++) if ((t = read_file(cand[k], &l)) != NULL) break;
+            if (k == n) {
+                char looked[4096];
+                looked[0] = 0;
+                for (k = 0; k < n; k++) {
+                    strncat(looked, "\n    ", sizeof looked - strlen(looked) - 1);
+                    strncat(looked, cand[k], sizeof looked - strlen(looked) - 1);
+                }
+                fail(st->child, "cannot find %s; looked for:%s", name, looked);
+            }
+            load(cand[k], t, l, st->child);
+        } else if (fi > 0 && st->rule != WIRE_R_component)
+            fail(st, "%s is a library, so it can only hold components and imports. "
+                     "Put the circuit in its own file that imports this one.", path);
+    }
+    collect_components(fi);
+    return fi;
+}
+
+static void port_decls(Comp *cp, gram_node *list, int out)
+{
+    gram_node *pd = list->rule == WIRE_R_pdecl ? list : list->child;
+    for (; pd; pd = list->rule == WIRE_R_pdecl ? NULL : pd->next) {
+        gram_node *id = pd->child, *r = id->next;
+        int i, w = 1, *n = out ? &cp->nout : &cp->nin;
+        if (*n >= MAXIO) fail(id, "too many ports");
+        if ((int)id->len >= NAMEW) fail(id, "port names are at most %d characters", NAMEW - 1);
+        for (i = 0; i < cp->nin; i++) if (same(id, cp->inname[i], (int)strlen(cp->inname[i]))) break;
+        if (i < cp->nin) fail(id, "%s has two ports called %.*s", cp->name, TEXT(id));
+        for (i = 0; i < cp->nout; i++) if (same(id, cp->outname[i], (int)strlen(cp->outname[i]))) break;
+        if (i < cp->nout) fail(id, "%s has two ports called %.*s", cp->name, TEXT(id));
+        if (r) {
+            if (r->child->next) fail(r, "write a port width as [n], e.g. %.*s[8]", TEXT(id));
+            w = number(r->child);
+            if (w < 1 || w > MAXW) fail(r, "widths go from 1 to %d", MAXW);
+        }
+        if (out) {
+            cp->outid[cp->nout] = id; cp->outw[cp->nout] = w;
+            snprintf(cp->outname[cp->nout++], NAMEW, "%.*s", TEXT(id));
+        } else {
+            cp->inid[cp->nin] = id; cp->inw[cp->nin] = w;
+            snprintf(cp->inname[cp->nin++], NAMEW, "%.*s", TEXT(id));
+        }
+    }
+}
+
+static void collect_components(int fi)
+{
+    gram_node *st;
+    for (st = progs[fi]->child; st; st = st->next) {
+        gram_node *id;
+        Comp *cp;
+        int k;
+        if (st->rule != WIRE_R_component) continue;
+        id = st->child;
+        if (kind_of(id) >= 0) fail(id, "%.*s is a built-in part; give your component another name", TEXT(id));
+        if ((k = comp_find(id)) >= 0)
+            fail(id, "there is already a component called %.*s, in %s line %d", TEXT(id),
+                 files[file_of(comps[k].node)].name, line_of(comps[k].node));
+        if (ncomps >= MAXCOMPS) fail(id, "too many components");
+        cp = &comps[ncomps];
+        memset(cp, 0, sizeof *cp);
+        cp->name = (char *)malloc(id->len + 1);
+        memcpy(cp->name, id->text, id->len);
+        cp->name[id->len] = 0;
+        cp->node = st;
+        cp->id = id;
+        port_decls(cp, id->next, 0);
+        port_decls(cp, id->next->next, 1);
+        if (!cp->nout) fail(id, "%s has no outputs", cp->name);
+        cp->body = id->next->next->next;
+        ncomps++;
     }
 }
 
@@ -1337,8 +1765,7 @@ static int usage(void)
 
 int main(int argc, char **argv)
 {
-    static gram_arena arena;
-    static unsigned char mem[1 << 22];
+    static unsigned char mem[1 << 24];
     gram_error err;
     gram_grammar *g;
     gram_node *prog;
@@ -1358,6 +1785,7 @@ int main(int argc, char **argv)
                    "  -o out.html      write the page somewhere else\n"
                    "  --json           print the netlist as JSON instead\n"
                    "  --check          only check the circuit\n"
+                   "  -I dir           also look for imports in dir (and in $WIRE_PATH)\n"
                    "  -t               print the syntax tree\n"
                    "  --version        print the version\n", WIRE_VERSION);
             return 0;
@@ -1365,23 +1793,39 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--json")) json = 1;
         else if (!strcmp(argv[i], "--check")) check = 1;
         else if (!strcmp(argv[i], "-t")) tree = 1;
+        else if (!strcmp(argv[i], "-I") && i + 1 < argc && nincdirs < 16) incdirs[nincdirs++] = argv[++i];
         else return usage();
     }
     if (i != argc - 1) return usage();
     src_name = argv[i];
     text = read_file(src_name, &len);
     if (!text) { perror(src_name); return 1; }
-    src_text = text;
-    src_len = len;
+    {
+        int d = dir_len(argv[0]);
+        if (d && d < (int)sizeof exedir) { memcpy(exedir, argv[0], (size_t)d); exedir[d] = 0; }
+    }
 
     gram_arena_init(&arena, mem, sizeof mem);
     g = gram_compile(&arena, WIRE_GRAMMAR, &err);
     if (!g) { fputs("grammar:", stderr); gram_error_print(&err, put, stderr); return 1; }
-    prog = gram_parse(g, NULL, text, len, &arena, &err);
-    if (!prog) { fprintf(stderr, "%s:", src_name); gram_error_print(&err, put, stderr); return 1; }
-    if (tree) { gram_dump(prog, put, stdout); return 0; }
+    grammar = g;
+    if (tree) {
+        prog = gram_parse(g, NULL, text, len, &arena, &err);
+        if (!prog) { fprintf(stderr, "%s:", src_name); gram_error_print(&err, put, stderr); return 1; }
+        gram_dump(prog, put, stdout);
+        return 0;
+    }
+    load(src_name, text, len, NULL);
+    prog = progs[0];
 
-    build_all(prog);
+    insts = (Inst *)grow(insts, &capinsts, 1, sizeof *insts);
+    memset(&insts[0], 0, sizeof *insts);
+    insts[0].comp = -1;
+    insts[0].parent = -1;
+    ninsts = 1;
+    compile_scope(prog->child, 1);
+    check_unused();
+    finish();
     if (check) return 0;
     if (json) { jf = stdout; write_json(); putchar('\n'); return 0; }
     if (!out) {

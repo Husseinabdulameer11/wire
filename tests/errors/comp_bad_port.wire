@@ -1,0 +1,6 @@
+# expect: add4 has no output called carry; it has sum and cout
+import "adders.wire"
+input a[4], b[4]
+output y
+s = add4(a, b, 0)
+y = s.carry

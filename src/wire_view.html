@@ -77,6 +77,10 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 button svg { width: 14px; height: 14px; }
 select { font: inherit; color: var(--ink); background: transparent; border: 0; border-left: 1px solid var(--panel-line); padding: 0 8px; min-height: 36px; }
 .spacer { flex: 1; pointer-events: none; }
+#crumbs button { gap: 5px; }
+#crumbs button + button::before { content: "›"; color: var(--ink-soft); margin-right: 4px; }
+#crumbs small { color: var(--ink-soft); font-size: 12px; font-weight: 400; }
+#crumbs button[aria-current] { background: var(--hi-soft); cursor: default; }
 #warn {
   display: none; background: var(--bad); color: #fff; border-radius: 6px; padding: 7px 12px; font-weight: 500;
 }
@@ -152,6 +156,12 @@ table.tt td.one { color: var(--on); font-weight: 500; }
 .sel-ring { fill: none; stroke: transparent; stroke-width: 2; stroke-dasharray: 4 3; }
 .part.selected .sel-ring { stroke: var(--hi); }
 .hit { cursor: pointer; }
+.part.chip { cursor: pointer; }
+.part.chip .part-body { stroke-width: 2; }
+.part.chip:hover .part-body { fill: var(--hi-soft); }
+.chip-notch { fill: var(--paper); stroke: var(--ink); stroke-width: 1.6; }
+.chip-open { fill: none; stroke: var(--ink-soft); stroke-width: 1.4; }
+.part-body.pin { stroke-dasharray: 3 2; }
 .wire { fill: none; stroke-linecap: square; stroke-linejoin: miter; }
 .wire-hit { fill: none; stroke: transparent; stroke-width: 12; cursor: help; }
 .wire.lit { filter: drop-shadow(0 0 2px var(--hi)); }
@@ -195,6 +205,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
     <button id="fit" title="Fit the circuit on screen">Fit</button>
     <button id="tidy" title="Lay the circuit out again">Tidy</button>
   </div>
+  <nav class="group" id="crumbs" aria-label="Where you are" hidden></nav>
   <div id="warn" role="status"></div>
   <span class="spacer"></span>
 </div>
@@ -204,6 +215,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
   <div class="k">File</div><div class="v mono" id="tb-file"></div>
   <div class="k">Parts</div><div class="v" id="tb-parts"></div>
   <div class="k">Clock</div><div class="v" id="tb-clock">none</div>
+  <div class="k">Showing</div><div class="v" id="tb-view">the circuit</div>
 </div>
 
 <div id="tip"></div>
@@ -293,11 +305,19 @@ function geom(n) {
   } else if (k === "const") {
     const t = constText(n);
     g.w = Math.max(20, Math.ceil((t.length * 7 + 10) / 10) * 10); g.h = 20; right(10);
-  } else if (k === "input" || k === "output") {
-    const w = nets[k === "input" ? n.out[0] : n.in[0]].w;
+  } else if (k === "input" || k === "output" || k === "pin_in" || k === "pin_out") {
+    const isIn = k === "input" || k === "pin_in";
+    const w = nets[isIn ? n.out[0] : n.in[0]].w;
     if (w === 1) { g.w = 30; g.h = 20; }
     else { g.w = Math.ceil((w * 13 + 10) / 10) * 10; g.h = 40; }
-    if (k === "input") right(g.h === 20 ? 10 : 20); else left(g.h === 20 ? 10 : 20);
+    if (isIn) right(g.h === 20 ? 10 : 20); else left(g.h === 20 ? 10 : 20);
+  } else if (k === "chip") {
+    const rows = Math.max(ni, no, 1);
+    const longest = Math.max(...n.inNames.map(x => x.length), 0) + Math.max(...n.outNames.map(x => x.length), 0);
+    g.w = Math.max(80, Math.ceil((longest * 6.5 + 36) / 10) * 10, Math.ceil((n.comp.length * 7.5 + 24) / 10) * 10);
+    g.h = rows * 20 + 30;
+    n.in.forEach((_, i) => left(30 + i * 20, n.inNames[i]));
+    n.out.forEach((_, i) => right(30 + i * 20, n.outNames[i]));
   } else if (k === "button" || k === "clock") {
     g.w = 30; g.h = 20; right(10);
   } else if (k === "led") {
@@ -311,7 +331,6 @@ function constText(n) {
   const w = nets[n.out[0]].w;
   return w <= 4 ? n.value.toString(2).padStart(w, "0") : "0x" + n.value.toString(16).toUpperCase();
 }
-nodes.forEach(n => { n.g = geom(n); });
 
 /* =============================================================== simulation */
 function rd(n, p) { const net = nets[n.in[p]]; return net; }
@@ -345,6 +364,7 @@ function evalNode(n) {
     return setOut(n, 0, v, kn);
   }
   case "not": { const a = rd(n, 0); return setOut(n, 0, ~a.v & a.k, a.k); }
+  case "pin_in": case "pin_out": { const a = rd(n, 0); return setOut(n, 0, a.v, a.k); }
   case "buf": { const a = rd(n, 0); return setOut(n, 0, a.v, a.k); }
   case "mux": {
     const sel = nets[n.in[n.in.length - 1]];
@@ -422,6 +442,12 @@ function nextState(n) {
 }
 
 let order = [];        /* evaluation order (sources first, then topological) */
+function computeOrder() {
+  nodes.forEach((n, i) => { n.vi = i; });
+  const drv = new Map();
+  nets.forEach((net, i) => { if (net.driver) drv.set(i, net.driver); });
+  order = graphOf(nodes, drv).topo.map(i => nodes[i]);
+}
 const seqNodes = nodes.filter(n => SEQ.has(n.kind));
 let unstable = false;
 function settle() {
@@ -452,20 +478,17 @@ function simulate() {
   redraw();
 }
 
-/* ================================================================== layout */
-let layers = [], dummies = [], back = new Set(), layerOf = [];
-function layout() {
-  const N = nodes.length;
-  /* edges u -> v (with the net and port) */
-  const edges = [];
-  nodes.forEach(v => v.in.forEach((net, p) => {
-    const d = nets[net].driver; if (d) edges.push({ u: d.node, v: v.id, net, p });
+/* ================================================================== graph */
+/* items have .vi (their index) .in .out (nets); drv: net -> {node: vi, port} */
+function graphOf(items, drv) {
+  const N = items.length, edges = [];
+  items.forEach(v => v.in.forEach((net, p) => {
+    const d = drv.get(net); if (d) edges.push({ u: d.node, v: v.vi, net, p });
   }));
-  const outE = nodes.map(() => []), inE = nodes.map(() => []);
+  const outE = items.map(() => []), inE = items.map(() => []);
   edges.forEach((e, i) => { outE[e.u].push(i); inE[e.v].push(i); });
   /* depth-first search from the inputs marks the edges that close a loop */
-  back = new Set();
-  const state = new Array(N).fill(0);
+  const back = new Set(), state = new Array(N).fill(0);
   const visit = s => {
     const stack = [[s, 0]]; state[s] = 1;
     while (stack.length) {
@@ -477,90 +500,128 @@ function layout() {
       } else { state[u] = 2; stack.pop(); }
     }
   };
-  nodes.filter(n => SOURCES.has(n.kind)).forEach(n => { if (!state[n.id]) visit(n.id); });
-  nodes.filter(n => n.kind === "const").forEach(n => { if (!state[n.id]) visit(n.id); });
-  nodes.forEach(n => { if (!state[n.id]) visit(n.id); });
-  /* topological order of the rest, and the longest path for columns */
+  items.filter(n => isSrc(n)).forEach(n => { if (!state[n.vi]) visit(n.vi); });
+  items.filter(n => n.kind === "const").forEach(n => { if (!state[n.vi]) visit(n.vi); });
+  items.forEach(n => { if (!state[n.vi]) visit(n.vi); });
   const indeg = new Array(N).fill(0);
   edges.forEach((e, i) => { if (!back.has(i)) indeg[e.v]++; });
-  const topo = [], q = nodes.filter(n => !indeg[n.id]).map(n => n.id);
+  const topo = [], q = items.filter(n => !indeg[n.vi]).map(n => n.vi);
   while (q.length) {
     const u = q.shift(); topo.push(u);
     outE[u].forEach(ei => { if (!back.has(ei) && --indeg[edges[ei].v] === 0) q.push(edges[ei].v); });
   }
-  order = topo.map(i => nodes[i]);
+  return { edges, outE, inE, back, topo };
+}
+const isSrc = n => SOURCES.has(n.kind) || n.kind === "pin_in";
+const isSink = n => SINKS.has(n.kind) || n.kind === "pin_out";
+
+/* ================================================================== views */
+/* A view is one instance seen from inside: its own parts, its input and
+ * output pins, and each component used in it as one chip. The simulation
+ * runs on the flat netlist; a view only chooses what to draw. */
+const views = new Map();
+let V = null;                 /* the view on screen */
+function makeView(id) {
+  const items = [], wrap = (n, extra) => Object.assign(Object.create(n), { node: n }, extra);
+  nodes.forEach(n => {
+    if (n.inst !== id) return;
+    if (n.kind === "pin_in") items.push(wrap(n, { in: [], out: n.out }));
+    else if (n.kind === "pin_out") items.push(wrap(n, { in: n.in, out: [] }));
+    else items.push(wrap(n, {}));
+  });
+  D.insts.forEach((ins, c) => {
+    if (ins.parent !== id || c === 0) return;
+    const pins = nodes.filter(n => n.inst === c);
+    const pi = pins.filter(n => n.kind === "pin_in"), po = pins.filter(n => n.kind === "pin_out");
+    items.push({
+      kind: "chip", inst: c, comp: ins.comp, name: ins.name, line: ins.line, file: ins.file,
+      in: pi.map(n => n.in[0]), out: po.map(n => n.out[0]),
+      inNames: pi.map(n => n.name), outNames: po.map(n => n.name), inW: pi.map(n => nets[n.out[0]].w), outW: po.map(n => nets[n.in[0]].w)
+    });
+  });
+  items.forEach((it, i) => { it.vi = i; it.x = 0; it.y = 0; it.g = geom(it); });
+  const drv = new Map(), rdr = new Map();
+  items.forEach(it => {
+    it.out.forEach((net, p) => drv.set(net, { node: it.vi, port: p }));
+    it.in.forEach((net, p) => { if (!rdr.has(net)) rdr.set(net, []); rdr.get(net).push({ node: it.vi, port: p }); });
+  });
+  return { id, items, drv, rdr, layers: [], dummies: [], layerOf: [], laid: false };
+}
+function viewOf(id) { if (!views.has(id)) views.set(id, makeView(id)); return views.get(id); }
+
+/* ================================================================== layout */
+function layout(V) {
+  const items = V.items, drv = V.drv, rdrOf = net => V.rdr.get(net) || [];
+  const N = items.length;
+  const { edges, outE, inE, back, topo } = graphOf(items, drv);
   const L = new Array(N).fill(0);
   for (const u of topo) {
-    const n = nodes[u];
-    if (SOURCES.has(n.kind) || n.kind === "const") { L[u] = 0; continue; }
+    const n = items[u];
+    if (isSrc(n) || n.kind === "const") { L[u] = 0; continue; }
     let l = 1;
-    inE[u].forEach(ei => { if (!back.has(ei) && nodes[edges[ei].u].kind !== "const") l = Math.max(l, L[edges[ei].u] + 1); });
+    inE[u].forEach(ei => { if (!back.has(ei) && items[edges[ei].u].kind !== "const") l = Math.max(l, L[edges[ei].u] + 1); });
     L[u] = l;
   }
   let maxL = 0;
-  nodes.forEach(n => { if (!SINKS.has(n.kind)) maxL = Math.max(maxL, L[n.id]); });
-  nodes.forEach(n => { if (SINKS.has(n.kind)) L[n.id] = maxL + 1; });
-  nodes.forEach(n => {
+  items.forEach(n => { if (!isSink(n)) maxL = Math.max(maxL, L[n.vi]); });
+  items.forEach(n => { if (isSink(n)) L[n.vi] = maxL + 1; });
+  items.forEach(n => {
     if (n.kind !== "const") return;
     let m = Infinity;
-    outE[n.id].forEach(ei => { m = Math.min(m, L[edges[ei].v]); });
-    L[n.id] = m === Infinity ? 0 : Math.max(0, m - 1);
+    outE[n.vi].forEach(ei => { m = Math.min(m, L[edges[ei].v]); });
+    L[n.vi] = m === Infinity ? 0 : Math.max(0, m - 1);
   });
-  if (!nodes.some(n => SINKS.has(n.kind))) maxL = Math.max(...L, 0) - 1;
   const nL = Math.max(...L, 0) + 1;
-  layerOf = L;
+  V.layerOf = L;
 
   /* a net that skips columns gets a pass-through point in each one */
-  dummies = [];
-  const dummyAt = new Map();
-  nets.forEach(net => {
-    if (!net.driver) return;
-    const ld = L[net.driver.node];
+  const dummies = [], dummyAt = new Map();
+  drv.forEach((d, net) => {
+    const ld = L[d.node];
     let far = ld;
-    net.readers.forEach(r => { if (L[r.node] > ld) far = Math.max(far, L[r.node]); });
+    rdrOf(net).forEach(r => { if (L[r.node] > ld) far = Math.max(far, L[r.node]); });
     for (let l = ld + 1; l < far; l++) {
-      const d = { dummy: true, net: net.id, layer: l, y: 0, h: 0 };
-      dummies.push(d); dummyAt.set(net.id + ":" + l, d);
+      const dm = { dummy: true, net, layer: l, y: 0, h: 0 };
+      dummies.push(dm); dummyAt.set(net + ":" + l, dm);
     }
   });
-  layers = Array.from({ length: nL }, () => []);
-  nodes.forEach(n => layers[L[n.id]].push(n));
+  const layers = Array.from({ length: nL }, () => []);
+  items.forEach(n => layers[L[n.vi]].push(n));
   dummies.forEach(d => layers[d.layer].push(d));
+  V.layers = layers; V.dummies = dummies;
 
   /* order inside each column: barycentre sweeps */
   const leftOf = it => {   /* [item, port y offset on it] to the left */
     if (it.dummy) {
       const prev = dummyAt.get(it.net + ":" + (it.layer - 1));
       if (prev) return [[prev, 0]];
-      const d = nets[it.net].driver; return [[nodes[d.node], nodes[d.node].g.outs[d.port].y]];
+      const d = drv.get(it.net); return [[items[d.node], items[d.node].g.outs[d.port].y]];
     }
     const res = [];
-    it.in.forEach((net, p) => {
-      const d = nets[net].driver; if (!d) return;
-      const dl = L[d.node], me = L[it.id];
-      if (dl === me - 1) res.push([nodes[d.node], nodes[d.node].g.outs[d.port].y]);
+    it.in.forEach(net => {
+      const d = drv.get(net); if (!d) return;
+      const dl = L[d.node], me = L[it.vi];
+      if (dl === me - 1) res.push([items[d.node], items[d.node].g.outs[d.port].y]);
       else if (dl < me - 1) { const dm = dummyAt.get(net + ":" + (me - 1)); if (dm) res.push([dm, 0]); }
     });
     return res;
   };
   const rightOf = it => {
-    const res = [], me = it.dummy ? it.layer : L[it.id];
+    const res = [], me = it.dummy ? it.layer : L[it.vi];
     const nl = it.dummy ? [it.net] : it.out;
     nl.forEach(net => {
       const dm = dummyAt.get(net + ":" + (me + 1)); if (dm) res.push([dm, 0]);
-      nets[net].readers.forEach(r => { if (L[r.node] === me + 1) res.push([nodes[r.node], nodes[r.node].g.ins[r.port].y]); });
+      rdrOf(net).forEach(r => { if (L[r.node] === me + 1) res.push([items[r.node], items[r.node].g.ins[r.port].y]); });
     });
     return res;
   };
   const pos = new Map();
-  const index = () => layers.forEach(col => col.forEach((it, i) => pos.set(it, i)));
-  index();
+  layers.forEach(col => col.forEach((it, i) => pos.set(it, i)));
   for (let it = 0; it < 8; it++) {
     const fwd = it % 2 === 0;
     const seq = fwd ? layers.map((_, i) => i).slice(1) : layers.map((_, i) => i).reverse().slice(1);
     for (const l of seq) {
-      const col = layers[l];
-      const key = new Map();
+      const col = layers[l], key = new Map();
       col.forEach(item => {
         const nb = fwd ? leftOf(item) : rightOf(item);
         key.set(item, nb.length ? nb.reduce((s, [o]) => s + pos.get(o), 0) / nb.length : pos.get(item));
@@ -569,12 +630,8 @@ function layout() {
       col.forEach((item, i) => pos.set(item, i));
     }
   }
-  /* sources and sinks: keep them in the order they were declared */
-  [0, nL - 1].forEach(l => {
-    const real = layers[l].filter(x => !x.dummy && (SOURCES.has(x.kind) || SINKS.has(x.kind)));
-    if (real.length === layers[l].filter(x => !x.dummy).length && l === 0)
-      layers[l].sort((a, b) => (a.dummy ? 1e9 : a.id) - (b.dummy ? 1e9 : b.id));
-  });
+  /* inputs stay in the order they were declared */
+  if (layers[0].every(x => x.dummy || isSrc(x))) layers[0].sort((a, b) => (a.dummy ? 1e9 : a.vi) - (b.dummy ? 1e9 : b.vi));
 
   /* heights: align each part with what feeds it, then with what it feeds */
   const hOf = it => it.dummy ? 0 : it.g.h;
@@ -589,46 +646,37 @@ function layout() {
       if (prev && it.y < prev.y + hOf(prev) + gapAfter(prev, it)) it.y += 10;
       prev = it;
     });
-    /* pull a stack that was pushed down back up toward its targets */
-    for (let i = col.length - 2; i >= 0; i--) {
+    for (let i = col.length - 2; i >= 0; i--) {   /* pull a pushed-down stack back up */
       const a = col[i], b = col[i + 1];
       const lim = b.y - hOf(a) - gapAfter(a, b);
       const want = Math.round(desired[i] / 10) * 10;
       if (a.y < want && lim > a.y) a.y = Math.min(want, lim);
     }
   };
-  const desired = (it, fwd) => {
-    const nb = fwd ? leftOf(it) : rightOf(it);
-    if (!nb.length) return it.y;
-    let s = 0;
-    nb.forEach(([o, off]) => {
-      const mine = it.dummy ? 0 : fwd ? portY(it, nb, o, true) : portY(it, nb, o, false);
-      s += o.y + off - mine;
-    });
-    return s / nb.length;
-  };
-  /* which of my ports connects to neighbour o */
-  function portY(it, nb, o, fwd) {
+  const portY = (it, o, fwd) => {   /* which of my ports connects to neighbour o */
     if (fwd) {
       for (let p = 0; p < it.in.length; p++) {
-        const d = nets[it.in[p]].driver; if (!d) continue;
-        if (o.dummy ? o.net === it.in[p] : d.node === o.id) return it.g.ins[p].y;
+        const d = drv.get(it.in[p]); if (!d) continue;
+        if (o.dummy ? o.net === it.in[p] : d.node === o.vi) return it.g.ins[p].y;
       }
       return it.g.h / 2;
     }
     for (let p = 0; p < it.out.length; p++) {
       const net = it.out[p];
-      if (o.dummy ? o.net === net : nets[net].readers.some(r => r.node === o.id)) return it.g.outs[p].y;
+      if (o.dummy ? o.net === net : rdrOf(net).some(r => r.node === o.vi)) return it.g.outs[p].y;
     }
     return it.g.h / 2;
-  }
+  };
+  const desired = (it, fwd) => {
+    const nb = fwd ? leftOf(it) : rightOf(it);
+    if (!nb.length) return it.y;
+    let s = 0;
+    nb.forEach(([o, off]) => { s += o.y + off - (it.dummy ? 0 : portY(it, o, fwd)); });
+    return s / nb.length;
+  };
   for (let it = 0; it < 9; it++) {
-    const fwd = it % 2 === 0;
-    const idx = layers.map((_, i) => i);
-    (fwd ? idx : idx.reverse()).forEach(l => {
-      const col = layers[l];
-      place(col, col.map(x => desired(x, fwd)));
-    });
+    const fwd = it % 2 === 0, idx = layers.map((_, i) => i);
+    (fwd ? idx : idx.reverse()).forEach(l => place(layers[l], layers[l].map(x => desired(x, fwd))));
   }
   let minY = Infinity;
   layers.forEach(col => col.forEach(it => { minY = Math.min(minY, it.y); }));
@@ -636,57 +684,53 @@ function layout() {
 
   /* columns: width of the widest part plus room for the wires between */
   let x = 0;
-  const tracksIn = channelTracks();
+  const tracksIn = route(V, true);
   layers.forEach((col, l) => {
     const real = col.filter(it => !it.dummy);
     const cw = Math.max(0, ...real.map(n => n.g.w));
     real.forEach(n => { n.x = (l === 0) ? x + cw - n.g.w : x; });
     x += cw + Math.max(50, 30 + tracksIn[l] * 10);
   });
-}
-/* how many vertical tracks the wires after column l need */
-function channelTracks() {
-  const r = route(true);
-  return r;
+  V.laid = true;
 }
 
 /* ================================================================= routing */
-let wirePaths = [], junctions = [];
-function colBounds() {
+let wirePaths = new Map(), junctions = [];
+function colBounds(V) {
   const left = [], right = [];
-  layers.forEach((col, l) => {
+  V.layers.forEach((col, l) => {
     const real = col.filter(it => !it.dummy);
-    left[l] = Math.min(...real.map(n => n.x));
-    right[l] = Math.max(...real.map(n => n.x + n.g.w));
+    left[l] = real.length ? Math.min(...real.map(n => n.x)) : 0;
+    right[l] = real.length ? Math.max(...real.map(n => n.x + n.g.w)) : 0;
   });
   return { left, right };
 }
 /* countOnly: return the track count per channel (x positions not known yet) */
-function route(countOnly) {
-  const nL = layers.length, L = layerOf;
-  const { left, right } = countOnly ? { left: [], right: [] } : colBounds();
+function route(V, countOnly) {
+  const layers = V.layers, dummies = V.dummies, items = V.items, nL = layers.length, L = V.layerOf;
+  const { left, right } = countOnly ? { left: [], right: [] } : colBounds(V);
   const ends = layers.map(() => new Map());   /* channel -> net -> endpoints */
   const add = (ch, net, e) => {
     if (ch < 0 || ch >= nL - 1) return;
     let m = ends[ch].get(net); if (!m) ends[ch].set(net, m = []); m.push(e);
   };
-  const straight = new Map();   /* net -> [x1, y, x2] runs through columns */
   let maxBottom = 0;
-  nodes.forEach(n => { maxBottom = Math.max(maxBottom, n.y + n.g.h); });
+  items.forEach(n => { maxBottom = Math.max(maxBottom, n.y + n.g.h); });
   dummies.forEach(d => { maxBottom = Math.max(maxBottom, d.y); });
   const feedback = [];
-  nets.forEach(net => {
-    if (!net.driver || !net.readers.length) return;
-    const dn = nodes[net.driver.node], ld = L[dn.id], op = dn.g.outs[net.driver.port];
-    add(ld, net.id, { side: "L", x: dn.x + op.x, y: dn.y + op.y });
+  V.drv.forEach((d, net) => {
+    const readers = V.rdr.get(net) || [];
+    if (!readers.length) return;
+    const dn = items[d.node], ld = L[dn.vi], op = dn.g.outs[d.port];
+    add(ld, net, { side: "L", x: dn.x + op.x, y: dn.y + op.y });
     let fb = null;
-    net.readers.forEach(r => {
-      const rn = nodes[r.node], ip = rn.g.ins[r.port], lr = L[rn.id];
-      if (lr > ld) add(lr - 1, net.id, { side: "R", x: rn.x + ip.x, y: rn.y + ip.y });
+    readers.forEach(r => {
+      const rn = items[r.node], ip = rn.g.ins[r.port], lr = L[rn.vi];
+      if (lr > ld) add(lr - 1, net, { side: "R", x: rn.x + ip.x, y: rn.y + ip.y });
       else {
-        if (!fb) { fb = { net: net.id, from: ld, to: lr - 1 }; feedback.push(fb); }
+        if (!fb) { fb = { net, from: ld, to: lr - 1 }; feedback.push(fb); }
         fb.to = Math.min(fb.to, lr - 1);
-        add(lr - 1, net.id, { side: "R", x: rn.x + ip.x, y: rn.y + ip.y });
+        add(lr - 1, net, { side: "R", x: rn.x + ip.x, y: rn.y + ip.y });
       }
     });
   });
@@ -819,7 +863,7 @@ function buildPart(n) {
   const g = n.g, k = n.kind;
   const shown = sinkNames.has(n.name) ? "" : n.name;   /* the output beside it already says it */
   const root = el("g", { class: "part" }, partsG);
-  root.dataset.id = n.id;
+  root.dataset.id = n.vi;
   n.el = root;
   const upd = [];
   el("rect", { class: "sel-ring", x: -4, y: -4, width: g.w + 8, height: g.h + 8, rx: 3 }, root);
@@ -866,12 +910,30 @@ function buildPart(n) {
     el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 2 }, root);
     const t = el("text", { class: "part-text bitv", x: g.w / 2, y: 14, "text-anchor": "middle" }, root);
     t.textContent = constText(n);
-  } else if (k === "input" || k === "output") {
-    const net = nets[k === "input" ? n.out[0] : n.in[0]], isIn = k === "input";
+  } else if (k === "chip") {
+    el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 3 }, root);
+    el("path", { class: "chip-notch", d: `M${g.w / 2 - 7} 0A7 7 0 0 0 ${g.w / 2 + 7} 0` }, root);
+    const t = el("text", { class: "part-text", x: g.w / 2, y: 22, "text-anchor": "middle", style: "font-weight:600;font-size:12px" }, root);
+    t.textContent = n.comp;
+    g.ins.forEach((p, i) => {
+      const tx = el("text", { class: "part-small", x: 5, y: p.y + 3 }, root);
+      tx.textContent = p.name + (n.inW[i] > 1 ? `[${n.inW[i]}]` : "");
+    });
+    g.outs.forEach((p, i) => {
+      const tx = el("text", { class: "part-small", x: g.w - 5, y: p.y + 3, "text-anchor": "end" }, root);
+      tx.textContent = p.name + (n.outW[i] > 1 ? `[${n.outW[i]}]` : "");
+    });
+    const open = el("path", { class: "chip-open", d: `M${g.w - 13} ${g.h - 5}h8v-8M${g.w - 5} ${g.h - 5}l-6 -6` }, root);
+    root.classList.add("chip");
+    root.setAttribute("aria-label", `Open ${n.name || n.comp}`);
+    label(n.name || "", g.w / 2, -7);
+  } else if (k === "input" || k === "output" || k === "pin_in" || k === "pin_out") {
+    const isIn = k === "input" || k === "pin_in", isPin = k === "pin_in" || k === "pin_out";
+    const net = nets[isIn ? n.out[0] : n.in[0]];
     if (net.w === 1) {
-      const body = el("rect", { class: "part-body", x: 0, y: 0, width: 30, height: 20, rx: isIn ? 3 : 10 }, root);
+      const body = el("rect", { class: "part-body" + (isPin ? " pin" : ""), x: 0, y: 0, width: 30, height: 20, rx: isIn ? 3 : 10 }, root);
       const t = el("text", { class: "bitv", x: 15, y: 14, "text-anchor": "middle" }, root);
-      if (isIn) { body.classList.add("hit"); t.classList.add("hit"); body.dataset.bit = 0; t.dataset.bit = 0; }
+      if (k === "input") { body.classList.add("hit"); t.classList.add("hit"); body.dataset.bit = 0; t.dataset.bit = 0; }
       upd.push(() => {
         const one = known(net) && net.v;
         body.style.fill = one ? "var(--on)" : "var(--body)";
@@ -879,17 +941,17 @@ function buildPart(n) {
         t.textContent = known(net) ? net.v : "x";
       });
     } else {
-      el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 3 }, root);
+      el("rect", { class: "part-body" + (isPin ? " pin" : ""), x: 0, y: 0, width: g.w, height: g.h, rx: 3 }, root);
       const cells = [];
       for (let b = net.w - 1; b >= 0; b--) {
         const cx = 5 + (net.w - 1 - b) * 13;
         const r = el("rect", { x: cx, y: 4, width: 12, height: 16, rx: 2, fill: "var(--body)", stroke: "var(--panel-line)" }, root);
         const t = el("text", { class: "bitv", x: cx + 6, y: 16, "text-anchor": "middle" }, root);
-        if (isIn) { r.classList.add("hit"); t.classList.add("hit"); r.dataset.bit = b; t.dataset.bit = b; }
+        if (k === "input") { r.classList.add("hit"); t.classList.add("hit"); r.dataset.bit = b; t.dataset.bit = b; }
         cells.push([b, r, t]);
       }
       const vt = el("text", { class: "part-small", x: g.w / 2, y: 33, "text-anchor": "middle", style: "font-size:10px" }, root);
-      if (isIn) { vt.classList.add("hit"); vt.dataset.type = "1"; }
+      if (k === "input") { vt.classList.add("hit"); vt.dataset.type = "1"; }
       upd.push(() => {
         cells.forEach(([b, r, t]) => {
           const kn = (net.k >>> b) & 1, one = kn && ((net.v >>> b) & 1);
@@ -897,7 +959,7 @@ function buildPart(n) {
           t.style.fill = one ? "#fff" : "var(--ink)";
           t.textContent = kn ? ((net.v >>> b) & 1) : "x";
         });
-        vt.textContent = fmtVal(net) + (isIn ? "  ✎" : "");
+        vt.textContent = fmtVal(net) + (k === "input" ? "  ✎" : "");
       });
     }
     if (isIn) label(n.name, -8, g.h / 2 + 4, "end"); else label(n.name, g.w + 8, g.h / 2 + 4, "start");
@@ -971,7 +1033,7 @@ function place(n) { n.el.setAttribute("transform", `translate(${n.x},${n.y})`); 
 
 let wireEls = new Map();
 function drawWires() {
-  route(false);
+  route(V, false);
   wiresG.textContent = "";
   dotsG.textContent = "";
   wireEls = new Map();
@@ -1006,7 +1068,7 @@ function recolor() {
   junctions.forEach(j => j.el.setAttribute("fill", j.net == null ? "var(--ink)" : wireColor(nets[j.net])));
 }
 function redraw() {
-  nodes.forEach(n => n.update());
+  V.items.forEach(n => n.update());
   recolor();
   const w = $("warn");
   if (unstable) { w.style.display = "block"; w.textContent = "This circuit oscillates: it never settles"; }
@@ -1026,10 +1088,10 @@ function applyView() {
 }
 function bbox() {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  nodes.forEach(n => {
+  V.items.forEach(n => {
     const lw = n.name ? n.name.length * 7 + 12 : 0;
-    const extraL = n.kind === "input" || n.kind === "button" || n.kind === "clock" ? lw : 0;
-    const extraR = n.kind === "output" ? lw : 0;
+    const extraL = n.kind === "input" || n.kind === "pin_in" || n.kind === "button" || n.kind === "clock" ? lw : 0;
+    const extraR = n.kind === "output" || n.kind === "pin_out" ? lw : 0;
     x0 = Math.min(x0, n.x - extraL); y0 = Math.min(y0, n.y - 22);
     x1 = Math.max(x1, n.x + n.g.w + extraR); y1 = Math.max(y1, n.y + n.g.h + 10);
   });
@@ -1054,19 +1116,23 @@ function fit() {
 const toWorld = (cx, cy) => ({ x: (cx - view.x) / view.s, y: (cy - view.y) / view.s });
 
 /* ================================================================ saving */
-const key = "wire-layout:" + hash(D.source);
+/* every use of a component shares one layout, saved per component */
+const keyBase = "wire-layout:" + hash((D.files || [{ source: D.source }]).map(f => f.source).join("\u0000")) + ":";
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+const compOf = id => id === 0 ? "" : D.insts[id].comp;
+const shared = new Map();
 function save() {
-  try { localStorage.setItem(key, JSON.stringify({ n: nodes.map(n => [n.x, n.y]), d: dummies.map(d => d.y) })); } catch (e) {}
+  const rec = { n: V.items.map(n => [n.x, n.y]), d: V.dummies.map(d => d.y) };
+  shared.set(compOf(V.id), rec);
+  try { localStorage.setItem(keyBase + compOf(V.id), JSON.stringify(rec)); } catch (e) {}
 }
-function load() {
-  try {
-    const s = JSON.parse(localStorage.getItem(key) || "null");
-    if (!s || s.n.length !== nodes.length || s.d.length !== dummies.length) return false;
-    nodes.forEach((n, i) => { n.x = s.n[i][0]; n.y = s.n[i][1]; });
-    dummies.forEach((d, i) => { d.y = s.d[i]; });
-    return true;
-  } catch (e) { return false; }
+function load(V) {
+  let s = shared.get(compOf(V.id));
+  if (!s) try { s = JSON.parse(localStorage.getItem(keyBase + compOf(V.id)) || "null"); } catch (e) { s = null; }
+  if (!s || s.n.length !== V.items.length || s.d.length !== V.dummies.length) return false;
+  V.items.forEach((n, i) => { n.x = s.n[i][0]; n.y = s.n[i][1]; });
+  V.dummies.forEach((d, i) => { d.y = s.d[i]; });
+  return true;
 }
 
 /* ============================================================ interaction */
@@ -1087,9 +1153,9 @@ sheet.addEventListener("pointerdown", e => {
   }
   const pe = partOf(e.target);
   if (pe) {
-    const n = nodes[+pe.dataset.id], w = toWorld(e.clientX, e.clientY);
+    const n = V.items[+pe.dataset.id], w = toWorld(e.clientX, e.clientY);
     drag = { node: n, sx: e.clientX, sy: e.clientY, ox: w.x - n.x, oy: w.y - n.y, moved: false, target: e.target };
-    if (n.kind === "button") { drag.press = true; n.state = 1; simulate(); }
+    if (n.kind === "button") { drag.press = true; n.node.state = 1; simulate(); }
   } else {
     drag = { pan: true, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false, target: e.target };
     sheet.classList.add("panning");
@@ -1118,7 +1184,7 @@ sheet.addEventListener("pointermove", e => {
   place(n);
   drawWires();
 });
-function release(n) { n.state = 0; simulate(); }
+function release(n) { n.node.state = 0; simulate(); }
 function endPointer(e) {
   pointers.delete(e.pointerId);
   if (pinch) { if (pointers.size < 2) pinch = null; return; }
@@ -1161,23 +1227,24 @@ function editValue(n, net, x, y) {
     const t = inp.value.trim().replace(/_/g, "");
     const v = /^0x[0-9a-f]+$/i.test(t) ? parseInt(t.slice(2), 16) : /^0b[01]+$/i.test(t) ? parseInt(t.slice(2), 2) : /^\d+$/.test(t) ? parseInt(t, 10) : NaN;
     if (isNaN(v) || v > mask(net.w)) { f.classList.add("bad"); inp.title = `Type 0 to ${mask(net.w)}, in decimal, 0x.. or 0b..`; return; }
-    n.state = u32(v);
+    n.node.state = u32(v);
     f.hidden = true;
     simulate();
   };
   inp.onkeydown = ev => { if (ev.key === "Escape") f.hidden = true; };
 }
 function click(n, target) {
+  if (n.kind === "chip") { openView(n.inst); return; }
   if (n.kind === "input") {
     const net = nets[n.out[0]];
     if (target.dataset.type) {
       editValue(n, net, e_x, e_y);
       return;
-    } else if (target.dataset.bit != null) n.state = u32(n.state ^ (1 << +target.dataset.bit));
+    } else if (target.dataset.bit != null) n.node.state = u32(n.state ^ (1 << +target.dataset.bit));
     else { select(n); return; }
     simulate(); select(n); return;
   }
-  if (n.kind === "clock") { n.state ^= 1; simulate(); select(n); return; }
+  if (n.kind === "clock") { n.node.state ^= 1; simulate(); select(n); return; }
   select(n);
 }
 function select(n) {
@@ -1296,9 +1363,15 @@ $("srcbtn").onclick = () => openDrawer($("srcdrawer").classList.contains("open")
 document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => openDrawer(null));
 
 /* ================================================================ source */
-function buildSource() {
-  const box = $("src");
-  D.source.replace(/\n$/, "").split("\n").forEach((line, i) => {
+let srcFile = -1;
+const baseName = f => f.replace(/^.*[\\/]/, "");
+function viewFile(id) { return id === 0 ? 0 : D.insts[id].defFile; }
+function buildSource(fi) {
+  if (fi === srcFile) return;
+  srcFile = fi;
+  const box = $("src"), f = (D.files || [{ name: D.file, source: D.source }])[fi];
+  box.textContent = "";
+  f.source.replace(/\n$/, "").split("\n").forEach((line, i) => {
     const row = document.createElement("div"); row.className = "ln"; row.dataset.line = i + 1;
     const no = document.createElement("span"); no.className = "no"; no.textContent = i + 1;
     const tx = document.createElement("span"); tx.className = "tx";
@@ -1307,13 +1380,13 @@ function buildSource() {
     else tx.textContent = line || " ";
     row.append(no, tx);
     row.onclick = () => {
-      const hit = nodes.filter(n => n.line === i + 1 && !n.dummy);
+      const hit = V.items.filter(n => n.line === i + 1 && (n.file || 0) === srcFile);
       if (hit.length) select(hit.find(n => n.name) || hit[0]);
       markSource(i + 1);
     };
     box.append(row);
   });
-  $("srctitle").textContent = D.file;
+  $("srctitle").textContent = baseName(f.name);
 }
 function markSource(line) {
   document.querySelectorAll("#src .ln").forEach(r => r.classList.toggle("sel", +r.dataset.line === line));
@@ -1321,26 +1394,55 @@ function markSource(line) {
   if (r && $("srcdrawer").classList.contains("open")) r.scrollIntoView({ block: "nearest" });
 }
 
+/* ============================================================ navigation */
+const instLabel = id => { const i = D.insts[id]; return i.name || i.comp; };
+function openView(id) {
+  hideTip();
+  if (selected) selected = null;
+  $("valform").hidden = true;
+  V = viewOf(id);
+  if (!V.laid) { layout(V); load(V); }
+  partsG.textContent = "";
+  V.items.forEach(buildPart);
+  drawWires();
+  redraw();
+  /* breadcrumb: circuit, then each chip on the way down */
+  const nav = $("crumbs"), chain = [];
+  for (let i = id; i > 0; i = D.insts[i].parent) chain.unshift(i);
+  nav.hidden = id === 0;
+  nav.textContent = "";
+  [0, ...chain].forEach((c, k) => {
+    const b = document.createElement("button");
+    b.textContent = c === 0 ? "Circuit" : instLabel(c);
+    if (c !== 0 && D.insts[c].name) { const sm = document.createElement("small"); sm.textContent = D.insts[c].comp; b.append(sm); }
+    if (c === id) b.setAttribute("aria-current", "page"); else b.onclick = () => openView(c);
+    nav.append(b);
+  });
+  $("tb-view").textContent = id === 0 ? "the circuit" : `${instLabel(id)}${D.insts[id].name ? " (" + D.insts[id].comp + ")" : ""}, ${baseName((D.files || [])[viewFile(id)] ? D.files[viewFile(id)].name : D.file)}`;
+  buildSource(viewFile(id));
+  markSource(id === 0 ? 0 : D.insts[id].defLine);
+  requestAnimationFrame(fit);
+}
+function goUp() { if (V && V.id !== 0) openView(D.insts[V.id].parent); }
+
 /* ================================================================ start */
 document.title = D.title || D.file;
 $("tb-name").textContent = D.title || D.file.replace(/\.wire$/, "");
-$("tb-file").textContent = D.file;
-const comps = nodes.filter(n => !SOURCES.has(n.kind) && !SINKS.has(n.kind) && n.kind !== "split" && n.kind !== "merge" && n.kind !== "const").length;
-$("tb-parts").textContent = `${comps} part${comps === 1 ? "" : "s"}, ${ttIn.length + clocks.length} in, ${ttOut.length} out`;
+$("tb-file").textContent = baseName(D.file);
+const comps = nodes.filter(n => !SOURCES.has(n.kind) && !SINKS.has(n.kind) && !["split", "merge", "const", "pin_in", "pin_out"].includes(n.kind)).length;
+const chips = D.insts ? D.insts.length - 1 : 0;
+$("tb-parts").textContent = `${comps} part${comps === 1 ? "" : "s"}${chips ? `, ${chips} chip${chips === 1 ? "" : "s"}` : ""}, ${ttIn.length + clocks.length} in, ${ttOut.length} out`;
 
-layout();
-if (load()) {}
+computeOrder();
 nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
-nodes.forEach(buildPart);
-drawWires();
-buildSource();
+openView(0);
 simulate();
-requestAnimationFrame(fit);
 $("fit").onclick = fit;
 $("tidy").onclick = () => {
-  try { localStorage.removeItem(key); } catch (e) {}
-  layout();
-  nodes.forEach(place);
+  shared.delete(compOf(V.id));
+  try { localStorage.removeItem(keyBase + compOf(V.id)); } catch (e) {}
+  layout(V);
+  V.items.forEach(place);
   drawWires();
   fit();
 };
@@ -1349,7 +1451,12 @@ addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (e.key === " " && clocks.length) { e.preventDefault(); stepClock(); }
   if (e.key === "f") fit();
-  if (e.key === "Escape") { openDrawer(null); select(null); }
+  if (e.key === "Escape") {
+    if (document.querySelector(".drawer.open")) openDrawer(null);
+    else if (V.id !== 0) goUp();
+    else select(null);
+  }
+  if (e.key === "Backspace") goUp();
 });
 </script>
 </body>

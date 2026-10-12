@@ -1,0 +1,18 @@
+circuit "Counter built from chips"
+
+import "adders.wire"
+
+clock  clk (hz = 2)
+output n[4]
+hex    digit
+
+# a 4-bit register: four D flip-flops sharing a clock
+component reg4(d[4], clk) -> (q[4]) {
+    q = {dff(d[3], clk), dff(d[2], clk), dff(d[1], clk), dff(d[0], clk)}
+}
+
+# the register holds n; the adder makes n + 1 for the next clock edge
+r    = reg4(next, clk)
+next = add4(r, 1, 0)
+n = r
+r -> digit

@@ -1,0 +1,5 @@
+# expect: input b of c is not connected
+component c(a, b) -> y { y = a & b }
+input a
+output y
+y = c(a)

@@ -104,11 +104,13 @@ test: $(WIRE)
 
 # Linux/macOS: installs build/wire as $(PREFIX)/bin/wire
 install: $(WIRE)
-	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	mkdir -p $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/wire/lib
 	cp $(WIRE) $(DESTDIR)$(PREFIX)/bin/
+	cp lib/*.wire $(DESTDIR)$(PREFIX)/share/wire/lib/
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/wire$(EXE)
+	rm -rf $(DESTDIR)$(PREFIX)/share/wire
 
 clean:
 	rm -rf build

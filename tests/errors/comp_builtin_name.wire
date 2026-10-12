@@ -1,0 +1,3 @@
+# expect: and is a built-in part; give your component another name
+component and(a) -> y { y = a }
+input a

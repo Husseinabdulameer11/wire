@@ -1,0 +1,5 @@
+# expect: output y of wide is 4 bits, but this is 1 bit
+component wide(a[4]) -> (y[4]) { y = a[0] }
+input a[4]
+output y[4]
+y = wide(a)

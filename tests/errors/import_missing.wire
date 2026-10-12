@@ -1,0 +1,3 @@
+# expect: cannot find nothere.wire
+import "nothere.wire"
+input a

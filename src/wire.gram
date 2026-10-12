@@ -2,9 +2,18 @@
 # Semicolons are optional; `#` and `//` start comments.
 
 program  <- stmt* ;
-stmt     <^ title / decl / assign / connect ;
+stmt     <^ title / import / component / decl / assign / connect ;
 
 title    <- ~CIRCUIT string ~';'? ;
+import   <- ~IMPORT string ~';'? ;
+
+# component full_adder(a, b, cin) -> (s, cout) { ... }
+# Port widths are part of the contract: x[4] must be connected to 4 bits.
+component <- ~COMPONENT ident plist ~'->' (plist / pdecl) body ;
+plist    <- ~'(' (pdecl (~',' pdecl)*)? ~')' ;
+pdecl    <- ident range? ;
+body     <- ~'{' cstmt* ~'}' ;
+cstmt    <^ decl / assign / connect ;
 
 # input a, b[4]      led ok, err (color = red)      clock clk (hz = 2)
 decl     <- dkind item (~',' item)* ~';'? ;
@@ -39,7 +48,9 @@ ident    <= !keyword [A-Za-z_] [A-Za-z0-9_]* ;
 dkind    <= ('input' / 'output' / 'wire' / 'led' / 'seg7' / 'hex'
             / 'button' / 'clock') ![A-Za-z0-9_] ;
 CIRCUIT  <= 'circuit' ![A-Za-z0-9_] ;
+IMPORT   <= 'import' ![A-Za-z0-9_] ;
+COMPONENT <= 'component' ![A-Za-z0-9_] ;
 keyword  <= ('input' / 'output' / 'wire' / 'led' / 'seg7' / 'hex'
-            / 'button' / 'clock' / 'circuit') ![A-Za-z0-9_] ;
+            / 'button' / 'clock' / 'circuit' / 'import' / 'component') ![A-Za-z0-9_] ;
 
 skip     <= ([ \t\r\n] / '#' [^\n]* / '//' [^\n]*)* ;

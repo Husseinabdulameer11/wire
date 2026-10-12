@@ -1,0 +1,5 @@
+# expect: y is 8 bits, but add4 gives 4 (its output sum)
+import "adders.wire"
+input a[4], b[4]
+output y[8]
+y = add4(a, b, 0)
