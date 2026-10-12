@@ -99,6 +99,15 @@ select { font: inherit; color: var(--ink); background: transparent; border: 0; b
 }
 #tip b { font-weight: 600; }
 
+#valform {
+  position: fixed; z-index: 6; display: flex; gap: 6px; align-items: center; background: var(--panel);
+  border: 1.5px solid var(--ink); padding: 6px 6px 6px 10px; font-size: 13px; flex-wrap: wrap; max-width: calc(100vw - 20px);
+}
+#valform input { font: 14px "IBM Plex Mono", ui-monospace, monospace; width: 9em; padding: 6px 8px; border: 1px solid var(--panel-line); background: var(--paper); color: var(--ink); border-radius: 4px; }
+#valform input:focus-visible { outline: 2px solid var(--hi); }
+#valform button { border: 1px solid var(--panel-line); border-radius: 4px; min-height: 32px; }
+#valform.bad input { border-color: var(--bad); }
+
 /* sheets that slide up: truth table and source */
 .drawer {
   position: fixed; left: 0; right: 0; bottom: 0; max-height: 58vh; background: var(--panel);
@@ -198,6 +207,11 @@ table.tt td.one { color: var(--on); font-weight: 500; }
 </div>
 
 <div id="tip"></div>
+<form id="valform" hidden>
+  <label for="valinput" id="vallabel"></label>
+  <input id="valinput" autocomplete="off" spellcheck="false" inputmode="text">
+  <button type="submit">Set</button>
+</form>
 
 <section class="drawer" id="tabledrawer" aria-label="Truth table">
   <header><h2>Truth table</h2><button data-close="tabledrawer">Close</button></header>
@@ -1064,6 +1078,7 @@ sheet.addEventListener("pointerdown", e => {
   sheet.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   hideTip();
+  $("valform").hidden = true;
   if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), s: view.s, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, vx: view.x, vy: view.y };
@@ -1117,6 +1132,7 @@ function endPointer(e) {
     else select(null);
     return;
   }
+  e_x = e.clientX; e_y = e.clientY;
   click(d.node, d.target);
 }
 sheet.addEventListener("pointerup", endPointer);
@@ -1129,16 +1145,34 @@ sheet.addEventListener("wheel", e => {
   view.s = s; applyView();
 }, { passive: false });
 
+let e_x = 0, e_y = 0;
+function editValue(n, net, x, y) {
+  const f = $("valform"), inp = $("valinput");
+  $("vallabel").textContent = `${n.name} (${net.w} bits)`;
+  inp.value = String(n.state);
+  f.classList.remove("bad");
+  f.hidden = false;
+  const r = f.getBoundingClientRect();
+  f.style.left = Math.max(10, Math.min(innerWidth - r.width - 10, x - r.width / 2)) + "px";
+  f.style.top = Math.max(10, Math.min(innerHeight - r.height - 10, y + 16)) + "px";
+  inp.focus(); inp.select();
+  f.onsubmit = ev => {
+    ev.preventDefault();
+    const t = inp.value.trim().replace(/_/g, "");
+    const v = /^0x[0-9a-f]+$/i.test(t) ? parseInt(t.slice(2), 16) : /^0b[01]+$/i.test(t) ? parseInt(t.slice(2), 2) : /^\d+$/.test(t) ? parseInt(t, 10) : NaN;
+    if (isNaN(v) || v > mask(net.w)) { f.classList.add("bad"); inp.title = `Type 0 to ${mask(net.w)}, in decimal, 0x.. or 0b..`; return; }
+    n.state = u32(v);
+    f.hidden = true;
+    simulate();
+  };
+  inp.onkeydown = ev => { if (ev.key === "Escape") f.hidden = true; };
+}
 function click(n, target) {
   if (n.kind === "input") {
     const net = nets[n.out[0]];
     if (target.dataset.type) {
-      const v = prompt(`Value for ${n.name} (${net.w} bits). Decimal, 0x.. or 0b..`, String(n.state));
-      if (v == null) return;
-      const t = v.trim().replace(/_/g, "");
-      const x = /^0x[0-9a-f]+$/i.test(t) ? parseInt(t.slice(2), 16) : /^0b[01]+$/i.test(t) ? parseInt(t.slice(2), 2) : /^\d+$/.test(t) ? parseInt(t, 10) : NaN;
-      if (isNaN(x)) return;
-      n.state = u32(x & mask(net.w));
+      editValue(n, net, e_x, e_y);
+      return;
     } else if (target.dataset.bit != null) n.state = u32(n.state ^ (1 << +target.dataset.bit));
     else { select(n); return; }
     simulate(); select(n); return;
