@@ -1,0 +1,4 @@
+# expect: ram takes an address, data in, write enable and a clock
+input a[4], d[8]
+output y[8]
+y = ram(a, d)

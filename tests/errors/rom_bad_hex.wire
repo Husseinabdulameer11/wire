@@ -1,0 +1,4 @@
+# expect: in the data, 3G is not a hex number
+input a[4]
+output y[8]
+y = rom(a, data = "01 02 3G")

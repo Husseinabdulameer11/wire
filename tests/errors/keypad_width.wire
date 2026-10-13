@@ -1,0 +1,4 @@
+# expect: a keypad is always 5 bits
+keypad k[4]
+output y[5]
+y = k

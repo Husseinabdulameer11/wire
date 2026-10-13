@@ -21,6 +21,7 @@
   --on: #1fae4b;           /* a 1 on a wire */
   --off: #155c2c;          /* a 0 on a wire */
   --unknown: #2f6fd6;
+  --float: #9aa7b4;        /* a bus nobody drives */
   --bus: #1d2b3a;
   --bad: #c8322b;
   --seg-on: #e2321f;
@@ -32,7 +33,7 @@
     --paper: #121a23; --grid: #1a2430; --grid-major: #222e3c;
     --ink: #d4dde7; --ink-soft: #8797a8; --body: #18222d; --panel: #18222d; --panel-line: #2c3a4a;
     --hi: #f0b23a; --hi-soft: rgba(240,178,58,.2);
-    --on: #3ddc6f; --off: #1f5c34; --unknown: #5b93f0; --bus: #c7d2de; --bad: #ef5a52;
+    --on: #3ddc6f; --off: #1f5c34; --unknown: #5b93f0; --bus: #c7d2de; --bad: #ef5a52; --float: #5d6b7a;
     --seg-on: #ff4a33; --seg-off: #222e3a;
     color-scheme: dark;
   }
@@ -41,7 +42,7 @@
   --paper: #121a23; --grid: #1a2430; --grid-major: #222e3c;
   --ink: #d4dde7; --ink-soft: #8797a8; --body: #18222d; --panel: #18222d; --panel-line: #2c3a4a;
   --hi: #f0b23a; --hi-soft: rgba(240,178,58,.2);
-  --on: #3ddc6f; --off: #1f5c34; --unknown: #5b93f0; --bus: #c7d2de; --bad: #ef5a52;
+  --on: #3ddc6f; --off: #1f5c34; --unknown: #5b93f0; --bus: #c7d2de; --bad: #ef5a52; --float: #5d6b7a;
   --seg-on: #ff4a33; --seg-off: #222e3a;
   color-scheme: dark;
 }
@@ -137,6 +138,20 @@ select { font: inherit; color: var(--ink); background: transparent; border: 0; b
 #src .tx { white-space: pre; }
 #src .cm { color: var(--ink-soft); }
 
+/* memory panel */
+#memtools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--panel-line); font-size: 13px; }
+#memtools select, #memtools input { font: 13px "IBM Plex Mono", ui-monospace, monospace; border: 1px solid var(--panel-line); border-radius: 4px; background: var(--paper); color: var(--ink); min-height: 32px; padding: 0 6px; }
+#memtools input { width: 6em; }
+#memtools button { border: 1px solid var(--panel-line); border-radius: 4px; min-height: 32px; padding: 4px 10px; }
+#memtools .info { color: var(--ink-soft); flex-basis: 100%; }
+table.mem { border-collapse: collapse; font: 12px "IBM Plex Mono", ui-monospace, monospace; margin: 6px 0 10px; }
+table.mem th { color: var(--ink-soft); font-weight: 400; padding: 2px 6px; text-align: right; }
+table.mem td { padding: 2px 3px; text-align: center; cursor: pointer; border-radius: 3px; }
+table.mem td:hover { background: var(--hi-soft); }
+table.mem td.zero { color: var(--ink-soft); opacity: .55; }
+table.mem td.cur { background: var(--hi); color: #fff; opacity: 1; }
+table.mem td input { width: 3.2em; font: inherit; padding: 0 2px; border: 1px solid var(--hi); }
+
 table.tt { border-collapse: collapse; font: 13px "IBM Plex Mono", ui-monospace, monospace; margin: 0 0 8px; min-width: 100%; }
 table.tt th { position: sticky; top: 0; background: var(--panel); font: 600 13px "IBM Plex Sans Condensed", sans-serif; text-align: center; padding: 6px 10px; border-bottom: 1.5px solid var(--ink); }
 table.tt td { text-align: center; padding: 3px 10px; border-bottom: 1px solid var(--grid); }
@@ -205,6 +220,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
     <button id="reset" title="Inputs to 0, flip-flops cleared">Reset</button>
     <button id="tablebtn" title="Truth table">Truth table</button>
     <button id="srcbtn" title="Show the .wire source">Source</button>
+    <button id="membtn" title="Contents of the roms and rams" hidden>Memory</button>
   </div>
   <div class="group">
     <button id="fit" title="Fit the circuit on screen">Fit</button>
@@ -234,6 +250,17 @@ table.tt td.one { color: var(--on); font-weight: 500; }
   <header><h2>Truth table</h2><button data-close="tabledrawer">Close</button></header>
   <div class="scroll" id="tablebody"></div>
 </section>
+<section class="drawer" id="memdrawer" aria-label="Memory">
+  <header><h2>Memory</h2><button data-close="memdrawer">Close</button></header>
+  <div id="memtools">
+    <select id="memsel" aria-label="Which memory"></select>
+    <button id="memprev" aria-label="Previous 256 words">‹</button>
+    <input id="memgo" aria-label="Go to address (hex)" placeholder="addr" spellcheck="false" autocomplete="off">
+    <button id="memnext" aria-label="Next 256 words">›</button>
+    <span class="info" id="meminfo"></span>
+  </div>
+  <div class="scroll" id="membody"></div>
+</section>
 <section class="drawer" id="srcdrawer" aria-label="Source">
   <header><h2 id="srctitle">Source</h2><button data-close="srcdrawer">Close</button></header>
   <div class="scroll"><div id="src"></div></div>
@@ -247,7 +274,8 @@ const D = /*WIRE_DATA*/;
 const SVGNS = "http://www.w3.org/2000/svg";
 const nets = D.nets.map((n, i) => ({ id: i, w: n.w, name: n.name, v: 0, k: 0, driver: null, readers: [] }));
 const nodes = D.nodes.map((n, i) => Object.assign({ id: i, x: 0, y: 0, state: 0, lastClk: 0 }, n));
-const SOURCES = new Set(["input", "button", "clock"]);
+const SOURCES = new Set(["input", "button", "clock", "keypad"]);
+const MEMS = new Set(["rom", "ram"]);
 const SINKS = new Set(["output", "led", "seg7", "hex"]);
 const SEQ = new Set(["dff", "tff", "jkff", "counter"]);
 const GATES = new Set(["and", "or", "nand", "nor", "xor", "xnor"]);
@@ -285,11 +313,19 @@ function geom(n) {
     left(Math.round(no * 10 / 10) * 10, "d");
     left(no * 20 + 20, "sel");
     for (let i = 0; i < no; i++) right(10 + i * 20, String(i));
-  } else if (k === "decoder" || k === "encoder" || k === "add" || k === "compare" || SEQ.has(k)) {
-    g.w = SEQ.has(k) ? 60 : 50;
+  } else if (k === "tri") {
+    g.w = 40; g.h = 40; left(10, "in"); left(30, "en"); right(10);
+  } else if (k === "bus") {
+    g.w = 30; g.h = Math.max(20, ni * 20);
+    for (let i = 0; i < ni; i++) left(10 + i * 20);
+    right(Math.floor(g.h / 20) * 10);
+  } else if (k === "keypad") {
+    g.w = 100; g.h = 100; right(50);
+  } else if (k === "decoder" || k === "encoder" || k === "add" || k === "compare" || SEQ.has(k) || MEMS.has(k)) {
+    g.w = SEQ.has(k) ? 60 : MEMS.has(k) ? 80 : 50;
     const top = SEQ.has(k) || k === "add" ? 20 : 30;     /* room for the title on top */
     const rows = Math.max(ni, no, SEQ.has(k) ? 3 : 2);
-    g.h = rows * 20 + top;
+    g.h = rows * 20 + top + (MEMS.has(k) ? 10 : 0);
     n.in.forEach((_, i) => left(top + i * 20, n.inNames[i]));
     if (no === 2 && rows > 2 && SEQ.has(k)) { right(top, n.outNames[0]); right(g.h - 20, n.outNames[1]); }
     else n.out.forEach((_, i) => right(top + i * 20, n.outNames[i]));
@@ -721,17 +757,19 @@ const el = (tag, attrs, parent) => {
   return e;
 };
 const world = $("world"), wiresG = $("wires"), partsG = $("parts"), dotsG = $("dots");
+/* per bit: 0, 1, x (unknown) or z (floating: nothing drives it) */
 const fmtBits = net => {
   let s = "";
-  for (let b = net.w - 1; b >= 0; b--) s += (net.k >>> b) & 1 ? ((net.v >>> b) & 1) : "x";
+  for (let b = net.w - 1; b >= 0; b--) s += (net.k >>> b) & 1 ? ((net.v >>> b) & 1) : (net.v >>> b) & 1 ? "z" : "x";
   return s;
 };
+const floating = net => net.k === 0 && net.v === mask(net.w);
 const fmtVal = net => {
   if (!known(net)) return fmtBits(net);
   if (net.w === 1) return String(net.v);
   return "0x" + net.v.toString(16).toUpperCase().padStart(Math.ceil(net.w / 4), "0") + " = " + net.v;
 };
-const wireColor = net => net.w > 1 ? (known(net) ? "var(--bus)" : "var(--unknown)") : !known(net) ? "var(--unknown)" : net.v ? "var(--on)" : "var(--off)";
+const wireColor = net => floating(net) ? "var(--float)" : net.w > 1 ? (known(net) ? "var(--bus)" : "var(--unknown)") : !known(net) ? "var(--unknown)" : net.v ? "var(--on)" : "var(--off)";
 
 function gatePath(kind, g) {
   const cy = g.h / 2, top = cy - 20, bot = cy + 20;
@@ -784,6 +822,39 @@ function buildPart(n) {
     el("path", { class: "part-line", d: `M0 ${sp.y}H22V${H}` }, root);
     const t = el("text", { class: "part-small", x: 24, y: sp.y + 3 }, root); t.textContent = "sel";
     if (shown) label(shown, 22, -10);
+  } else if (k === "tri") {
+    el("path", { class: "part-line", d: "M0 10H10M30 10H40M0 30H20V15" }, root);
+    el("path", { class: "part-body", d: "M10 0L30 10L10 20Z" }, root);
+    const t = el("text", { class: "part-small", x: 2, y: 27 }, root); t.textContent = "en";
+    if (shown) label(shown, 20, -6);
+  } else if (k === "bus") {
+    const ys = g.ins.map(p => p.y), mid = g.outs[0].y;
+    el("path", { class: "part-line", d: `M15 ${Math.min(...ys, mid) - 6}V${Math.max(...ys, mid) + 6}`, "stroke-width": 6, "stroke-linecap": "round" }, root);
+    g.ins.forEach(p => el("path", { class: "part-line", d: `M0 ${p.y}H15` }, root));
+    el("path", { class: "part-line", d: `M15 ${mid}H30`, "stroke-width": 3 }, root);
+    label(n.name || "bus", 15, Math.min(...ys, mid) - 12);
+  } else if (k === "keypad") {
+    el("rect", { class: "part-body", x: 0, y: 0, width: 100, height: 100, rx: 4 }, root);
+    const keys = [];
+    for (let i = 0; i < 16; i++) {
+      const key = [1, 2, 3, 0xC, 4, 5, 6, 0xD, 7, 8, 9, 0xE, 0xA, 0, 0xB, 0xF][i];
+      const x = 5 + (i % 4) * 23, y = 5 + Math.floor(i / 4) * 23;
+      const r = el("rect", { class: "hit", x, y, width: 21, height: 21, rx: 3, fill: "var(--body)", stroke: "var(--panel-line)" }, root);
+      const t = el("text", { class: "bitv hit", x: x + 10.5, y: y + 15, "text-anchor": "middle" }, root);
+      t.textContent = key.toString(16).toUpperCase();
+      r.dataset.key = t.dataset.key = key;
+      keys[key] = [r, t];
+    }
+    upd.push(() => {
+      const held = n.state & 16, cur = n.state & 15;
+      keys.forEach(([r, t], key) => {
+        const on = held && key === cur, last = !held && key === cur;
+        r.style.fill = on ? "var(--on)" : "var(--body)";
+        r.style.stroke = last ? "var(--hi)" : "var(--panel-line)";
+        t.style.fill = on ? "#fff" : "var(--ink)";
+      });
+    });
+    label(n.name, -8, 54, "end");
   } else if (k === "split" || k === "merge") {
     const ports = k === "split" ? g.outs : g.ins, ys = ports.map(p => p.y);
     const lo = Math.min(...ys), hi = Math.max(...ys), mid = (k === "split" ? g.ins[0] : g.outs[0]).y;
@@ -893,7 +964,7 @@ function buildPart(n) {
   } else {
     /* boxes: decoder, encoder, add, compare, flip-flops, counter */
     el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 2 }, root);
-    const title = { decoder: "DEC", encoder: "ENC", add: "+", compare: "CMP", dff: "D", tff: "T", jkff: "JK", counter: "CTR" }[k];
+    const title = { decoder: "DEC", encoder: "ENC", add: "+", compare: "CMP", dff: "D", tff: "T", jkff: "JK", counter: "CTR", rom: "ROM", ram: "RAM" }[k];
     const mid = SEQ.has(k) || k === "add";   /* plenty of room in the middle; others go on top */
     const tt = el("text", { class: "part-text", x: g.w / 2, y: mid ? g.h / 2 + 4 : 14, "text-anchor": "middle", style: "font-weight:600;font-size:" + (k === "add" ? 18 : 12) + "px" }, root);
     tt.textContent = title;
@@ -909,6 +980,13 @@ function buildPart(n) {
     if (SEQ.has(k)) {
       const st = el("text", { class: "part-small bitv", x: g.w / 2, y: g.h - 6, "text-anchor": "middle" }, root);
       upd.push(() => { st.textContent = "= " + n.state; });
+    }
+    if (MEMS.has(k)) {
+      /* the word being read: [address] = value; click to see all of it */
+      const a = nets[n.in[0]], q = nets[n.out[0]], st = el("text", { class: "part-small bitv", x: g.w / 2, y: g.h - 7, "text-anchor": "middle" }, root);
+      const hx = (v, w) => v.toString(16).toUpperCase().padStart(Math.ceil(w / 4), "0");
+      upd.push(() => { st.textContent = known(a) ? `[${hx(a.v, a.w)}] = ${known(q) ? hx(q.v, q.w) : fmtBits(q)}` : "[?]"; });
+      root.setAttribute("aria-label", `Show the contents of ${n.name || k}`);
     }
     if (shown) label(shown, g.w / 2, -7);
   }
@@ -961,9 +1039,12 @@ function redraw() {
   V.items.forEach(n => n.update());
   recolor();
   const w = $("warn");
+  const cf = sim.conflict();
   if (unstable) { w.style.display = "block"; w.textContent = "This circuit oscillates: it never settles"; }
+  else if (cf >= 0) { w.style.display = "block"; w.textContent = `Bus conflict: two parts drive ${nodes[cf].name || "a bus"} at once`; }
   else w.style.display = "none";
   if (tableOpen) markRow();
+  if (memOpen) updateMem();
 }
 
 /* ================================================================ view */
@@ -1046,6 +1127,7 @@ sheet.addEventListener("pointerdown", e => {
     const n = V.items[+pe.dataset.id], w = toWorld(e.clientX, e.clientY);
     drag = { node: n, sx: e.clientX, sy: e.clientY, ox: w.x - n.x, oy: w.y - n.y, moved: false, target: e.target };
     if (n.kind === "button") { drag.press = true; n.node.state = 1; simulate(); }
+    if (n.kind === "keypad" && e.target.dataset.key != null) { drag.press = true; n.node.state = 16 | +e.target.dataset.key; simulate(); }
   } else {
     drag = { pan: true, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false, target: e.target };
     sheet.classList.add("panning");
@@ -1074,7 +1156,8 @@ sheet.addEventListener("pointermove", e => {
   place(n);
   drawWires();
 });
-function release(n) { n.node.state = 0; simulate(); }
+/* a button goes back to 0; a keypad keeps its last key, with "held" off */
+function release(n) { n.node.state = n.kind === "keypad" ? n.state & 15 : 0; simulate(); }
 function endPointer(e) {
   pointers.delete(e.pointerId);
   if (pinch) { if (pointers.size < 2) pinch = null; return; }
@@ -1135,6 +1218,7 @@ function click(n, target) {
     simulate(); select(n); return;
   }
   if (n.kind === "clock") { n.node.state ^= 1; simulate(); select(n); return; }
+  if (MEMS.has(n.kind)) { showMem(n.node); select(n); return; }
   select(n);
 }
 function select(n) {
@@ -1230,11 +1314,12 @@ $("reset").onclick = () => {
   setRun(false);
   nodes.forEach(n => { if (SOURCES.has(n.kind) || SEQ.has(n.kind)) n.state = 0; n.lastClk = 0; });
   nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
+  sim.resetMem();
   simulate();
 };
 
 /* =========================================================== truth table */
-const ttIn = nodes.filter(n => n.kind === "input" || n.kind === "button");
+const ttIn = nodes.filter(n => n.kind === "input" || n.kind === "button" || n.kind === "keypad");
 const ttOut = nodes.filter(n => SINKS.has(n.kind));
 const ttBits = ttIn.reduce((s, n) => s + nets[n.out[0]].w, 0);
 let tableOpen = false, tableRows = [];
@@ -1242,7 +1327,7 @@ function buildTable() {
   const box = $("tablebody");
   box.textContent = "";
   const note = t => { const p = document.createElement("p"); p.className = "note"; p.textContent = t; box.append(p); };
-  if (seqNodes.length || clocks.length) return note("This circuit has memory (flip-flops or a clock), so its outputs depend on more than the inputs. Truth tables are for circuits without memory.");
+  if (seqNodes.length || clocks.length || nodes.some(n => n.kind === "ram")) return note("This circuit has memory (flip-flops or a clock), so its outputs depend on more than the inputs. Truth tables are for circuits without memory.");
   if (!ttIn.length) return note("This circuit has no inputs.");
   if (ttBits > 12) return note(`The inputs add up to ${ttBits} bits, which is ${2 ** ttBits} rows. Truth tables are shown up to 12 input bits.`);
   const saved = ttIn.map(n => n.state);
@@ -1276,14 +1361,111 @@ function markRow() {
   tableRows.forEach(r => r.tr.classList.toggle("cur", r.vals.every((v, i) => v === ttIn[i].state)));
 }
 function openDrawer(id) {
-  ["tabledrawer", "srcdrawer"].forEach(d => $(d).classList.toggle("open", d === id));
+  ["tabledrawer", "srcdrawer", "memdrawer"].forEach(d => $(d).classList.toggle("open", d === id));
   tableOpen = id === "tabledrawer";
+  memOpen = id === "memdrawer";
   $("tablebtn").setAttribute("aria-pressed", tableOpen);
   $("srcbtn").setAttribute("aria-pressed", id === "srcdrawer");
+  $("membtn").setAttribute("aria-pressed", memOpen);
   requestAnimationFrame(fit);
 }
 $("tablebtn").onclick = () => { if (tableOpen) return openDrawer(null); buildTable(); openDrawer("tabledrawer"); markRow(); };
 $("srcbtn").onclick = () => openDrawer($("srcdrawer").classList.contains("open") ? null : "srcdrawer");
+
+/* ================================================================ memory */
+/* 256 words at a time, 16 to a row; the word being read is lit. Click a
+ * word to change it. Reset puts back the contents written in the circuit. */
+const memNodes = nodes.filter(n => MEMS.has(n.kind));
+let memOpen = false, memSel = null, memPage = 0, memCells = [], memEdit = false;
+const memLabel = n => `${n.kind} ${n.name || ""}`.trim() + ` (${1 << n.abits} × ${n.bits} bits)`;
+if (memNodes.length) {
+  $("membtn").hidden = false;
+  memNodes.forEach((n, i) => { const o = document.createElement("option"); o.value = i; o.textContent = memLabel(n); $("memsel").append(o); });
+}
+function showMem(n) {
+  memSel = n;
+  $("memsel").value = memNodes.indexOf(n);
+  const a = nets[n.in[0]];
+  memPage = known(a) ? a.v >> 8 : 0;
+  buildMem();
+  if (!memOpen) openDrawer("memdrawer");
+}
+function buildMem() {
+  const n = memSel || memNodes[0];
+  memSel = n;
+  const size = 1 << n.abits, pages = Math.max(1, size >> 8);
+  memPage = Math.max(0, Math.min(pages - 1, memPage));
+  const start = memPage << 8, count = Math.min(256, size - start);
+  const digits = Math.ceil(n.bits / 4), adig = Math.max(2, Math.ceil(n.abits / 4));
+  const box = $("membody");
+  box.textContent = "";
+  const tbl = document.createElement("table");
+  tbl.className = "mem";
+  const head = tbl.insertRow();
+  head.append(document.createElement("th"));
+  for (let c = 0; c < Math.min(16, count); c++) { const th = document.createElement("th"); th.textContent = c.toString(16).toUpperCase(); th.style.textAlign = "center"; head.append(th); }
+  memCells = [];
+  for (let r = 0; r < count; r += 16) {
+    const tr = tbl.insertRow(), th = document.createElement("th");
+    th.textContent = (start + r).toString(16).toUpperCase().padStart(adig, "0");
+    tr.append(th);
+    for (let c = 0; c < 16 && r + c < count; c++) {
+      const td = tr.insertCell(), addr = start + r + c;
+      td.dataset.addr = addr;
+      td.onclick = () => editWord(td, addr, digits);
+      memCells.push(td);
+    }
+  }
+  box.append(tbl);
+  $("meminfo").textContent = pages > 1 ? `addresses ${start.toString(16).toUpperCase()}–${(start + count - 1).toString(16).toUpperCase()} (hex), page ${memPage + 1} of ${pages}. Click a word to change it.` : "Click a word to change it; Reset puts the contents back.";
+  $("memprev").disabled = memPage === 0;
+  $("memnext").disabled = memPage >= pages - 1;
+  updateMem();
+}
+function updateMem() {
+  if (!memSel || memEdit) return;
+  const n = memSel, words = sim.words(n.id), digits = Math.ceil(n.bits / 4);
+  const a = nets[n.in[0]], cur = known(a) ? a.v : -1;
+  memCells.forEach(td => {
+    const addr = +td.dataset.addr, v = words[addr];
+    const t = v.toString(16).toUpperCase().padStart(digits, "0");
+    if (td.textContent !== t) td.textContent = t;
+    td.classList.toggle("zero", v === 0);
+    td.classList.toggle("cur", addr === cur);
+  });
+}
+function editWord(td, addr, digits) {
+  if (memEdit) return;
+  const n = memSel, words = sim.words(n.id);
+  memEdit = true;
+  const inp = document.createElement("input");
+  inp.value = words[addr].toString(16).toUpperCase().padStart(digits, "0");
+  inp.setAttribute("aria-label", `Word ${addr.toString(16)} (hex)`);
+  td.textContent = "";
+  td.append(inp);
+  inp.focus(); inp.select();
+  const done = keep => {
+    if (!memEdit) return;
+    memEdit = false;
+    const t = inp.value.trim().replace(/^0x/i, "");
+    if (keep && /^[0-9a-f]+$/i.test(t) && parseInt(t, 16) <= mask(n.bits)) words[addr] = parseInt(t, 16);
+    td.textContent = "";
+    simulate();
+  };
+  inp.onkeydown = e => { if (e.key === "Enter") done(true); if (e.key === "Escape") done(false); e.stopPropagation(); };
+  inp.onblur = () => done(true);
+  inp.onclick = e => e.stopPropagation();
+}
+$("membtn").onclick = () => { if (memOpen) return openDrawer(null); buildMem(); openDrawer("memdrawer"); };
+$("memsel").onchange = () => { memSel = memNodes[+$("memsel").value]; memPage = 0; buildMem(); };
+$("memprev").onclick = () => { memPage--; buildMem(); };
+$("memnext").onclick = () => { memPage++; buildMem(); };
+$("memgo").onkeydown = e => {
+  e.stopPropagation();
+  if (e.key !== "Enter") return;
+  const t = $("memgo").value.trim().replace(/^0x/i, "");
+  if (/^[0-9a-f]+$/i.test(t)) { memPage = parseInt(t, 16) >> 8; buildMem(); }
+};
 document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => openDrawer(null));
 
 /* ================================================================ source */
@@ -1353,7 +1535,7 @@ function goUp() { if (V && V.id !== 0) openView(D.insts[V.id].parent); }
 document.title = D.title || D.file;
 $("tb-name").textContent = D.title || D.file.replace(/\.wire$/, "");
 $("tb-file").textContent = baseName(D.file);
-const comps = nodes.filter(n => !SOURCES.has(n.kind) && !SINKS.has(n.kind) && !["split", "merge", "const", "pin_in", "pin_out"].includes(n.kind)).length;
+const comps = nodes.filter(n => !SOURCES.has(n.kind) && !SINKS.has(n.kind) && !["split", "merge", "const", "pin_in", "pin_out", "bus"].includes(n.kind)).length;
 const chips = D.insts ? D.insts.length - 1 : 0;
 $("tb-parts").textContent = `${comps} part${comps === 1 ? "" : "s"}${chips ? `, ${chips} chip${chips === 1 ? "" : "s"}` : ""}, ${ttIn.length + clocks.length} in, ${ttOut.length} out`;
 
@@ -1377,8 +1559,15 @@ $("tidy").onclick = () => {
   fit();
 };
 addEventListener("resize", applyView);
+/* with a keypad, the keys 0-9 and a-f press it */
+const keypad = nodes.find(n => n.kind === "keypad");
+const hexKey = e => /^[0-9a-f]$/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey ? parseInt(e.key, 16) : -1;
+addEventListener("keyup", e => {
+  if (keypad && sim && hexKey(e) >= 0 && (keypad.state & 16) && (keypad.state & 15) === hexKey(e)) { keypad.state &= 15; simulate(); }
+});
 addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (keypad && sim && hexKey(e) >= 0) { if (!e.repeat) { keypad.state = 16 | hexKey(e); simulate(); } return; }
   if (e.key === " " && clocks.length) { e.preventDefault(); stepClock(); }
   if (e.key === "f") fit();
   if (e.key === "Escape") {

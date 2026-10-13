@@ -1,0 +1,4 @@
+# expect: 1FF does not fit in 8 bits
+input a[2]
+output y[8]
+y = rom(a, data = "1FF")

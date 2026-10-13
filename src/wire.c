@@ -121,9 +121,11 @@ enum {
     K_AND, K_OR, K_NAND, K_NOR, K_XOR, K_XNOR, K_NOT, K_BUF,
     K_MUX, K_DEMUX, K_DECODER, K_ENCODER, K_ADD, K_COMPARE,
     K_DFF, K_TFF, K_JKFF, K_COUNTER,
+    K_TRI, K_ROM, K_RAM,
     /* not callable: */
-    K_INPUT, K_BUTTON, K_CLOCK, K_OUTPUT, K_LED, K_SEG7, K_HEX,
+    K_INPUT, K_BUTTON, K_CLOCK, K_KEYPAD, K_OUTPUT, K_LED, K_SEG7, K_HEX,
     K_CONST, K_SPLIT, K_MERGE,
+    K_BUS,                        /* joins the tri() outputs that drive one bus */
     K_PIN_IN, K_PIN_OUT,          /* the edge of an instance */
     K_USER,                       /* a call of a component written in Wire */
     K_COUNT
@@ -133,8 +135,9 @@ static const char *kind_names[K_COUNT] = {
     "and", "or", "nand", "nor", "xor", "xnor", "not", "buf",
     "mux", "demux", "decoder", "encoder", "add", "compare",
     "dff", "tff", "jkff", "counter",
-    "input", "button", "clock", "output", "led", "seg7", "hex",
-    "const", "split", "merge", "pin_in", "pin_out", "component"
+    "tri", "rom", "ram",
+    "input", "button", "clock", "keypad", "output", "led", "seg7", "hex",
+    "const", "split", "merge", "bus", "pin_in", "pin_out", "component"
 };
 
 typedef struct {
@@ -150,6 +153,8 @@ typedef struct {
     int bits;                     /* counter */
     const char *opt; int optlen;  /* led colour */
     long hz;                      /* clock, in hundredths */
+    int membits, memabits;        /* rom, ram: bits per word, address bits */
+    unsigned long *mem; long memlen; /* initial contents: words 0..memlen-1 */
     int dead;                     /* merged into an identical gate */
 } Node;
 
@@ -188,9 +193,11 @@ static void node_out(Node *n, const char *name, int net)
 /* ---- names ------------------------------------------------------------- */
 
 enum { D_NONE, D_INPUT, D_OUTPUT, D_WIRE, D_LED, D_SEG7, D_HEX, D_BUTTON, D_CLOCK,
+       D_BUS, D_KEYPAD,
        D_PIN_IN, D_PIN_OUT };   /* ports, inside a component */
 static const char *dkind_names[] = {
-    "", "input", "output", "wire", "led", "seg7", "hex", "button", "clock", "input", "output"
+    "", "input", "output", "wire", "led", "seg7", "hex", "button", "clock", "bus", "keypad",
+    "input", "output"
 };
 
 typedef struct Part { int hi, lo; gram_node *expr, *at; int net; } Part;
@@ -315,6 +322,8 @@ typedef struct {
     gram_node *call, *id;
     int npos; gram_node *pos[MAXIO];
     gram_node *sel, *en, *rst, *cin;
+    gram_node *load, *d, *down;    /* counter */
+    gram_node *data;               /* rom, ram: the `data = "..."` or `file = "..."` setting */
     int bits;
     /* computed: */
     int nin; gram_node *in[MAXIO]; char inname[MAXIO][NAMEW]; int inw[MAXIO];
@@ -430,6 +439,7 @@ static void analyze_user(Call *c, int check)
     for (a = c->id->next; a; a = a->next) {
         if (a->rule == WIRE_R_named) {
             gram_node *k = a->child;
+            if (k->next->rule == WIRE_R_string) fail(k->next, "inputs take wires or numbers, not text in quotes");
             for (i = 0; i < cp->nin; i++)
                 if (same(k, cp->inname[i], (int)strlen(cp->inname[i]))) break;
             if (i == cp->nin) fail(k, "%s has no input called %.*s", cp->name, TEXT(k));
@@ -478,14 +488,26 @@ static void analyze(gram_node *call, Call *c, int check)
     for (a = c->id->next; a; a = a->next) {
         if (a->rule == WIRE_R_named) {
             gram_node *k = a->child, *v = a->child->next;
-            if (same(k, "sel", 3) && (c->kind == K_MUX || c->kind == K_DEMUX)) c->sel = v;
+            int text = same(k, "data", 4) || same(k, "file", 4);
+            if (v->rule == WIRE_R_string && !text)
+                fail(v, "%.*s takes a wire or a number, not text in quotes", TEXT(k));
+            if (text && (c->kind == K_ROM || c->kind == K_RAM)) {
+                if (v->rule != WIRE_R_string)
+                    fail(v, "%.*s is text in quotes: %.*s = \"%s\"", TEXT(k), TEXT(k),
+                         same(k, "file", 4) ? "program.hex" : "3E 05 76");
+                if (c->data) fail(k, "give a %s either data = or file =, not both", c->kname);
+                c->data = a;
+            } else if (same(k, "sel", 3) && (c->kind == K_MUX || c->kind == K_DEMUX)) c->sel = v;
             else if (same(k, "en", 2) && (c->kind == K_DECODER || c->kind == K_DFF || c->kind == K_COUNTER)) c->en = v;
             else if (same(k, "rst", 3) && c->kind >= K_DFF && c->kind <= K_COUNTER) c->rst = v;
             else if (same(k, "cin", 3) && c->kind == K_ADD) c->cin = v;
-            else if (same(k, "bits", 4) && c->kind == K_COUNTER) {
+            else if (same(k, "load", 4) && c->kind == K_COUNTER) c->load = v;
+            else if (same(k, "d", 1) && c->kind == K_COUNTER) c->d = v;
+            else if (same(k, "down", 4) && c->kind == K_COUNTER) c->down = v;
+            else if (same(k, "bits", 4) && (c->kind == K_COUNTER || c->kind == K_ROM)) {
                 if (v->rule != WIRE_R_number) fail(v, "bits must be a number");
                 c->bits = number(v);
-                if (c->bits < 1 || c->bits > MAXW) fail(v, "a counter has 1 to %d bits", MAXW);
+                if (c->bits < 1 || c->bits > MAXW) fail(v, "a %s has 1 to %d bits", c->kname, MAXW);
             } else fail(k, "%s has no setting called %.*s", c->kname, TEXT(k));
         } else {
             if (c->npos >= MAXIO - 2) fail(a, "too many inputs");
@@ -606,14 +628,57 @@ static void analyze(gram_node *call, Call *c, int check)
         goto flags;
     case K_COUNTER:
         need_args(c, 1, 1, "a clock: counter(clk, bits=4)");
-        w = c->bits ? c->bits : 4;
+        w = c->bits ? c->bits : (c->d && argw(c->d)) ? argw(c->d) : 4;
+        c->bits = w;
         if (check) want_width(c, c->pos[0], 1, "the clock");
         add_in(c, c->pos[0], "clk", 1);
     flags:
         if (c->en)  { if (check) want_width(c, c->en, 1, "en");   add_in(c, c->en, "en", 1); }
         if (c->rst) { if (check) want_width(c, c->rst, 1, "rst"); add_in(c, c->rst, "rst", 1); }
+        if (c->kind == K_COUNTER && (c->load || c->d)) {
+            if (!c->load || !c->d)
+                fail(c->call, "a counter that can be loaded needs both load = and d =: counter(clk, load = l, d = x)");
+            if (check) { want_width(c, c->load, 1, "load"); want_width(c, c->d, w, "d"); }
+            add_in(c, c->load, "load", 1);
+            add_in(c, c->d, "d", w);
+        }
+        if (c->kind == K_COUNTER && c->down) {
+            if (check) want_width(c, c->down, 1, "down");
+            add_in(c, c->down, "down", 1);
+        }
         if (c->kind == K_COUNTER) { add_out(c, "q", w); add_out(c, "carry", 1); }
         else { add_out(c, "q", w); add_out(c, "nq", w); }
+        break;
+    case K_TRI:
+        need_args(c, 2, 2, "a value and an enable: tri(x, en)");
+        w = argw(c->pos[0]);
+        if (check) want_width(c, c->pos[1], 1, "the enable");
+        add_in(c, c->pos[0], "in", w);
+        add_in(c, c->pos[1], "en", 1);
+        add_out(c, "out", w);
+        break;
+    case K_ROM:
+        need_args(c, 1, 1, "an address: rom(addr, bits = 8, file = \"program.hex\")");
+        s = argw(c->pos[0]);
+        if (check && (s < 1 || s > 16))
+            fail(c->pos[0], "the address of a rom is 1 to 16 bits (up to 65536 words), not %d", s);
+        w = c->bits ? c->bits : 8;
+        add_in(c, c->pos[0], "addr", s);
+        add_out(c, "q", w);
+        break;
+    case K_RAM:
+        need_args(c, 4, 4, "an address, data in, write enable and a clock: ram(addr, din, we, clk)");
+        s = argw(c->pos[0]);
+        w = argw(c->pos[1]);
+        if (check && (s < 1 || s > 16))
+            fail(c->pos[0], "the address of a ram is 1 to 16 bits (up to 65536 words), not %d", s);
+        if (check && !w) fail(c->pos[1], "the data in of a ram needs a width; use a wire with one, like d[8]");
+        if (check) { want_width(c, c->pos[2], 1, "we"); want_width(c, c->pos[3], 1, "the clock"); }
+        add_in(c, c->pos[0], "addr", s);
+        add_in(c, c->pos[1], "din", w);
+        add_in(c, c->pos[2], "we", 1);
+        add_in(c, c->pos[3], "clk", 1);
+        add_out(c, "q", w);
         break;
     }
     if (check)
@@ -664,6 +729,7 @@ static int sym_width(Sym *s)
     if (s->dw) w = s->dw;
     else if (s->dkind == D_INPUT || s->dkind == D_BUTTON || s->dkind == D_CLOCK || s->dkind == D_LED) w = 1;
     else if (s->dkind == D_HEX) w = 4;
+    else if (s->dkind == D_KEYPAD) w = 5;
     else if (s->expr) {
         if (sym_call(s)) {
             Call c;
@@ -796,6 +862,115 @@ static int build_const(gram_node *e, int dst, int want)
     return n->out[0];
 }
 
+/* ---- memory contents ---------------------------------------------------- */
+
+/* Contents of a rom or ram, from `data = "..."` or a file named by
+ * `file = "..."`. The text is numbers in hex (3E, or 0x3E; 0b0011 is
+ * binary), separated by spaces, commas or new lines, filling words from
+ * address 0 up. `@100` moves to address 0x100. `#`, `;` and `//` start
+ * comments. */
+static const char *mem_where; static gram_node *mem_at;
+static void mem_fail(int line, const char *f, ...)
+{
+    va_list ap;
+    char msg[400];
+    va_start(ap, f);
+    vsnprintf(msg, sizeof msg, f, ap);
+    va_end(ap);
+    if (!mem_where) fail(mem_at, "in the data, %s", msg);
+    fprintf(stderr, "%s:%d: error: %s\n", mem_where, line, msg);
+    exit(1);
+}
+
+static void parse_mem(Node *n, const char *t, size_t len)
+{
+    long size = 1L << n->memabits, addr = 0;
+    size_t i = 0;
+    int line = 1;
+    unsigned long max = n->membits >= 32 ? 0xFFFFFFFFUL : (1UL << n->membits) - 1;
+    while (i < len) {
+        char c = t[i];
+        if (c == '\n') { line++; i++; continue; }
+        if (c == ' ' || c == '\t' || c == '\r' || c == ',') { i++; continue; }
+        if (c == '#' || c == ';' || (c == '/' && i + 1 < len && t[i + 1] == '/')) {
+            while (i < len && t[i] != '\n') i++;
+            continue;
+        }
+        {
+            int at = c == '@', base = 16, digits = 0;
+            unsigned long v = 0;
+            size_t start;
+            if (at) i++;
+            if (i + 1 < len && t[i] == '0' && (t[i + 1] == 'x' || t[i + 1] == 'X')) i += 2;
+            else if (i + 2 < len && t[i] == '0' && (t[i + 1] == 'b' || t[i + 1] == 'B') &&
+                     (t[i + 2] == '0' || t[i + 2] == '1')) { base = 2; i += 2; }
+            start = i;
+            while (i < len) {
+                char d = t[i];
+                int x = d >= '0' && d <= '9' ? d - '0' : d >= 'a' && d <= 'f' ? d - 'a' + 10
+                      : d >= 'A' && d <= 'F' ? d - 'A' + 10 : d == '_' ? -2 : -1;
+                if (x == -2) { i++; continue; }
+                if (x < 0 || x >= base) break;
+                if (v > (0xFFFFFFFFUL - (unsigned long)x) / (unsigned long)base) mem_fail(line, "a number is too big");
+                v = v * (unsigned long)base + (unsigned long)x;
+                digits++;
+                i++;
+            }
+            if (!digits || (i < len && t[i] != ' ' && t[i] != '\t' && t[i] != '\r' && t[i] != '\n' &&
+                            t[i] != ',' && t[i] != '#' && t[i] != ';' && t[i] != '/')) {
+                size_t e = start;
+                while (e < len && e < start + 20 && t[e] != ' ' && t[e] != '\n' && t[e] != ',') e++;
+                mem_fail(line, "%s%.*s is not a hex number", at ? "@" : "", (int)(e - start), t + start);
+            }
+            if (at) {
+                if ((long)v >= size) mem_fail(line, "@%lX is past the end (the %s has %ld words)", v, kind_names[n->kind], size);
+                addr = (long)v;
+                continue;
+            }
+            if (addr >= size) mem_fail(line, "more data than the %s holds (%ld words)", kind_names[n->kind], size);
+            if (v > max) mem_fail(line, "%lX does not fit in %d bit%s", v, n->membits, plural(n->membits));
+            n->mem[addr++] = v;
+            if (addr > n->memlen) n->memlen = addr;
+        }
+    }
+}
+
+static char *read_file(const char *path, size_t *len);
+
+static void load_mem(int k, gram_node *setting)
+{
+    Node *n = &nodes[k];
+    gram_node *key, *v;
+    n->mem = (unsigned long *)calloc((size_t)1 << n->memabits, sizeof *n->mem);
+    if (!n->mem) { fprintf(stderr, "out of memory\n"); exit(1); }
+    n->memlen = 0;
+    if (!setting) return;
+    key = setting->child;
+    v = key->next;
+    mem_at = v;
+    if (same(key, "file", 4)) {
+        const char *src = files[file_of(v)].name;
+        int dl = 0, i;
+        char *path, *text;
+        size_t len, nl = v->len - 2;
+        for (i = 0; src[i]; i++) if (src[i] == '/' || src[i] == '\\') dl = i + 1;
+        if (nl && (v->text[1] == '/' || v->text[1] == '\\' || (nl > 1 && v->text[2] == ':'))) dl = 0;
+        path = (char *)malloc((size_t)dl + nl + 1);
+        memcpy(path, src, (size_t)dl);
+        memcpy(path + dl, v->text + 1, nl);
+        path[dl + nl] = 0;
+        text = read_file(path, &len);
+        if (!text) fail(v, "cannot read %s", path);
+        mem_where = path;
+        parse_mem(n, text, len);
+        free(text);
+        mem_where = NULL;
+    } else {
+        mem_where = NULL;
+        parse_mem(n, v->text + 1, v->len - 2);
+    }
+}
+
 /* build a call; the output in `dst` is the default port, other ports of a
  * named component (`s`) use the nets made for `s.port` references */
 static Node *instantiate(Call *c, int dst, Sym *s);
@@ -818,6 +993,11 @@ static Node *build_call(gram_node *call, int dst, Sym *s)
     n = &nodes[k];
     name_node(n, s);
     n->bits = c.bits ? c.bits : 4;
+    if (c.kind == K_ROM || c.kind == K_RAM) {
+        n->membits = c.outw[0];
+        n->memabits = c.inw[0];
+        load_mem(k, c.data);
+    }
     for (i = 0; i < c.nout; i++) {
         int net;
         if (i == c.defport && dst >= 0) net = dst;
@@ -1010,7 +1190,7 @@ static void declare(gram_node *d)
 {
     gram_node *k = d->child, *it;
     int dk;
-    for (dk = 1; dk <= D_CLOCK; dk++)
+    for (dk = 1; dk <= D_KEYPAD; dk++)
         if (same(k, dkind_names[dk], (int)strlen(dkind_names[dk]))) break;
     for (it = k->next; it; it = it->next) {
         Sym *s;
@@ -1034,6 +1214,7 @@ static void declare(gram_node *d)
             if (dk == D_SEG7 && s->dw != 7 && s->dw != 8)
                 fail(r, "a seg7 is 7 bits (segments a..g) or 8 (with the dot)");
             if (dk == D_HEX && s->dw > 4) fail(r, "a hex display shows 4 bits");
+            if (dk == D_KEYPAD) fail(r, "a keypad is always 5 bits: k[3:0] is the key, k[4] is 1 while it is held");
         }
         for (o = opts ? opts->child : NULL; o; o = o->next) {
             gram_node *key = o->child;
@@ -1049,20 +1230,25 @@ static void assign_to(gram_node *target, gram_node *expr, gram_node *at, int pre
 {
     gram_node *id = target->child, *r = id->next;
     Sym *s = intern(id);
-    if (s->dkind == D_INPUT || s->dkind == D_BUTTON || s->dkind == D_CLOCK)
+    if (s->dkind == D_INPUT || s->dkind == D_BUTTON || s->dkind == D_CLOCK || s->dkind == D_KEYPAD)
         fail(id, "%.*s is an %s; it gets its value from the page, not from the circuit",
              TEXT(id), dkind_names[s->dkind]);
     if (s->dkind == D_PIN_IN)
         fail(id, "%.*s is an input of %s; its value comes from where %s is used",
              TEXT(id), comps[sc->comp].name, comps[sc->comp].name);
     if (!r) {
-        if (s->expr)
-            fail(id, "%.*s is already given a value on line %d", TEXT(id), line_of(s->at));
+        if (s->expr && s->dkind == D_BUS) return;     /* one more thing driving a bus */
+        if (s->expr) {
+            int tri = expr->rule == WIRE_R_call && same(expr->child, "tri", 3);
+            fail(id, "%.*s is already given a value on line %d%s%.*s", TEXT(id), line_of(s->at),
+                 tri ? ". For several tri() outputs to share a wire, declare it as a bus: bus " : "",
+                 tri ? (int)id->len : 0, id->text);
+        }
         if (s->nparts)
             fail(id, "%.*s already has single bits assigned on line %d", TEXT(id), line_of(s->parts[0].at));
         s->expr = expr;
         s->at = at;
-        s->conn = pre == -2;
+        s->conn = pre == -2 || s->dkind == D_BUS;   /* a bus is a wire, not a part's name */
         if (!s->decl) s->decl = id;
     } else {
         Part *p;
@@ -1171,6 +1357,21 @@ static void write_json(void)
         }
         if (n->kind == K_CONST) fprintf(jf, ",\"value\":%lu", n->value);
         if (n->kind == K_COUNTER) fprintf(jf, ",\"bits\":%d", n->bits);
+        if (n->kind == K_ROM || n->kind == K_RAM) {
+            long a = 0, e, last, m;
+            int seg = 0;
+            fprintf(jf, ",\"bits\":%d,\"abits\":%d,\"init\":[", n->membits, n->memabits);
+            /* runs of contents, as [start, [words]]; long runs of zeros are left out */
+            while (a < n->memlen) {
+                if (!n->mem[a]) { a++; continue; }
+                for (last = e = a; e < n->memlen && e - last <= 16; e++) if (n->mem[e]) last = e;
+                fprintf(jf, "%s[%ld,[", seg++ ? "," : "", a);
+                for (m = a; m <= last; m++) fprintf(jf, "%s%lu", m > a ? "," : "", n->mem[m]);
+                fputs("]]", jf);
+                a = last + 1;
+            }
+            fputc(']', jf);
+        }
         if (n->kind == K_CLOCK) fprintf(jf, ",\"hz\":%ld.%02ld", n->hz / 100, n->hz % 100);
         if (n->opt) { fputs(",\"color\":", jf); jstr(n->opt, n->optlen); }
         fputc('}', jf);
@@ -1350,8 +1551,8 @@ static void compile_scope(gram_node *first, int top)
             if (title) fail(st, "the circuit already has a name");
             title = st->child->text; titlelen = (int)st->child->len;
         } else if (st->rule == WIRE_R_decl) {
-            if (!top && !same(st->child, "wire", 4))
-                fail(st, "inside a component, declare only wires; its inputs and outputs "
+            if (!top && !same(st->child, "wire", 4) && !same(st->child, "bus", 3))
+                fail(st, "inside a component, declare only wires and buses; its inputs and outputs "
                          "go in the header: component %s(a, b) -> (y) { ... }", comps[sc->comp].name);
             declare(st);
         }
@@ -1387,7 +1588,7 @@ static void compile_scope(gram_node *first, int top)
         Sym *s = &sc->syms[i];
         Node *n;
         int kind = s->dkind == D_INPUT ? K_INPUT : s->dkind == D_BUTTON ? K_BUTTON
-                 : s->dkind == D_CLOCK ? K_CLOCK : -1;
+                 : s->dkind == D_CLOCK ? K_CLOCK : s->dkind == D_KEYPAD ? K_KEYPAD : -1;
         if (kind < 0) continue;
         n = new_node(kind, s->decl);
         name_node(n, s);
@@ -1419,7 +1620,7 @@ static void compile_scope(gram_node *first, int top)
                     Call cl;
                     analyze(e, &cl, 0);
                     if (cl.defport < 0 && s->dkind != D_NONE) build(e, s->net, s->w);  /* says: pick one */
-                    build_call(e, cl.defport >= 0 ? s->net : -1, s);
+                    build_call(e, cl.defport >= 0 ? s->net : -1, s->dkind == D_BUS ? NULL : s);
                 } else build(e, s->net, s->w);
             } else {
                 for (j = 0; j < s->nparts; j++)
@@ -1522,6 +1723,71 @@ static void check_unused(void)
     }
 }
 
+/* is node i a tri() output, or a chip output that comes from one? */
+static int tri_like(int i, const int *drv, int depth)
+{
+    const Node *n = &nodes[i];
+    if (n->kind == K_TRI || n->kind == K_BUS) return 1;
+    if (n->kind == K_PIN_OUT && depth < 64) {
+        int d = drv[find(n->in[0])];
+        return d >= 0 && tri_like(d, drv, depth + 1);
+    }
+    return 0;
+}
+
+/* A bus is one wire driven by several tri() outputs. Each of them gets a
+ * wire of its own and one bus part joins them, so every wire still has a
+ * single driver; the simulator decides who is talking (and spots two at
+ * once). */
+static void make_buses(void)
+{
+    int *drv = (int *)malloc(sizeof(int) * (size_t)(nnets + 1));
+    int r, i, j, k;
+    for (i = 0; i < nnets; i++) drv[i] = -1;
+    for (i = 0; i < nnodes; i++)
+        if (!nodes[i].dead) for (j = 0; j < nodes[i].nout; j++) drv[find(nodes[i].out[j])] = i;
+    for (r = 0; r < nnets; r++) {
+        int list[MAXIO], port[MAXIO], nl = 0, b, w;
+        if (find(r) != r || nets[r].drivers < 2) continue;
+        for (i = 0; i < nnodes; i++) {
+            if (nodes[i].dead) continue;
+            for (j = 0; j < nodes[i].nout; j++) {
+                if (find(nodes[i].out[j]) != r) continue;
+                if (!tri_like(i, drv, 0)) {
+                    if (nets[r].name)
+                        fail(nets[r].at, "%.*s is driven by %d things at once; only tri() outputs may share "
+                             "a wire (declared as a bus), but a %s drives it", nets[r].nlen, nets[r].name,
+                             nets[r].drivers, nodes[i].kind == K_PIN_OUT ? "chip output that is not a tri()"
+                             : kind_names[nodes[i].kind]);
+                    fail(nets[r].at, "a wire is driven by %d things at once", nets[r].drivers);
+                }
+                if (nl >= MAXIO) fail(nets[r].at, "more than %d things drive one bus", MAXIO);
+                list[nl] = i;
+                port[nl++] = j;
+            }
+        }
+        w = nets[r].w ? nets[r].w : 1;
+        nets[r].w = w;
+        cur_inst = nodes[list[0]].kind == K_PIN_OUT ? insts[nodes[list[0]].inst].parent : nodes[list[0]].inst;
+        b = nnodes;
+        new_node(K_BUS, nets[r].at);
+        nodes[b].name = nets[r].name;
+        nodes[b].nlen = nets[r].nlen;
+        for (k = 0; k < nl; k++) {
+            int nt = new_net(w);
+            nets[nt].drivers = 1;
+            nets[nt].readers = 1;
+            nets[nt].at = nets[r].at;
+            nodes[list[k]].out[port[k]] = nt;
+            node_in(&nodes[b], "", nt);
+        }
+        node_out(&nodes[b], "out", r);
+        nets[r].drivers = 1;
+    }
+    cur_inst = 0;
+    free(drv);
+}
+
 /* after every scope is built: share gates, make splitters, check drivers */
 static void finish(void)
 {
@@ -1579,6 +1845,7 @@ static void finish(void)
         for (j = 0; j < nodes[i].nout; j++) nets[find(nodes[i].out[j])].drivers++;
         for (j = 0; j < nodes[i].nin; j++) nets[find(nodes[i].in[j])].readers++;
     }
+    make_buses();
     for (i = 0; i < nnets; i++) {
         Net *n = &nets[i];
         if (find(i) != i) continue;

@@ -1,0 +1,7 @@
+# expect: only tri() outputs may share a wire (declared as a bus), but a and drives it
+input a[4], b[4], ea
+output y[4]
+bus d[4]
+d = tri(a, ea)
+d = a & b
+y = d

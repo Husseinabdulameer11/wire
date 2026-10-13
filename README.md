@@ -32,8 +32,13 @@ wire full_adder.wire          # writes full_adder.html
   cycle) and a speed control from ½× up to 1M× and Max; space also steps;
   clicking a clock flips it by hand. While it runs fast, the rate actually
   simulated is shown next to the speed.
-- **Wires** are bright green for 1, dark green for 0, blue when unknown;
-  buses are drawn thick. Hover or tap a wire to see its name and value.
+- **Wires** are bright green for 1, dark green for 0, blue when unknown,
+  grey when floating (a bus nobody is driving); buses are drawn thick. Hover or tap a wire to see its name and value.
+- **Keypads**: click a key, or type 0-9 and a-f on the keyboard.
+- **Memory** shows the contents of every rom and ram, 256 words at a time,
+  with the word being read lit up. Click a word to change it; Reset puts the
+  contents written in the circuit back. Clicking a rom or ram opens it too.
+- If two parts drive a bus at once, the page says **Bus conflict**.
 - **Truth table** lists every input combination for circuits without
   memory (up to 12 input bits); click a row to set the inputs to it.
 - **Source** shows the `.wire` file. Click a part to find its line, or a
@@ -58,8 +63,12 @@ output y, total[4]        # shows a value; width is inferred if left out
 led    ok, err (color = red)      # err is red; red green blue yellow orange white or #rrggbb
 seg7   disp               # 7 bits: bit 0 = segment a ... bit 6 = g (8 bits adds the dot)
 hex    digit              # a 7-segment display that shows a 4-bit value as 0..F
-wire   bus[16]            # a named wire, only needed to fix its width
+keypad k                  # 16 keys 0..F: k[3:0] is the last key, k[4] is 1 while held
+wire   w[16]              # a named wire, only needed to fix its width
+bus    data[8]            # a wire that several tri() outputs may drive
 ```
+
+`bus` and `keypad` are words of the language, so they cannot be names.
 
 ### Connections
 
@@ -124,9 +133,59 @@ number like `5` takes whatever width it is used at, and it must fit.
 | `tff(t, clk, rst = r)` | q, `.nq` | |
 | `jkff(j, k, clk, rst = r)` | q, `.nq` | |
 | `counter(clk, bits = 4, en = e, rst = r)` | q, `.carry` | carry is 1 on the last value |
+| `counter(clk, load = l, d = x, down = dn)` | q, `.carry` | `load` takes `d` at the edge (even without `en`); `down` counts down |
+| `tri(x, en)` | value | drives x while en is 1, floats while 0; see buses |
+| `rom(addr, bits = 8, file = "f.hex")` | q | 2^addr words; contents from `file =` or `data = "..."` |
+| `ram(addr, din, we, clk, file = "f.hex")` | q | reads at once; writes din at the rising edge while we is 1 |
 
 Name a component to use its other outputs: `s = add(x, y)` then `s.cout`.
 `rst` is asynchronous; flip-flops start at 0.
+
+### Buses
+
+A `bus` is a wire that several `tri()` outputs take turns driving, like the
+bus of a breadboard computer. Assign it once per driver:
+
+```
+bus data[8]
+data = tri(pc_out, CO)          # the PC talks while CO is 1
+data = tri(mem, RO)             # the RAM talks while RO is 1
+data = a.out                    # a chip whose output is a tri() works too
+mar  = reg(data[3:0], clk, en = MI)
+```
+
+While nobody drives it, a bus floats (shown grey, `z` in values); parts
+read a floating value as unknown. If two drive it at once, it is unknown
+and the page warns about a bus conflict.
+
+### Memory contents
+
+`rom` and `ram` take their contents from a file (`file = "program.hex"`,
+next to the `.wire` file) or inline (`data = "3E 05 76"`). Both are hex
+numbers separated by spaces, commas or new lines, filling words from
+address 0; `@10` moves to address 0x10; `#`, `;` and `//` start comments;
+`0b1010` is binary. Up to 16 address bits (65536 words) and 32 bits a word.
+
+```
+@0
+1E   # LDA 14
+2F   # ADD 15
+E0   # OUT
+F0   # HLT
+@E
+05 03
+```
+
+### A whole computer
+
+`examples/sap1.wire` is Ben Eater's 8-bit breadboard computer (the SAP-1 of
+Malvino's *Digital Computer Electronics*, with STA, LDI, JMP, JC and JZ
+added): program counter, MAR, 16 bytes of RAM, instruction register, A and B
+registers, an ALU with carry and zero flags, and an output register, all on
+one 8-bit bus. The control lines come from a microcode ROM
+(`examples/sap1/microcode.hex`), addressed by the instruction and its step.
+The program in `examples/sap1/multiply.hex` multiplies 3 by 29, shows 87 and
+halts; `examples/sap1/count.hex` counts up and down forever.
 
 ## Components and imports
 
@@ -227,6 +286,9 @@ for gram.
 `wire --json file.wire` prints the netlist, if you want to feed it to
 something else.
 
+`node tests/sim/run.js build/wire examples/sap1.wire 2000` runs a circuit's
+clock without a browser (here until the SAP-1 halts) and prints its outputs.
+
 ## How it works
 
 `src/wire.gram` is the grammar. `src/wire.c` loads the file and its
@@ -253,6 +315,10 @@ module (it writes the bytes itself; no toolchain is involved):
   the circuit oscillates.
 - Pins at the edge of a chip share one memory slot with the wire outside,
   so chips cost nothing extra.
+- Every wire is a value and a known mask; a bit that is not known but has
+  value 1 is floating (z). `tri()` makes it, pins, `buf`, splits and merges
+  pass it on, and a bus part, which Wire adds where several `tri()`s meet,
+  works out who is talking. rom and ram words live in the same memory.
 - Running the clock calls `toggle(n)` once per animation frame, which does
   n clock flips inside WebAssembly, and the page is drawn once per frame.
 

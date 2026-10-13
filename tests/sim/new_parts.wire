@@ -1,0 +1,18 @@
+circuit "new parts"
+input a[4], ae, be, we, ld
+clock clk
+keypad k
+bus data[8]
+output q[8], c[4]
+
+component outreg(d[8], oe, clk) -> (out[8]) {
+    r = reg(d, clk)
+    out = tri(r, oe)
+}
+m = rom(a, file = "p.hex")
+data = tri(m, ae)
+o = outreg(m, be, clk)
+data = o
+r = ram(a, data, we, clk, data = "11 22 @3 44")
+q = r
+c = counter(clk, load = ld, d = k[3:0], down = we)

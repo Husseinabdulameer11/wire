@@ -1,0 +1,19 @@
+# multiply x by y by adding y to the product x times, then show it and stop.
+# 3 x 29 = 87 (0x57)
+@0
+1E   # 0  LDA 14     A = x
+3C   # 1  SUB 12     A = x - 1
+76   # 2  JC 6       no borrow (x was not 0): keep going
+1D   # 3  LDA 13     done: A = product
+E0   # 4  OUT
+F0   # 5  HLT
+4E   # 6  STA 14     x = x - 1
+1D   # 7  LDA 13
+2F   # 8  ADD 15     product = product + y
+4D   # 9  STA 13
+60   # A  JMP 0
+@C
+01   # C  the constant 1
+00   # D  product
+03   # E  x
+1D   # F  y = 29

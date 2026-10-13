@@ -35,13 +35,14 @@ let failed = 0;
 for (const file of files) {
   const D = JSON.parse(execFileSync(wire, ["--json", file], { stdio: ["ignore", "pipe", "ignore"] }).toString());
   const ref = refSim(D);
+  if (process.env.SIMTEST_VERBOSE) console.log(file, D.nodes.map(n => n.kind).join(" "));
   const sim = WireSim.createSync(D);
   D.nets.forEach((n, i) => { sim.setV(i, 0); sim.setK(i, mask(n.w)); });
 
   const SRC = ["input", "button", "clock"], SEQ = ["dff", "tff", "jkff", "counter"];
   const ins = [], clocks = [];
   D.nodes.forEach((n, j) => {
-    if (n.kind === "input" || n.kind === "button") ins.push(j);
+    if (n.kind === "input" || n.kind === "button" || n.kind === "keypad") ins.push(j);
     if (n.kind === "clock") clocks.push(j);
   });
   const both = (j, x) => { ref.nodes[j].state = x; sim.setState(j, x); };
@@ -79,6 +80,7 @@ for (const file of files) {
         n.lastClk = 0; sim.setLastClk(j, 0);
       });
       ref.nets.forEach((n, i) => { n.v = 0; n.k = mask(n.w); sim.setV(i, 0); sim.setK(i, mask(n.w)); });
+      ref.resetMem(); sim.resetMem();
       both_sim();
     } else {
       log.push("simulate");
@@ -98,6 +100,15 @@ for (const file of files) {
     }
     if (!bad && ref.unstable() !== sim.unstable())
       bad = `unstable: reference ${ref.unstable()}, wasm ${sim.unstable()}`;
+    if (!bad && ref.conflict() !== sim.conflict())
+      bad = `bus conflict: reference ${ref.conflict()}, wasm ${sim.conflict()}`;
+    for (let j = 0; j < D.nodes.length && !bad; j++) {
+      const n = ref.nodes[j];
+      if (n.kind !== "ram") continue;
+      const words = sim.words(j);
+      for (let a = 0; a < n.mem.length && !bad; a++)
+        if (n.mem[a] !== words[a]) bad = `ram ${j} "${n.name || ""}" word ${a}: reference ${n.mem[a]}, wasm ${words[a]}`;
+    }
     if (bad) bad = `after step ${step}: ${bad}\n  last actions: ${log.slice(-8).join("; ")}`;
   }
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;

@@ -1,0 +1,33 @@
+# SAP-1 microcode: what each control line does at each step of each
+# instruction. Address = opcode * 8 + step; each word is 18 bits:
+#
+#   bit 17 JC   jump if carry        bit  8 AO   A register out
+#   bit 16 JZ   jump if zero         bit  7 EO   ALU (sum) out
+#   bit 15 HLT  stop the clock       bit  6 SU   ALU subtracts
+#   bit 14 MI   MAR in               bit  5 BI   B register in
+#   bit 13 RI   RAM in (write)       bit  4 OI   output register in
+#   bit 12 RO   RAM out              bit  3 CE   count (PC + 1)
+#   bit 11 IO   instruction out      bit  2 CO   PC out
+#   bit 10 II   instruction in       bit  1 J    jump (PC in)
+#   bit  9 AI   A register in        bit  0 FI   flags in
+#
+# Every instruction starts with the fetch:
+#   step 0  CO MI        04004   the PC goes to the MAR
+#   step 1  RO II CE     01408   RAM to the instruction register, PC + 1
+
+@00 04004 01408                    # 0 NOP
+@08 04004 01408 04800 01200        # 1 LDA n   IO MI, RO AI
+@10 04004 01408 04800 01020 00281  # 2 ADD n   IO MI, RO BI, EO AI FI
+@18 04004 01408 04800 01020 002C1  # 3 SUB n   IO MI, RO BI, EO AI SU FI
+@20 04004 01408 04800 02100        # 4 STA n   IO MI, AO RI
+@28 04004 01408 00A00              # 5 LDI n   IO AI
+@30 04004 01408 00802              # 6 JMP n   IO J
+@38 04004 01408 20800              # 7 JC n    IO JC
+@40 04004 01408 10800              # 8 JZ n    IO JZ
+@48 04004 01408                    # 9 NOP
+@50 04004 01408                    # A NOP
+@58 04004 01408                    # B NOP
+@60 04004 01408                    # C NOP
+@68 04004 01408                    # D NOP
+@70 04004 01408 00110              # E OUT     AO OI
+@78 04004 01408 08000              # F HLT     HLT

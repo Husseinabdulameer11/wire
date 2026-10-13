@@ -1,0 +1,6 @@
+# expect: For several tri() outputs to share a wire, declare it as a bus: bus d
+input a[4], b[4], ea, eb
+output y[4]
+d = tri(a, ea)
+d = tri(b, eb)
+y = d

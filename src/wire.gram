@@ -16,6 +16,7 @@ body     <- ~'{' cstmt* ~'}' ;
 cstmt    <^ decl / assign / connect ;
 
 # input a, b[4]      led ok, err (color = red)      clock clk (hz = 2)
+# bus data[8]: a wire that several tri() outputs may drive
 decl     <- dkind item (~',' item)* ~';'? ;
 item     <- ident range? opts? ;
 opts     <- ~'(' opt (~',' opt)* ~')' ;
@@ -38,7 +39,7 @@ port     <- ~'.' ident ;
 primary  <^ call / concat / number / ident / ~'(' expr ~')' ;
 call     <- ident ~'(' (arg (~',' arg)*)? ~')' ;
 arg      <^ named / expr ;
-named    <- ident ~'=' !'=' expr ;
+named    <- ident ~'=' !'=' (string / expr) ;   # string: rom(a, file = "prog.hex")
 concat   <- ~'{' expr (~',' expr)* ~'}' ;
 
 # ---- tokens ------------------------------------------------------------
@@ -46,11 +47,12 @@ number   <= '0b' [01_]+ / '0x' [0-9a-fA-F_]+ / [0-9]+ ;
 string   <= '"' [^"\n]* '"' ;
 ident    <= !keyword [A-Za-z_] [A-Za-z0-9_]* ;
 dkind    <= ('input' / 'output' / 'wire' / 'led' / 'seg7' / 'hex'
-            / 'button' / 'clock') ![A-Za-z0-9_] ;
+            / 'button' / 'clock' / 'bus' / 'keypad') ![A-Za-z0-9_] ;
 CIRCUIT  <= 'circuit' ![A-Za-z0-9_] ;
 IMPORT   <= 'import' ![A-Za-z0-9_] ;
 COMPONENT <= 'component' ![A-Za-z0-9_] ;
 keyword  <= ('input' / 'output' / 'wire' / 'led' / 'seg7' / 'hex'
-            / 'button' / 'clock' / 'circuit' / 'import' / 'component') ![A-Za-z0-9_] ;
+            / 'button' / 'clock' / 'bus' / 'keypad'
+            / 'circuit' / 'import' / 'component') ![A-Za-z0-9_] ;
 
 skip     <= ([ \t\r\n] / '#' [^\n]* / '//' [^\n]*)* ;

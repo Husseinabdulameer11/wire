@@ -1,0 +1,4 @@
+# expect: sel takes a wire or a number, not text in quotes
+input a, b
+output y
+y = mux(a, b, sel = "1")

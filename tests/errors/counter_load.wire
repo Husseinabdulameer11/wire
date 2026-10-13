@@ -1,0 +1,5 @@
+# expect: needs both load = and d =
+input l
+clock clk
+output y[4]
+y = counter(clk, load = l)

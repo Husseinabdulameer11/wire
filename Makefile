@@ -101,6 +101,8 @@ test: $(WIRE)
 	    grep -qF "$$(sed -n 's/^# expect: //p' $$f)" build/err.txt || { echo "$$f: wrong error:"; cat build/err.txt; exit 1; }; \
 	done
 	@if command -v node >/dev/null 2>&1; then node tests/sim/simtest.js $(WIRE) || exit 1; \
+	   node tests/sim/run.js $(WIRE) examples/sap1.wire 2000 out | grep -q "out = 87" \
+	     || { echo "examples/sap1.wire: the SAP-1 did not compute 3 x 29 = 87"; exit 1; }; \
 	 else echo "wire: node not found, skipping the simulator tests (tests/sim)"; fi
 	@echo "wire: all tests passed"
 

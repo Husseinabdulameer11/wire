@@ -1,0 +1,4 @@
+# expect: cannot read
+input a[4]
+output y[8]
+y = rom(a, file = "no_such_file.hex")

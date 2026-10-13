@@ -1,0 +1,4 @@
+# expect: more data than the rom holds (4 words)
+input a[2]
+output y[8]
+y = rom(a, data = "1 2 3 4 5")

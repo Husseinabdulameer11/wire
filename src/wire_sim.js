@@ -5,12 +5,17 @@
  * WebAssembly.Memory:
  *
  *   word 0                      1 while the last settle did not converge
+ *   word 1                      1 + the bus part where two drivers talk at once
  *   NET  + 8*i, NET + 8*i + 4   value and known-mask of net i
  *   NODE + 8*j, NODE + 8*j + 4  state and last clock level of node j
  *   TAB  ...                    address tables for mux inputs
+ *   MEM  ...                    the words of every rom and ram
  *
- * Every net carries a value and a known mask (bit set = that bit is known),
- * exactly like the old JavaScript simulator, so unknown values still show.
+ * Every net carries a value v and a known mask k, per bit:
+ *   k = 1          known, the value is v
+ *   k = 0, v = 0   unknown (x)
+ *   k = 0, v = 1   floating (z): nothing drives it, like a bus nobody talks on
+ * Pins, buf, split and merge pass z along; every other part reads it as x.
  *
  * The bytes are written directly; no toolchain is involved. Exports:
  *   settle()     evaluate all logic until it is stable; returns 1 if it is
@@ -28,6 +33,8 @@
 const WireSim = (() => {
 
 const SEQ = new Set(["dff", "tff", "jkff", "counter"]);
+/* parts that pass a floating (z) value on unchanged */
+const PASS_Z = new Set(["buf", "pin_in", "pin_out", "split", "merge", "bus"]);
 const SOURCES = new Set(["input", "button", "clock"]);
 const mask32 = w => (w >= 32 ? -1 : (2 ** w - 1) | 0);
 
@@ -151,7 +158,15 @@ function compile(D) {
     tabOf.set(j, TAB);
     TAB += 4 * (n.in.length - 1);
   });
-  const bytes = TAB;
+  /* rom and ram contents: one 32-bit word per address */
+  const memOf = new Map();
+  let MEM = TAB;
+  nodes.forEach((n, j) => {
+    if (n.kind !== "rom" && n.kind !== "ram") return;
+    memOf.set(j, MEM);
+    MEM += 4 * (1 << n.abits);
+  });
+  const bytes = MEM;
   const width = i => nets[i].w;
   const inBy = (n, name) => { const i = (n.inNames || []).indexOf(name); return i < 0 ? -1 : n.in[i]; };
 
@@ -161,9 +176,10 @@ function compile(D) {
 
   /* ---- combinational inputs of each node */
   const combIn = n => {
+    if (n.kind === "ram") return [inBy(n, "addr")];     /* reading; writing waits for the clock */
     if (!SEQ.has(n.kind)) return n.in;
     const r = [inBy(n, "rst")];
-    if (n.kind === "counter") r.push(inBy(n, "en"));
+    if (n.kind === "counter") r.push(inBy(n, "en"), inBy(n, "down"));
     return r.filter(x => x >= 0);
   };
 
@@ -218,13 +234,16 @@ function compile(D) {
   let track = false;                       /* inside a loop: note changes in Lch */
 
   const known = net => f.ld(K(net)).k(mask32(width(net))).op(OP.eq);
-  /* write locals v, k (or a constant k) to an output net */
-  const out = (net, kc) => {
+  /* write locals v, k (or a constant k) to an output net; unknown bits
+   * become 0, unless keepZ, when floating bits stay as they are */
+  const out = (net, kc, keepZ) => {
     const m = mask32(width(net));
     if (kc !== undefined) {
       const k = kc & m;
       if (k !== -1) f.get(Lv).k(k).op(OP.and).set(Lv);
       f.k(k).set(Lk);
+    } else if (keepZ) {
+      if (m !== -1) f.get(Lk).k(m).op(OP.and).set(Lk).get(Lv).k(m).op(OP.and).set(Lv);
     } else {
       if (m !== -1) f.get(Lk).k(m).op(OP.and).set(Lk);
       f.get(Lv).get(Lk).op(OP.and).set(Lv);
@@ -244,7 +263,7 @@ function compile(D) {
     const k = n.kind;
     if (alias.has(j)) return;
     switch (k) {
-    case "input": case "button": case "clock":
+    case "input": case "button": case "clock": case "keypad":
       f.ld(S(j)).set(Lv); out(n.out[0], -1); return;
     case "const":
       f.k(n.value | 0).set(Lv); out(n.out[0], -1); return;
@@ -278,7 +297,42 @@ function compile(D) {
       f.ld(V(n.in[0])).k(-1).op(OP.xor).ld(K(n.in[0])).op(OP.and).set(Lv).ld(K(n.in[0])).set(Lk);
       out(n.out[0]); return;
     case "buf": case "pin_in": case "pin_out":
-      copy(n.in[0]); out(n.out[0]); return;
+      copy(n.in[0]); out(n.out[0], undefined, true); return;
+    case "tri": {
+      /* en 1: the value (z read as x); en 0: floating; en unknown: x */
+      const x = n.in[0], en = n.in[1], m = mask32(width(n.out[0]));
+      known(en).if_();
+      f.ld(V(en)).if_();
+      f.ld(V(x)).ld(K(x)).op(OP.and).set(Lv).ld(K(x)).set(Lk);
+      f.else_().k(m).set(Lv).k(0).set(Lk).end();
+      f.else_(); zero(); f.end();
+      out(n.out[0], undefined, true); return;
+    }
+    case "bus": {
+      /* per bit: nobody driving -> z; one -> its value; two or more -> x */
+      const m = mask32(width(n.out[0]));
+      const Ld1 = La, Ld2 = Lb, Lkd = Lnk;
+      f.k(0).set(Ld1).k(0).set(Ld2).k(0).set(Lv).k(0).set(Lkd);
+      n.in.forEach(i => {
+        /* t = bits this input drives (not z) */
+        f.ld(V(i)).ld(K(i)).k(-1).op(OP.xor).op(OP.and).k(-1).op(OP.xor).k(m).op(OP.and).set(Lt);
+        f.get(Ld2).get(Ld1).get(Lt).op(OP.and).op(OP.or).set(Ld2);
+        f.get(Ld1).get(Lt).op(OP.or).set(Ld1);
+        f.get(Lv).ld(V(i)).ld(K(i)).op(OP.and).get(Lt).op(OP.and).op(OP.or).set(Lv);
+        f.get(Lkd).ld(K(i)).get(Lt).op(OP.and).op(OP.or).set(Lkd);
+      });
+      /* k = known and driven by exactly one; v = that value, or 1 where floating */
+      f.get(Lkd).get(Ld1).op(OP.and).get(Ld2).k(-1).op(OP.xor).op(OP.and).set(Lk);
+      f.get(Lv).get(Lk).op(OP.and).get(Ld1).k(-1).op(OP.xor).k(m).op(OP.and).op(OP.or).set(Lv);
+      out(n.out[0], undefined, true); return;
+    }
+    case "rom": case "ram": {
+      const a = inBy(n, "addr");
+      known(a).if_();
+      f.ld(V(a)).k(2).op(OP.shl).ldAt(memOf.get(j)).set(Lv).k(-1).set(Lk);
+      f.else_(); zero(); f.end();
+      out(n.out[0]); return;
+    }
     case "mux": {
       const sel = n.in[n.in.length - 1];
       known(sel).if_();
@@ -361,9 +415,14 @@ function compile(D) {
       }
       f.ld(S(j)).set(Lv); out(n.out[0], -1);
       if (k === "counter") {
-        const en = inBy(n, "en");
-        /* carry = (no en, or en known and 1) and state == all ones */
-        f.ld(S(j)).k(mask32(w)).op(OP.eq);
+        const en = inBy(n, "en"), dn = inBy(n, "down");
+        /* carry = (no en, or en known and 1) and state == all ones
+         * (counting down: state == 0) */
+        if (dn >= 0) {
+          known(dn).ld(V(dn)).k(0).op(OP.ne).op(OP.and).if_(I32);
+          f.ld(S(j)).op(OP.eqz);
+          f.else_().ld(S(j)).k(mask32(w)).op(OP.eq).end();
+        } else f.ld(S(j)).k(mask32(w)).op(OP.eq);
         if (en >= 0) known(en).ld(V(en)).k(0).op(OP.ne).op(OP.and).op(OP.and);
         f.set(Lv); out(n.out[1], -1);
       } else {
@@ -377,7 +436,7 @@ function compile(D) {
         const m = mask32(r[0] - r[1] + 1);
         f.ld(V(a)).k(r[1]).op(OP.shr_u).k(m).op(OP.and).set(Lv);
         f.ld(K(a)).k(r[1]).op(OP.shr_u).k(m).op(OP.and).set(Lk);
-        out(n.out[i]);
+        out(n.out[i], undefined, true);
       });
       return;
     }
@@ -387,7 +446,7 @@ function compile(D) {
         f.get(Lv).ld(V(n.in[i])).k(r[1]).op(OP.shl).op(OP.or).set(Lv);
         f.get(Lk).ld(K(n.in[i])).k(r[1]).op(OP.shl).op(OP.or).set(Lk);
       });
-      out(n.out[0]); return;
+      out(n.out[0], undefined, true); return;
     }
     }
     /* sinks (output, led, seg7, hex) drive nothing */
@@ -413,22 +472,37 @@ function compile(D) {
     f.end().end();
     track = false;
   }
+  /* a bus where two parts talk at once: remember the first one */
+  f.st(4, () => f.k(0));
+  nodes.forEach((n, j) => {
+    if (n.kind !== "bus") return;
+    const m = mask32(width(n.out[0]));
+    f.k(0).set(La).k(0).set(Lb);
+    n.in.forEach(i => {
+      f.ld(V(i)).ld(K(i)).k(-1).op(OP.xor).op(OP.and).k(-1).op(OP.xor).k(m).op(OP.and).set(Lt);
+      f.get(Lb).get(La).get(Lt).op(OP.and).op(OP.or).set(Lb);
+      f.get(La).get(Lt).op(OP.or).set(La);
+    });
+    f.get(Lb).k(0).op(OP.ne).ld(4).op(OP.eqz).op(OP.and).if_().st(4, () => f.k(j + 1)).end();
+  });
   f.ld(0).op(OP.eqz).end();
   const settleBody = new Bytes().vec([[8, I32], [1, I64]].map(([n, t]) => new Bytes().u(n).byte(t).b));
   settleBody.add(f.c.b);
 
   /* ---- simulate(): settle, then clock the flip-flops that saw a rising edge */
   const seq = [];
-  nodes.forEach((n, j) => { if (SEQ.has(n.kind)) seq.push(j); });
+  nodes.forEach((n, j) => { if (SEQ.has(n.kind) || n.kind === "ram") seq.push(j); });
   const g = new Fn();
-  const Gr = 0, Gfired = 1, Gc = 2, Gst = 3;      /* then fire_i = 4 + 2i, next_i = 5 + 2i */
+  /* locals: then per clocked part i, fire = 4 + 3i, next (or the word to
+   * write) = 5 + 3i, the address to write = 6 + 3i */
+  const Gr = 0, Gfired = 1, Gc = 2, Gst = 3;
   const gKnown = net => g.ld(K(net)).k(mask32(width(net))).op(OP.eq);
   g.call(0).op(OP.drop);
   g.k(0).set(Gr);
   g.op(OP.block, VOID).op(OP.loop, VOID);
   g.k(0).set(Gfired);
   seq.forEach((j, i) => {
-    const n = nodes[j], clk = inBy(n, "clk"), Lf = 4 + 2 * i, Ln = 5 + 2 * i;
+    const n = nodes[j], clk = inBy(n, "clk"), Lf = 4 + 3 * i, Ln = 5 + 3 * i, Laddr = 6 + 3 * i;
     const w = width(n.out[0]);
     if (clk >= 0) gKnown(clk).if_(I32).ld(V(clk)).else_().k(0).end();
     else g.k(0);
@@ -436,6 +510,19 @@ function compile(D) {
     /* rising = last == 0 and now != 0 */
     g.ld(LC(j)).op(OP.eqz).get(Gc).k(0).op(OP.ne).op(OP.and).set(Lf);
     g.st(LC(j), () => g.get(Gc));
+    if (n.kind === "ram") {
+      /* write if we is known and 1 and the address is known */
+      const we = inBy(n, "we"), a = inBy(n, "addr"), din = inBy(n, "din");
+      g.get(Lf).if_();
+      gKnown(we).ld(V(we)).k(0).op(OP.ne).op(OP.and).ld(K(a)).k(mask32(width(a))).op(OP.eq).op(OP.and).set(Lf);
+      g.get(Lf).if_();
+      g.k(1).set(Gfired);
+      g.ld(V(a)).k(2).op(OP.shl).k(memOf.get(j)).op(OP.add).set(Laddr);
+      g.ld(V(din)).ld(K(din)).op(OP.and).set(Ln);
+      g.end();
+      g.end();
+      return;
+    }
     g.get(Lf).if_();
     g.k(1).set(Gfired);
     /* next state */
@@ -443,7 +530,7 @@ function compile(D) {
     const en = inBy(n, "en");
     const val = name => { const x = inBy(n, name); if (x >= 0) g.ld(V(x)); else g.k(0); };
     const body = () => {
-      if (n.kind === "dff") g.ld(V(n.in[0])).set(Ln);
+      if (n.kind === "dff") g.ld(V(n.in[0])).ld(K(n.in[0])).op(OP.and).set(Ln);
       else if (n.kind === "tff") {
         g.get(Gst).k(1).op(OP.xor).get(Gst); val("t"); g.op(OP.select).set(Ln);
       } else if (n.kind === "jkff") {
@@ -454,26 +541,45 @@ function compile(D) {
         val("j"); g.op(OP.select);
         val("j"); g.k(0).op(OP.ne); val("k"); g.k(0).op(OP.ne).op(OP.and);
         g.op(OP.select).set(Ln);
-      } else g.get(Gst).k(1).op(OP.add).k(mask32(w)).op(OP.and).set(Ln);
+      } else {
+        /* counter: one up, or one down while down is 1 */
+        const dn = inBy(n, "down");
+        if (dn >= 0) {
+          g.get(Gst).k(-1).op(OP.add).get(Gst).k(1).op(OP.add);
+          gKnown(dn).ld(V(dn)).k(0).op(OP.ne).op(OP.and).op(OP.select);
+        } else g.get(Gst).k(1).op(OP.add);
+        g.k(mask32(w)).op(OP.and).set(Ln);
+      }
     };
-    if (en >= 0) {
-      gKnown(en).ld(V(en)).k(0).op(OP.ne).op(OP.and).if_();
-      body();
-      g.else_().get(Gst).set(Ln).end();
-    } else body();
+    const counting = () => {
+      if (en >= 0) {
+        gKnown(en).ld(V(en)).k(0).op(OP.ne).op(OP.and).if_();
+        body();
+        g.else_().get(Gst).set(Ln).end();
+      } else body();
+    };
+    const load = inBy(n, "load");
+    if (n.kind === "counter" && load >= 0) {
+      /* load wins over counting, and does not need en */
+      const d = inBy(n, "d");
+      gKnown(load).ld(V(load)).k(0).op(OP.ne).op(OP.and).if_();
+      g.ld(V(d)).ld(K(d)).op(OP.and).k(mask32(w)).op(OP.and).set(Ln);
+      g.else_(); counting(); g.end();
+    } else counting();
     g.end();
   });
   g.get(Gfired).op(OP.eqz).brIf(1);
   seq.forEach((j, i) => {
-    g.get(4 + 2 * i).if_();
-    g.st(S(j), () => g.get(5 + 2 * i));
+    g.get(4 + 3 * i).if_();
+    if (nodes[j].kind === "ram") g.get(6 + 3 * i).get(5 + 3 * i).op(OP.store, 2).u_(0);
+    else g.st(S(j), () => g.get(5 + 3 * i));
     g.end();
   });
   g.call(0).op(OP.drop);
   g.get(Gr).k(1).op(OP.add).tee(Gr).k(64).op(OP.lt_u).brIf(0);
   g.end().end();
   g.ld(0).op(OP.eqz).end();
-  const simBody = new Bytes().vec([[4 + 2 * seq.length, I32]].map(([n, t]) => new Bytes().u(n).byte(t).b));
+  const simBody = new Bytes().vec([[4 + 3 * seq.length, I32]].map(([n, t]) => new Bytes().u(n).byte(t).b));
   simBody.add(g.c.b);
 
   /* ---- toggle(n): flip every clock and simulate, n times */
@@ -515,9 +621,18 @@ function compile(D) {
       const n = nodes[j];
       for (let i = 0; i < n.in.length - 1; i++) mem[(addr >> 2) + i] = V(n.in[i]);
     });
+    resetMem(mem);
+  };
+  /* rom and ram back to the contents written in the circuit */
+  const resetMem = mem => {
+    memOf.forEach((base, j) => {
+      const n = nodes[j], at = base >> 2;
+      mem.fill(0, at, at + (1 << n.abits));
+      (n.init || []).forEach(([start, words]) => { for (let i = 0; i < words.length; i++) mem[at + start + i] = words[i]; });
+    });
   };
   return {
-    bytes: new Uint8Array(m.b), init, V, K, S, LC, loops, sccs, seq, clocks,
+    bytes: new Uint8Array(m.b), init, resetMem, memOf, V, K, S, LC, loops, sccs, seq, clocks,
     layoutText() {
       const lines = [`memory: ${bytes} bytes, ${pages} page(s)`, `nets at ${NET} (${nslots} slots for ${nets.length} nets; pins share), nodes at ${NODE}`];
       nets.forEach((n, i) => lines.push(`  net ${i} ${n.name || ""} [${n.w}]  v@${V(i)} k@${K(i)}`));
@@ -529,7 +644,7 @@ function compile(D) {
 }
 
 /* wrap an instance: plain helpers over the shared memory */
-function wrap(c, instance) {
+function wrap(c, instance, D) {
   const ex = instance.exports, mem = new Int32Array(ex.memory.buffer);
   c.init(mem);
   return {
@@ -546,6 +661,11 @@ function wrap(c, instance) {
     simulate: () => ex.simulate() === 1,
     toggle: n => ex.toggle(n) === 1,
     unstable: () => mem[0] !== 0,
+    /* the bus part (node index) where two drivers talk at once, or -1 */
+    conflict: () => mem[1] - 1,
+    /* the words of a rom or ram, as a view into the memory */
+    words: j => { const b = c.memOf.get(j); return b === undefined ? null : new Uint32Array(mem.buffer, b, 1 << D.nodes[j].abits); },
+    resetMem: () => c.resetMem(mem),
     dump: () => c.layoutText()
   };
 }
@@ -554,11 +674,11 @@ function wrap(c, instance) {
 async function create(D) {
   const c = compile(D);
   const { instance } = await WebAssembly.instantiate(c.bytes);
-  return wrap(c, instance);
+  return wrap(c, instance, D);
 }
 function createSync(D) {
   const c = compile(D);
-  return wrap(c, new WebAssembly.Instance(new WebAssembly.Module(c.bytes)));
+  return wrap(c, new WebAssembly.Instance(new WebAssembly.Module(c.bytes)), D);
 }
 
 return { compile, create, createSync };
