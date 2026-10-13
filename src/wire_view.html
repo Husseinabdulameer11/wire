@@ -138,6 +138,34 @@ select { font: inherit; color: var(--ink); background: transparent; border: 0; b
 #src .tx { white-space: pre; }
 #src .cm { color: var(--ink-soft); }
 
+/* the book: a pdf beside the circuit, on the left */
+#book {
+  position: fixed; left: 0; top: 0; bottom: 0; width: min(560px, 100vw); z-index: 4; background: var(--panel);
+  border-right: 1.5px solid var(--ink); display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom);
+}
+#book[hidden] { display: none; }
+body.book-open #bar { left: calc(min(560px, 100vw) + 10px); }
+body.book-open #titleblock { display: none; }
+#book header { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--panel-line); }
+#book header b { flex: 1; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#book .follow { font-size: 13px; color: var(--ink-soft); display: flex; gap: 5px; align-items: center; white-space: nowrap; }
+#bookabout { padding: 8px 14px 0; font-size: 13px; color: var(--ink-soft); }
+#bookabout:empty { display: none; }
+#booktopics { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--panel-line); max-height: 30vh; overflow: auto; }
+#booktopics:empty { display: none; }
+#booktopics button { border: 1px solid var(--panel-line); border-radius: 14px; min-height: 28px; padding: 3px 10px; font-size: 12.5px; font-weight: 400; text-align: left; }
+#booktopics button b { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 500; margin-right: 4px; }
+#booktopics button[aria-current="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+#booknav { display: flex; gap: 4px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--panel-line); font-size: 13px; }
+#booknav button, #booknav .open { border: 1px solid var(--panel-line); border-radius: 4px; min-height: 30px; padding: 2px 10px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; }
+#booknav .open { margin-left: auto; }
+#booknav .open:hover { background: var(--hi-soft); }
+#bookpage { width: 3.5em; font: 13px "IBM Plex Mono", ui-monospace, monospace; padding: 4px; text-align: center; border: 1px solid var(--panel-line); border-radius: 4px; background: var(--paper); color: var(--ink); }
+#bookbody { flex: 1; overflow: auto; background: var(--grid); padding: 10px; }
+#bookcanvas { display: block; margin: 0 auto; box-shadow: 0 1px 4px rgba(0,0,0,.25); background: #fff; }
+#booknote { margin: 0 0 10px; font-size: 13px; color: var(--ink-soft); }
+#booknote:empty { display: none; }
+
 /* memory panel */
 #memtools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--panel-line); font-size: 13px; }
 #memtools select, #memtools input { font: 13px "IBM Plex Mono", ui-monospace, monospace; border: 1px solid var(--panel-line); border-radius: 4px; background: var(--paper); color: var(--ink); min-height: 32px; padding: 0 6px; }
@@ -227,6 +255,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
     <button id="tablebtn" title="Truth table">Truth table</button>
     <button id="srcbtn" title="Show the .wire source">Source</button>
     <button id="membtn" title="Contents of the roms and rams" hidden>Memory</button>
+    <button id="bookbtn" title="Read the book beside the circuit; the pages follow what you select">Book</button>
   </div>
   <div class="group">
     <button id="fit" title="Fit the circuit on screen">Fit</button>
@@ -256,6 +285,26 @@ table.tt td.one { color: var(--on); font-weight: 500; }
   <header><h2 id="tabletitle">Truth table</h2><button id="tableall" hidden title="Unselect the part and show the whole view">Show all</button><button data-close="tabledrawer">Close</button></header>
   <div class="scroll" id="tablebody"></div>
 </section>
+<aside id="book" hidden aria-label="Book">
+  <header>
+    <b id="bookname">Book</b>
+    <label class="follow"><input type="checkbox" id="bookfollow" checked> Follow selection</label>
+    <button id="bookclose">Close</button>
+  </header>
+  <div id="bookabout"></div>
+  <div id="booktopics"></div>
+  <div id="booknav">
+    <button id="bookprev" aria-label="Previous page">‹</button>
+    <input id="bookpage" aria-label="Page" inputmode="numeric" autocomplete="off">
+    <span id="bookof"></span>
+    <button id="booknext" aria-label="Next page">›</button>
+    <button id="bookout" aria-label="Smaller">−</button>
+    <button id="bookin" aria-label="Larger">+</button>
+    <label class="open" title="Read another pdf">Open PDF<input type="file" id="bookfile" accept="application/pdf" hidden></label>
+  </div>
+  <div id="bookbody"><p id="booknote"></p><canvas id="bookcanvas"></canvas></div>
+</aside>
+
 <section class="drawer" id="memdrawer" aria-label="Memory">
   <header><h2>Memory</h2><button data-close="memdrawer">Close</button></header>
   <div id="memtools">
@@ -275,6 +324,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
 <script>
 "use strict";
 const D = /*WIRE_DATA*/;
+const BOOK = /*WIRE_BOOK*/null;
 
 /* ================================================================== model */
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -1081,12 +1131,15 @@ function fit() {
   let W = sheet.clientWidth, H = sheet.clientHeight;
   const open = document.querySelector(".drawer.open");
   if (open) { const r = open.getBoundingClientRect(); if (r.top < 10) W -= r.width; else H = r.top; }
+  /* the book takes the left side (unless it covers the whole width) */
+  const bookW = !$("book").hidden && $("book").getBoundingClientRect().width < W - 200 ? $("book").getBoundingClientRect().width : 0;
+  W -= bookW;
   const top = $("bar").getBoundingClientRect().bottom + 16;
   const tb = $("titleblock").getBoundingClientRect();
-  const availW = W - 40, availH = H - top - (open && H < sheet.clientHeight ? 16 : tb.height + 24);
+  const availW = W - 40, availH = H - top - (open && H < sheet.clientHeight ? 16 : bookW ? 16 : tb.height + 24);
   const s = Math.min(2, availW / (b.x1 - b.x0), availH / (b.y1 - b.y0));
   view.s = s;
-  view.x = (W - (b.x1 - b.x0) * s) / 2 - b.x0 * s;
+  view.x = bookW + (W - (b.x1 - b.x0) * s) / 2 - b.x0 * s;
   view.y = top + Math.max(0, (availH - (b.y1 - b.y0) * s) / 2) - b.y0 * s;
   applyView();
 }
@@ -1233,6 +1286,7 @@ function select(n) {
   if (n) n.el.classList.add("selected");
   markSource(n ? n.line : 0);
   if (tableOpen) { buildTable(); markRow(); }
+  bookFollow();
 }
 
 /* wire values on hover (mouse) or tap (touch) */
@@ -1692,9 +1746,193 @@ function openView(id) {
   buildSource(viewFile(id));
   markSource(id === 0 ? 0 : D.insts[id].defLine);
   if (tableOpen) { buildTable(); markRow(); }
+  bookFollow();
   requestAnimationFrame(fit);
 }
 function goUp() { if (V && V.id !== 0) openView(D.insts[V.id].parent); }
+
+/* ================================================================ book */
+/* A pdf read beside the circuit (wire --book, or Open PDF). With "Follow
+ * selection" on, selecting a part or opening a chip turns to the pages
+ * about it: from the topics file (wire --topics) when there is one, else
+ * by searching the pdf's text for the part's name. The pdf reader, PDF.js,
+ * is loaded from cdnjs the first time the book is opened. */
+const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+const bk = { doc: null, name: BOOK ? BOOK.name : "", page: 1, zoom: 1, topics: null, text: null, loading: null, shown: [], rendering: null };
+/* "13-14  The ALU   : *alu* arith" -> { first, last, title, pats } */
+function parseTopics(text) {
+  const glob = p => new RegExp("^" + p.toLowerCase().split("*").map(x => x.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    /* the patterns follow the last " : " (a colon with space before it; titles may have colons) */
+    const m = /^\s*(\d+)(?:\s*-\s*(\d+))?\s+(.*)\s+:\s+(.+?)\s*$/.exec(line.replace(/#.*$/, ""));
+    if (!m) continue;
+    out.push({ first: +m[1], last: +(m[2] || m[1]), title: m[3].trim(), pats: m[4].split(/[\s,]+/).filter(Boolean).map(glob) });
+  }
+  return out;
+}
+if (BOOK && BOOK.topics) bk.topics = parseTopics(BOOK.topics);
+
+/* what is being looked at: [label, the names to match] */
+function bookSubject() {
+  const sel = selected;
+  if (sel && sel.kind === "chip") return [`${sel.comp}${sel.name ? " " + sel.name : ""}`, [sel.comp, sel.name || ""]];
+  if (sel && sel.node && !["pin_in", "pin_out", "split", "merge", "const"].includes(sel.kind))
+    return [sel.node.name ? `${sel.node.name} (${kindLabel(sel.node)})` : kindLabel(sel.node), [sel.kind, sel.node.name || ""]];
+  if (V && V.id !== 0) return [`${D.insts[V.id].comp}${D.insts[V.id].name ? " " + D.insts[V.id].name : ""}`, [D.insts[V.id].comp, D.insts[V.id].name || ""]];
+  const file = baseName(D.file).replace(/\.wire$/, "");
+  return [D.title || file, [file]];
+}
+
+/* words to search a pdf for, when it has no topics file */
+const SEARCH = {
+  and: ["AND gate", "AND"], or: ["OR gate", "OR"], nand: ["NAND"], nor: ["NOR"], xor: ["XOR"], xnor: ["XNOR"],
+  not: ["inverter", "NOT gate"], buf: ["buffer"], tri: ["tri-state"], bus: ["bus"], mux: ["multiplexer"],
+  demux: ["demultiplexer"], decoder: ["decoder"], encoder: ["encoder"], add: ["adder"], compare: ["comparator"],
+  dff: ["D flip-flop", "flip-flop"], tff: ["T flip-flop"], jkff: ["JK flip-flop", "JK"], counter: ["counter"],
+  rom: ["ROM"], ram: ["RAM"], seg7: ["7-segment", "seven-segment"], hex: ["7-segment", "hexadecimal"],
+  keypad: ["keypad", "keyboard"], button: ["debounc", "button"], clock: ["clock"], led: ["LED"]
+};
+async function searchPages(keys) {
+  if (!bk.text) {
+    bk.text = [];
+    for (let i = 1; i <= bk.doc.numPages; i++) {
+      const tc = await (await bk.doc.getPage(i)).getTextContent();
+      bk.text.push(tc.items.map(t => t.str).join(" "));
+    }
+  }
+  const words = [];
+  keys.filter(Boolean).forEach(k => {
+    if (SEARCH[k]) words.push(...SEARCH[k]);
+    else k.split(/[_\d\s]+/).filter(w => w.length > 1).forEach(w => words.push(w.length <= 3 ? w.toUpperCase() : w));
+  });
+  if (!words.length) return [];
+  const hits = bk.text.map((t, i) => {
+    let n = 0;
+    for (const w of words) {
+      const re = new RegExp(w.length <= 4 && w === w.toUpperCase() ? `\\b${w}\\b` : w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), w === w.toUpperCase() ? "g" : "gi");
+      n += (t.match(re) || []).length;
+    }
+    return { page: i + 1, n };
+  }).filter(h => h.n).sort((a, b) => b.n - a.n).slice(0, 8);
+  return hits.map(h => ({ first: h.page, last: h.page, title: `${h.n} mention${h.n === 1 ? "" : "s"} of ${words.slice(0, 2).join(" / ")}` }));
+}
+
+function loadScript(src) {
+  return new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => bad(new Error("could not load " + src)); document.head.append(s); });
+}
+async function pdfjs() {
+  if (!window.pdfjsLib) {
+    await loadScript(PDFJS + "pdf.min.js");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js";
+  }
+  return window.pdfjsLib;
+}
+const bookNote = t => { $("booknote").textContent = t || ""; };
+async function openBookData(data, name) {
+  const lib = await pdfjs();
+  bk.doc = await lib.getDocument({ data }).promise;
+  bk.name = name;
+  bk.text = null;
+  bk.page = 1;
+  $("bookname").textContent = name;
+  $("bookof").textContent = `of ${bk.doc.numPages}`;
+  bookNote("");
+}
+async function loadBook() {
+  if (bk.doc || bk.loading) return bk.loading;
+  bk.loading = (async () => {
+    if (!BOOK) { bookNote("No book in this page. Open a pdf to read it here: it turns to the pages that mention what you select."); return; }
+    bookNote(`Loading ${BOOK.name}...`);
+    try {
+      if (BOOK.pdf) {
+        const bin = atob(BOOK.pdf), data = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
+        await openBookData(data, BOOK.name);
+      } else {
+        const r = await fetch(BOOK.url);
+        if (!r.ok) throw new Error(r.status + " " + r.statusText);
+        await openBookData(new Uint8Array(await r.arrayBuffer()), BOOK.name);
+      }
+    } catch (e) {
+      bookNote(/could not load/.test(e.message)
+        ? "The pdf reader (PDF.js) is loaded from the internet, and that did not work. Check the connection and open the book again."
+        : `Could not read ${BOOK.name} from here (${e.message}). A page opened straight from disk is not allowed to read files next to it: use Open PDF and pick ${BOOK.name}.`);
+    }
+  })();
+  await bk.loading;
+  bk.loading = null;
+}
+async function renderBook() {
+  if (!bk.doc) return;
+  bk.page = Math.max(1, Math.min(bk.doc.numPages, bk.page));
+  $("bookpage").value = bk.page;
+  [...$("booktopics").children].forEach(b => b.setAttribute("aria-current", bk.page >= +b.dataset.first && bk.page <= +b.dataset.last));
+  const want = bk.page, job = Symbol();
+  bk.rendering = job;
+  const page = await bk.doc.getPage(want);
+  if (bk.rendering !== job) return;
+  const box = $("bookbody"), cv = $("bookcanvas");
+  const base = page.getViewport({ scale: 1 });
+  const scale = Math.max(.3, (box.clientWidth - 20) / base.width) * bk.zoom;
+  const vp = page.getViewport({ scale }), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
+  cv.style.width = Math.floor(vp.width) + "px"; cv.style.height = Math.floor(vp.height) + "px";
+  /* one drawing at a time on the canvas: stop the one before */
+  if (bk.task) { bk.task.cancel(); try { await bk.task.promise; } catch (e) { /* cancelled */ } }
+  if (bk.rendering !== job) return;
+  bk.task = page.render({ canvasContext: cv.getContext("2d"), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null });
+  try { await bk.task.promise; } catch (e) { return; }
+  bk.task = null;
+  if (bk.rendering === job) box.scrollTop = 0;
+}
+function goPage(p) { bk.page = p; renderBook(); }
+
+/* show the sections about what is selected (or on screen), and turn to the first */
+async function bookFollow(force) {
+  if ($("book").hidden || (!force && !$("bookfollow").checked)) return;
+  await loadBook();
+  if (!bk.doc) return;
+  const [label, keys] = bookSubject(), names = keys.filter(Boolean).map(k => k.toLowerCase());
+  let found;
+  if (bk.topics && bk.name === (BOOK && BOOK.name)) found = bk.topics.filter(t => t.pats.some(re => names.some(n => re.test(n))));
+  else found = await searchPages(keys.slice(0, 1));     /* the kind of part or chip, not its own name */
+  const box = $("booktopics");
+  box.textContent = "";
+  $("bookabout").textContent = found.length ? `About ${label}:` : `Nothing in ${bk.name} about ${label}.`;
+  found.forEach(t => {
+    const b = document.createElement("button");
+    b.dataset.first = t.first; b.dataset.last = t.last;
+    const pg = document.createElement("b");
+    pg.textContent = t.first === t.last ? `p.${t.first}` : `p.${t.first}–${t.last}`;
+    b.append(pg, t.title);
+    b.onclick = () => goPage(t.first);
+    box.append(b);
+  });
+  if (found.length) goPage(found[0].first); else renderBook();
+}
+function showBook(on) {
+  $("book").hidden = !on;
+  document.body.classList.toggle("book-open", on);
+  $("bookbtn").setAttribute("aria-pressed", on);
+  if (on) { $("bookname").textContent = bk.name || "Book"; bookFollow(true); }
+  requestAnimationFrame(fit);
+}
+$("bookbtn").onclick = () => showBook($("book").hidden);
+$("bookclose").onclick = () => showBook(false);
+$("bookfollow").onchange = () => { if ($("bookfollow").checked) bookFollow(); };
+$("bookprev").onclick = () => goPage(bk.page - 1);
+$("booknext").onclick = () => goPage(bk.page + 1);
+$("bookin").onclick = () => { bk.zoom = Math.min(3, bk.zoom * 1.25); renderBook(); };
+$("bookout").onclick = () => { bk.zoom = Math.max(.5, bk.zoom / 1.25); renderBook(); };
+$("bookpage").onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") goPage(parseInt($("bookpage").value, 10) || 1); };
+$("bookfile").onchange = async () => {
+  const f = $("bookfile").files[0];
+  if (!f) return;
+  try { await openBookData(new Uint8Array(await f.arrayBuffer()), f.name); bookFollow(true); }
+  catch (e) { bookNote(`Could not open ${f.name}: ${e.message}`); }
+};
+addEventListener("resize", () => { if (!$("book").hidden) renderBook(); });
 
 /* ================================================================ start */
 document.title = D.title || D.file;

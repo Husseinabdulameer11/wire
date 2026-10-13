@@ -1379,16 +1379,78 @@ static void write_json(void)
     fputs("]}", jf);
 }
 
+/* ---- the book: a pdf to read beside the circuit --------------------------- */
+
+static const char *book_pdf, *book_url, *book_topics;
+
+static void b64(const unsigned char *d, size_t n)
+{
+    static const char t[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t i;
+    for (i = 0; i + 2 < n; i += 3) {
+        unsigned long v = (unsigned long)d[i] << 16 | (unsigned long)d[i + 1] << 8 | d[i + 2];
+        fputc(t[v >> 18 & 63], jf); fputc(t[v >> 12 & 63], jf); fputc(t[v >> 6 & 63], jf); fputc(t[v & 63], jf);
+        if ((i / 3 + 1) % 4096 == 0) fputs("\\\n", jf);   /* break the line inside the string */
+    }
+    if (i < n) {
+        unsigned long v = (unsigned long)d[i] << 16 | (i + 1 < n ? (unsigned long)d[i + 1] << 8 : 0);
+        fputc(t[v >> 18 & 63], jf); fputc(t[v >> 12 & 63], jf);
+        fputc(i + 1 < n ? t[v >> 6 & 63] : '=', jf); fputc('=', jf);
+    }
+}
+
+/* BOOK in the page: null, or { name, url, pdf (base64), topics (text) } */
+static void write_book(void)
+{
+    size_t n;
+    char *data;
+    if (!book_pdf && !book_url) { fputs("null", jf); return; }
+    fputs("{\"name\":", jf);
+    {
+        const char *p = book_pdf ? book_pdf : book_url, *b = p;
+        for (; *p; p++) if (*p == '/' || *p == '\\') b = p + 1;
+        jcstr(b);
+    }
+    fputs(",\"url\":", jf);
+    if (book_url) jcstr(book_url); else fputs("null", jf);
+    fputs(",\"pdf\":", jf);
+    if (book_pdf) {
+        data = read_file(book_pdf, &n);
+        if (!data) { perror(book_pdf); exit(1); }
+        fputc('"', jf);
+        b64((const unsigned char *)data, n);
+        fputc('"', jf);
+        free(data);
+    } else fputs("null", jf);
+    fputs(",\"topics\":", jf);
+    if (book_topics) {
+        data = read_file(book_topics, &n);
+        if (!data) { perror(book_topics); exit(1); }
+        jstr(data, (int)n);
+        free(data);
+    } else fputs("null", jf);
+    fputc('}', jf);
+}
+
+/* the page: the viewer with the netlist (and the book) put in at their marks */
 static int write_html(const char *path)
 {
-    const char *mark = "/*WIRE_DATA*/";
-    const char *at = strstr(wire_view, mark);
+    static const char *marks[] = { "/*WIRE_DATA*/", "/*WIRE_BOOK*/null" };
+    const char *at = wire_view;
     jf = fopen(path, "wb");
     if (!jf) return 0;
-    if (!at) at = wire_view + strlen(wire_view);
-    fwrite(wire_view, 1, (size_t)(at - wire_view), jf);
-    write_json();
-    if (*at) fputs(at + strlen(mark), jf);
+    for (;;) {
+        const char *best = NULL;
+        int k, which = -1;
+        for (k = 0; k < 2; k++) {
+            const char *m = strstr(at, marks[k]);
+            if (m && (!best || m < best)) { best = m; which = k; }
+        }
+        if (!best) { fputs(at, jf); break; }
+        fwrite(at, 1, (size_t)(best - at), jf);
+        if (which == 0) write_json(); else write_book();
+        at = best + strlen(marks[which]);
+    }
     return fclose(jf) == 0;
 }
 
@@ -2054,6 +2116,9 @@ int main(int argc, char **argv)
                    "  --json           print the netlist as JSON instead\n"
                    "  --check          only check the circuit\n"
                    "  -I dir           also look for imports in dir (and in $WIRE_PATH)\n"
+                   "  --book f.pdf     put a pdf in the page, to read beside the circuit\n"
+                   "  --book-url u     or link to one (a web address, or a file next to the page)\n"
+                   "  --topics f       which pages are about which parts (see books/README)\n"
                    "  -t               print the syntax tree\n"
                    "  --version        print the version\n", WIRE_VERSION);
             return 0;
@@ -2062,6 +2127,9 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--check")) check = 1;
         else if (!strcmp(argv[i], "-t")) tree = 1;
         else if (!strcmp(argv[i], "-I") && i + 1 < argc && nincdirs < 16) incdirs[nincdirs++] = argv[++i];
+        else if (!strcmp(argv[i], "--book") && i + 1 < argc) book_pdf = argv[++i];
+        else if (!strcmp(argv[i], "--book-url") && i + 1 < argc) book_url = argv[++i];
+        else if (!strcmp(argv[i], "--topics") && i + 1 < argc) book_topics = argv[++i];
         else return usage();
     }
     if (i != argc - 1) return usage();

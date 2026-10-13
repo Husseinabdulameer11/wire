@@ -39,6 +39,9 @@ wire full_adder.wire          # writes full_adder.html
   with the word being read lit up. Click a word to change it; Reset puts the
   contents written in the circuit back. Clicking a rom or ram opens it too.
 - If two parts drive a bus at once, the page says **Bus conflict**.
+- **Book** shows a pdf beside the circuit, and turns to the pages about the
+  part you select or the chip you open (see `books/README.md`). Build with
+  `wire --book notes.pdf --topics notes.topics`, or use **Open PDF**.
 - **Truth table** lists every input combination for circuits without
   memory (up to 12 input bits); click a row to set the inputs to it.
   Select a part (a gate, a mux, an adder...) and the truth table is for

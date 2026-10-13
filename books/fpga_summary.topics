@@ -1,0 +1,81 @@
+# Topics for fpga_summary.pdf (FPGA Prototyping by VHDL Examples, exam summary):
+# which pages are about which Wire part, chip or circuit.
+#
+#   page[-last]  Title of the section  :  patterns
+#
+# A pattern is a part kind (and, nand, mux, dff, counter, ram, tri ...), or the
+# name of a chip or circuit file; * matches anything (*alu* matches alu and
+# my_alu). Sections are listed in the order written here, and the first one
+# that matches is the page opened.
+
+# ---- gates
+9      The basic gates and their truth tables           : and or nand nor xor xnor not buf
+9      Universal gates: everything from NAND or NOR     : nand nor
+7      Boolean algebra (De Morgan, SOP and POS)         : and or nand nor xor xnor not
+8      Karnaugh maps                                    : and or nand nor not
+10     Timing of real gates: propagation delay          : and or nand nor xor xnor not buf
+10     74xx chips worth recognising                     : and or nand nor xor xnor not buf
+9-10   Logic families: TTL and CMOS                     : not buf
+
+# ---- buses and tri-state
+26     The W bus: tri-state wires or an AND-OR mux      : tri bus *bus*
+10     Tri-state outputs on 74xx chips                  : tri bus
+
+# ---- combinational blocks
+12     Multiplexer and demultiplexer                    : mux demux
+44     Routing in VHDL: when-else, with-select          : mux demux
+12     Decoder, encoder, comparator                     : decoder encoder compare
+46     Design examples: decoder, priority encoder       : decoder encoder
+29     The memory: a decoder and a grid of cells        : decoder
+12     Adders: half adder, full adder, ripple carry     : add *add* half_adder full_adder
+13     Subtractors and the adder-subtractor             : add *add* *sub* full_adder
+28     The adder-subtractor in gates (SAP-1)            : add *add* *sub* full_adder half_adder
+13-14  The ALU: in parts and as a whole                 : *alu* arith
+28     The SAP-1 ALU: XOR gates and full adders         : *alu*
+14     Flags: carry, zero, sign, overflow               : *flag* arith
+
+# ---- memory elements
+15     The SR latch: from feedback to memory            : *latch* sr_latch gate_latches
+15     Edge-triggered D flip-flop                       : dff *reg*
+15     JK and T flip-flops                              : jkff tff
+16     Timing and metastability                         : dff jkff tff
+47     VHDL templates for flip-flops and registers      : dff *reg*
+16     Registers and shift registers                    : dff *reg* *shift*
+26     The register: one bit cell, eight times          : *reg* register registers
+48     Simple regular circuits: shift register, register file : *shift* *reg* registers
+16     Counters                                         : counter *count*
+27     The program counter from T flip-flops            : counter *count* tff
+49     Binary and mod-m counters in VHDL                : counter *count*
+
+# ---- memory
+18     RAM: organisation and signals                    : ram memory
+18     A small RAM built from latches                   : ram memory
+29     The memory in gates: decoder, cells, OR columns  : ram memory
+18     SRAM and DRAM cells                              : ram
+66     Block and distributed RAM on the FPGA            : ram rom
+19     ROM: memory that is really a truth table         : rom
+19     Programmable logic: from ROM to FPGA             : rom
+
+# ---- displays and inputs
+10     7-segment decoders (7447) and displays           : seg7 hex bcd7 seg7_counter
+49     LED time-multiplexing                            : seg7 hex
+54     Debouncing a button                              : button keypad
+62     PS2 keyboard: scan codes                         : keypad
+16     Timing, clocks and metastability                 : clock
+
+# ---- computers
+21     SAP-1: what it is, its blocks and signals        : sap1 sap2 sap3 control temps ports
+21     SAP-1 instruction set                            : sap1 sap2 sap3 temps
+22     T-states, control words and the controller-sequencer : control sap1 sap2 sap3
+30     The control unit in gates                        : control
+26     Microcode and the W bus                          : control
+22     Tracing a program through SAP-1                  : sap1
+25     From logic gates to a computer: the ladder       : sap1 sap2 sap3
+32     One bit of the whole data path                   : sap1 registers arith
+33     The top level as VHDL                            : sap1
+27     The program counter                              : counters
+75     From FSMD to microcontroller (PicoBlaze)         : sap2 sap3 control
+76     A real instruction set (PicoBlaze, 57)           : sap2 sap3
+78     Subroutines and the stack                        : sap2 sap3 counters
+80     I/O: ports and the 7-segment display             : ports
+55     FSMD: a control path with a data path            : control sap1

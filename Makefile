@@ -110,8 +110,11 @@ test: $(WIRE)
 
 # every example as a page, plus an index, in build/site: drag that folder
 # onto Netlify Drop (app.netlify.com/drop), or serve it from any static host
+# with a book to read beside the circuits: BOOK=books/x.pdf TOPICS=books/x.topics
+BOOK   ?= $(wildcard books/fpga_summary.pdf)
+TOPICS ?= $(wildcard books/fpga_summary.topics)
 site: $(WIRE)
-	node tools/site.js $(WIRE) build/site
+	node tools/site.js $(WIRE) build/site $(if $(BOOK),--book $(BOOK)) $(if $(TOPICS),--topics $(TOPICS))
 
 # Linux/macOS: installs build/wire as $(PREFIX)/bin/wire
 install: $(WIRE)

@@ -12,16 +12,26 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const [wire, out = "build/site"] = process.argv.slice(2);
-if (!wire) { console.error("usage: node tools/site.js path/to/wire [out-dir]"); process.exit(2); }
+const args = process.argv.slice(2), opt = {};
+for (let i = 0; i < args.length; i++) if (args[i].startsWith("--")) opt[args[i].slice(2)] = args[++i]; else (opt._ = opt._ || []).push(args[i]);
+const [wire, out = "build/site"] = opt._ || [];
+if (!wire) { console.error("usage: node tools/site.js path/to/wire [out-dir] [--book f.pdf --topics f.topics]"); process.exit(2); }
 fs.mkdirSync(out, { recursive: true });
+/* a book is copied next to the pages once, and every page links to it */
+const bookArgs = [];
+if (opt.book) {
+  const name = path.basename(opt.book);
+  fs.copyFileSync(opt.book, path.join(out, name));
+  bookArgs.push("--book-url", name);
+  if (opt.topics) bookArgs.push("--topics", opt.topics);
+}
 
 const root = path.join(__dirname, "..");
 const files = fs.readdirSync(path.join(root, "examples")).filter(f => f.endsWith(".wire")).sort();
 const pages = [];
 for (const f of files) {
   const src = path.join(root, "examples", f), name = f.replace(/\.wire$/, "");
-  execFileSync(wire, ["-o", path.join(out, name + ".html"), src], { stdio: ["ignore", "ignore", "inherit"] });
+  execFileSync(wire, [...bookArgs, "-o", path.join(out, name + ".html"), src], { stdio: ["ignore", "ignore", "inherit"] });
   const text = fs.readFileSync(src, "utf8");
   const title = (/^\s*circuit\s+"([^"]*)"/m.exec(text) || [])[1] || name;
   /* the first comment paragraph after the title, if any */
@@ -67,7 +77,7 @@ footer { margin-top: 32px; color: var(--soft); font-size: 14px; }
 <ul>
 ${pages.map(p => `<li><a href="${p.name}.html"><b>${esc(p.title)}</b>${p.about ? `<span>${esc(p.about)}.</span>` : `<span><code>${p.name}.wire</code></span>`}</a></li>`).join("\n")}
 </ul>
-<footer>Each page is one self-contained file.</footer>
+<footer>Each page is one self-contained file${opt.book ? `; the <b>Book</b> button reads ${esc(path.basename(opt.book))} beside the circuit and turns to the pages about what you select` : ""}.</footer>
 </main>
 </body>
 </html>
