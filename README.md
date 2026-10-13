@@ -41,6 +41,11 @@ wire full_adder.wire          # writes full_adder.html
 - If two parts drive a bus at once, the page says **Bus conflict**.
 - **Truth table** lists every input combination for circuits without
   memory (up to 12 input bits); click a row to set the inputs to it.
+  Inside a chip, the truth table is for that chip on its own: every
+  combination of its inputs, with the row it is on now lit. A chip with more
+  than 12 input bits gets a "try it" panel instead: type its inputs and see
+  its outputs. Chips with memory inside (flip-flops, counters, ram) have
+  none; open the chips inside them.
 - **Source** shows the `.wire` file. Click a part to find its line, or a
   line to find its part.
 - **Chips** (your own components) open when you click them; see below.

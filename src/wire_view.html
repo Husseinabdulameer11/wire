@@ -152,6 +152,12 @@ table.mem td.zero { color: var(--ink-soft); opacity: .55; }
 table.mem td.cur { background: var(--hi); color: #fff; opacity: 1; }
 table.mem td input { width: 3.2em; font: inherit; padding: 0 2px; border: 1px solid var(--hi); }
 
+table.try { min-width: 0; margin: 10px 14px; }
+table.try th { text-align: right; padding: 4px 10px 4px 0; }
+table.try input { font: 13px "IBM Plex Mono", ui-monospace, monospace; width: 9em; padding: 4px 6px; border: 1px solid var(--panel-line); border-radius: 4px; background: var(--paper); color: var(--ink); }
+table.try input.bad { border-color: var(--bad); }
+table.try td.out { font-weight: 600; padding: 4px 0; white-space: pre; }
+table.try td.sep-row { border-top: 1px solid var(--panel-line); padding: 0; height: 8px; }
 table.tt { border-collapse: collapse; font: 13px "IBM Plex Mono", ui-monospace, monospace; margin: 0 0 8px; min-width: 100%; }
 table.tt th { position: sticky; top: 0; background: var(--panel); font: 600 13px "IBM Plex Sans Condensed", sans-serif; text-align: center; padding: 6px 10px; border-bottom: 1.5px solid var(--ink); }
 table.tt td { text-align: center; padding: 3px 10px; border-bottom: 1px solid var(--grid); }
@@ -247,7 +253,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
 </form>
 
 <section class="drawer" id="tabledrawer" aria-label="Truth table">
-  <header><h2>Truth table</h2><button data-close="tabledrawer">Close</button></header>
+  <header><h2 id="tabletitle">Truth table</h2><button data-close="tabledrawer">Close</button></header>
   <div class="scroll" id="tablebody"></div>
 </section>
 <section class="drawer" id="memdrawer" aria-label="Memory">
@@ -1322,8 +1328,14 @@ $("reset").onclick = () => {
 const ttIn = nodes.filter(n => n.kind === "input" || n.kind === "button" || n.kind === "keypad");
 const ttOut = nodes.filter(n => SINKS.has(n.kind));
 const ttBits = ttIn.reduce((s, n) => s + nets[n.out[0]].w, 0);
-let tableOpen = false, tableRows = [];
+let tableOpen = false, tableRows = [], tableChip = null, tableToken = 0;
+/* The truth table is for what is on screen: the circuit, or, inside a chip,
+ * that chip on its own (see chipTable). */
 function buildTable() {
+  tableToken++;
+  tableChip = null;
+  if (V && V.id !== 0) return chipTable(V.id);
+  $("tabletitle").textContent = "Truth table";
   const box = $("tablebody");
   box.textContent = "";
   const note = t => { const p = document.createElement("p"); p.className = "note"; p.textContent = t; box.append(p); };
@@ -1358,7 +1370,129 @@ function buildTable() {
   box.append(t);
 }
 function markRow() {
+  if (tableChip) {
+    /* the row the chip is on now, from the values reaching its input pins */
+    const now = tableChip.ins.map(p => known(nets[p.outer]) ? nets[p.outer].v : -1);
+    tableRows.forEach(r => r.tr.classList.toggle("cur", r.vals.every((v, i) => v === now[i])));
+    return;
+  }
   tableRows.forEach(r => r.tr.classList.toggle("cur", r.vals.every((v, i) => v === ttIn[i].state)));
+}
+
+/* a chip too wide for a table: a box per input, the outputs computed live */
+function tryChip(c, sub, box) {
+  const t = document.createElement("table"); t.className = "tt try";
+  const parse = (txt, w) => {
+    const u = txt.trim().replace(/_/g, "");
+    const v = /^0x[0-9a-f]+$/i.test(u) ? parseInt(u.slice(2), 16) : /^0b[01]+$/i.test(u) ? parseInt(u.slice(2), 2) : /^\d+$/.test(u) ? parseInt(u, 10) : NaN;
+    return isNaN(v) || v > mask(w) ? null : v;
+  };
+  const fmt = (w, v, k) => {
+    const net = { w, v, k };
+    if (!known(net)) return fmtBits(net);
+    return w === 1 ? String(v) : `0x${v.toString(16).toUpperCase().padStart(Math.ceil(w / 4), "0")} = ${v}` + (w <= 8 ? `  (${v.toString(2).padStart(w, "0")})` : "");
+  };
+  const fields = c.ins.map(p => {
+    const tr = t.insertRow(), th = document.createElement("th"), td = tr.insertCell(), inp = document.createElement("input");
+    th.textContent = `${p.name}${p.w > 1 ? `[${p.w}]` : ""}`; tr.prepend(th);
+    inp.value = known(nets[p.outer]) ? String(nets[p.outer].v) : "0";
+    inp.setAttribute("aria-label", p.name); inp.spellcheck = false; inp.autocomplete = "off";
+    td.append(inp);
+    return inp;
+  });
+  const sep = t.insertRow().insertCell(); sep.colSpan = 2; sep.className = "sep-row";
+  const outs = c.outs.map(p => {
+    const tr = t.insertRow(), th = document.createElement("th"), td = tr.insertCell();
+    th.textContent = `${p.name}${p.w > 1 ? `[${p.w}]` : ""}`; tr.prepend(th); td.className = "out";
+    return td;
+  });
+  const update = () => {
+    let ok = true;
+    c.ins.forEach((p, i) => {
+      const v = parse(fields[i].value, p.w);
+      fields[i].classList.toggle("bad", v === null);
+      if (v === null) ok = false; else sub.setState(p.node, v);
+    });
+    if (!ok) return;
+    sub.settle();
+    c.outs.forEach((p, i) => { outs[i].textContent = fmt(p.w, sub.v(p.net), sub.k(p.net)); });
+  };
+  fields.forEach(f => { f.oninput = update; f.onkeydown = e => e.stopPropagation(); });
+  box.append(t);
+  update();
+  tableChip = null;
+  tableRows = [];
+}
+
+/* One chip as a circuit of its own: everything inside it, its input pins
+ * turned into inputs and its output pins into outputs, compiled into a
+ * small simulator of its own and tried with every input. */
+function chipNetlist(id) {
+  const inside = new Set([id]);
+  for (let grew = true; grew;) {
+    grew = false;
+    D.insts.forEach((x, i) => { if (!inside.has(i) && inside.has(x.parent)) { inside.add(i); grew = true; } });
+  }
+  const map = new Map(), nets2 = [];
+  const net = i => { if (!map.has(i)) { map.set(i, nets2.length); nets2.push(D.nets[i]); } return map.get(i); };
+  const nodes2 = [], ins = [], outs = [];
+  let memory = false;
+  D.nodes.forEach(n => {
+    if (!inside.has(n.inst)) return;
+    if (SEQ.has(n.kind) || n.kind === "ram" || n.kind === "clock") memory = true;
+    if (n.kind === "pin_in" && n.inst === id) {
+      ins.push({ node: nodes2.length, name: n.name, w: D.nets[n.out[0]].w, outer: n.in[0] });
+      nodes2.push({ ...n, kind: "input", in: [], inNames: [], out: n.out.map(net) });
+    } else if (n.kind === "pin_out" && n.inst === id) {
+      outs.push({ name: n.name, w: D.nets[n.in[0]].w, net: net(n.in[0]) });
+    } else nodes2.push({ ...n, in: n.in.map(net), out: n.out.map(net) });
+  });
+  return { D2: { nets: nets2, nodes: nodes2, insts: [{}] }, ins, outs, memory };
+}
+function chipTable(id) {
+  const token = tableToken, box = $("tablebody");
+  const label = instLabel(id), comp = D.insts[id].comp;
+  $("tabletitle").textContent = `Truth table of ${label}${D.insts[id].name ? " (" + comp + ")" : ""}`;
+  box.textContent = "";
+  const note = t => { const p = document.createElement("p"); p.className = "note"; p.textContent = t; box.append(p); };
+  const c = chipNetlist(id), bits = c.ins.reduce((s, p) => s + p.w, 0);
+  if (c.memory) return note(`${comp} has memory inside (flip-flops, a counter or ram), so its outputs depend on more than its inputs. Truth tables are for chips without memory; open a chip inside it that has none.`);
+  if (!c.ins.length) return note(`${comp} has no inputs.`);
+  if (bits > 12) note(`The inputs of ${comp} add up to ${bits} bits, ${2 ** bits} rows: too many for a table. Try it instead: type inputs (decimal, 0x.. or 0b..) and see what comes out. It starts from what the chip has now.`);
+  else note(`${comp} on its own, for every input. The lit row is where it is now.`);
+  WireSim.create(c.D2).then(sub => {
+    if (token !== tableToken) return;            /* the view changed meanwhile */
+    c.D2.nets.forEach((n, i) => { sub.setV(i, 0); sub.setK(i, mask(n.w)); });
+    if (bits > 12) return tryChip(c, sub, box);
+    const t = document.createElement("table"); t.className = "tt";
+    const hr = t.insertRow();
+    c.ins.forEach(p => { const th = document.createElement("th"); th.textContent = p.name; hr.append(th); });
+    c.outs.forEach((p, i) => { const th = document.createElement("th"); th.textContent = p.name; if (!i) th.className = "sep"; hr.append(th); });
+    const show = (w, v, k) => {
+      const net = { w, v, k };
+      if (!known(net)) return fmtBits(net);
+      return w === 1 ? String(v) : w <= 4 ? v.toString(2).padStart(w, "0") : "0x" + v.toString(16).toUpperCase();
+    };
+    tableRows = [];
+    for (let r = 0; r < 2 ** bits; r++) {
+      let shift = bits;
+      const vals = c.ins.map(p => { shift -= p.w; return (r >>> shift) & mask(p.w); });
+      c.ins.forEach((p, i) => sub.setState(p.node, vals[i]));
+      sub.settle();
+      const tr = t.insertRow(); tr.className = "row";
+      c.ins.forEach((p, i) => { const td = tr.insertCell(); td.textContent = show(p.w, vals[i], mask(p.w)); if (p.w === 1 && vals[i]) td.className = "one"; });
+      c.outs.forEach((p, i) => {
+        const v = sub.v(p.net), k = sub.k(p.net), td = tr.insertCell();
+        td.textContent = show(p.w, v, k);
+        if (p.w === 1 && v && k) td.className = "one";
+        if (!i) td.classList.add("sep");
+      });
+      tableRows.push({ tr, vals });
+    }
+    box.append(t);
+    tableChip = c;
+    markRow();
+  });
 }
 function openDrawer(id) {
   ["tabledrawer", "srcdrawer", "memdrawer"].forEach(d => $(d).classList.toggle("open", d === id));
@@ -1527,6 +1661,7 @@ function openView(id) {
   $("tb-view").textContent = id === 0 ? "the circuit" : `${instLabel(id)}${D.insts[id].name ? " (" + D.insts[id].comp + ")" : ""}, ${baseName((D.files || [])[viewFile(id)] ? D.files[viewFile(id)].name : D.file)}`;
   buildSource(viewFile(id));
   markSource(id === 0 ? 0 : D.insts[id].defLine);
+  if (tableOpen) { buildTable(); markRow(); }
   requestAnimationFrame(fit);
 }
 function goUp() { if (V && V.id !== 0) openView(D.insts[V.id].parent); }
