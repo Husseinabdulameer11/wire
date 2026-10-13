@@ -164,7 +164,7 @@ and the page warns about a bus conflict.
 next to the `.wire` file) or inline (`data = "3E 05 76"`). Both are hex
 numbers separated by spaces, commas or new lines, filling words from
 address 0; `@10` moves to address 0x10; `#`, `;` and `//` start comments;
-`0b1010` is binary. Up to 16 address bits (65536 words) and 32 bits a word.
+`%1010` is binary (`0b1010` would be read as the hex number 0xB1010). Up to 16 address bits (65536 words) and 32 bits a word.
 
 ```
 @0
@@ -186,6 +186,64 @@ one 8-bit bus. The control lines come from a microcode ROM
 (`examples/sap1/microcode.hex`), addressed by the instruction and its step.
 The program in `examples/sap1/multiply.hex` multiplies 3 by 29, shows 87 and
 halts; `examples/sap1/count.hex` counts up and down forever.
+
+### SAP-2 and SAP-3: 8080 programs
+
+`examples/sap2.wire` and `examples/sap3.wire` are the next two computers of
+Malvino's book, and they run real 8080/8085 machine code:
+
+- **SAP-3** is the whole 8080 instruction set except interrupts (EI, DI,
+  RIM and SIM do nothing): registers A, B, C, D, E, H, L, flags S Z AC P CY,
+  a stack pointer, and 64 KB of ram. Flags follow the 8085.
+- **SAP-2** is Malvino's 42 instructions (the same opcodes): registers A, B
+  and C, flags S and Z, no stack (CALL keeps the return address at FFFE and
+  FFFF, so a subroutine cannot call another), and RAL/RAR rotate without a
+  carry.
+
+Both read `IN 1` from the switches `in1`, `IN 2` from `in2` and `IN 3` from
+the keypad (the last key, plus 10H while held); `OUT 3` and `OUT 4` show A
+on the two display ports. They are drawn as a block diagram: control unit,
+registers, counters (PC, SP), the 16-bit adder, ALU and flags, memory and
+ports, all on one 16-bit bus. Click a block to see inside it.
+
+Inside, every step of every instruction is one word of a microcode ROM
+that says who talks on the bus and who listens.
+`examples/sap/microcode.js` writes both ROMs from a readable table, like
+`"HL>MAR", "MEM>A end"` for `MOV A,M`; run it with Node after changing it.
+
+**Running your own program:**
+
+```
+; add.asm
+        IN   1
+        MOV  B, A
+        IN   2
+        ADD  B
+        OUT  3
+        HLT
+```
+
+```
+node tools/asm8080.js add.asm          # writes add.hex (-l prints a listing)
+```
+
+Then point the ram in the `memory` block of `sap3.wire` (or `sap2.wire`) at
+it, `file = "add.hex"`, run `wire examples/sap3.wire`, and open the page:
+set `in1` and `in2`, press the circuit's `reset` button, and Run.
+
+The assembler takes Intel's syntax: labels, `ORG`, `DB` (numbers and
+text), `DW`, `DS`, `EQU`; numbers like `42`, `2AH`, `0x2A`, `101010B`,
+`'A'`; and expressions with `+ - * / ( )`, `$`, `HIGH()` and `LOW()`.
+
+`examples/sap/` has `square.asm` ((in1 + in2) squared) and `keypad.asm`
+(adds up the keys you press); `tests/sap/progs/` has a 16-bit multiply, a
+bubble sort, decimal counting with DAA, and every kind of jump, call and
+return.
+
+**How it is tested:** `tests/sap/saptest.js` runs those programs, and a few
+hundred random ones, on the Wire computers and on a plain 8080 emulator
+(`tests/sap/emu8080.js`, written separately from the microcode) and checks
+that every register, flag, port and all 64 KB of memory end up the same.
 
 ## Components and imports
 
@@ -267,7 +325,10 @@ alu.wire:9:8: error: add has no output called carry; it has sum and cout
 and (if Node is installed) runs `tests/sim/simtest.js`, which checks the
 WebAssembly simulator against the original JavaScript one on every example
 and on the circuits in `tests/sim`: both get the same random clicks, clock
-ticks and resets, and every wire must agree after every step.
+ticks and resets, and every wire must agree after every step. It also checks
+that the SAP-1 computes 3 x 29, that the SAP microcode files are up to
+date, and runs `tests/sap/saptest.js` (SAP-2 and SAP-3 against the 8080
+emulator).
 
 ## Building
 
@@ -286,8 +347,9 @@ for gram.
 `wire --json file.wire` prints the netlist, if you want to feed it to
 something else.
 
-`node tests/sim/run.js build/wire examples/sap1.wire 2000` runs a circuit's
-clock without a browser (here until the SAP-1 halts) and prints its outputs.
+`node tests/sim/run.js build/wire examples/sap3.wire 5000 in1=3 in2=4`
+runs a circuit's clock without a browser, with inputs set, until it halts,
+and prints its outputs.
 
 ## How it works
 

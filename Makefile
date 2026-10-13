@@ -103,6 +103,8 @@ test: $(WIRE)
 	@if command -v node >/dev/null 2>&1; then node tests/sim/simtest.js $(WIRE) || exit 1; \
 	   node tests/sim/run.js $(WIRE) examples/sap1.wire 2000 out | grep -q "out = 87" \
 	     || { echo "examples/sap1.wire: the SAP-1 did not compute 3 x 29 = 87"; exit 1; }; \
+	   node examples/sap/microcode.js --check || exit 1; \
+	   node tests/sap/saptest.js $(WIRE) --random 100 || exit 1; \
 	 else echo "wire: node not found, skipping the simulator tests (tests/sim)"; fi
 	@echo "wire: all tests passed"
 

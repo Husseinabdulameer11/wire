@@ -1,0 +1,142 @@
+circuit "SAP-2, Malvino's second computer"
+
+# The SAP-2 of Malvino's Digital Computer Electronics: 42 instructions with
+# the 8085's opcodes, registers A, B and C, flags sign and zero, 64 KB of
+# ram, and ports. There is no stack: CALL keeps the return address at
+# FFFE and FFFF, so subroutines cannot call others. RAL and RAR rotate A
+# without a carry (there is none).
+#
+# Same build as the SAP-3 (examples/sap3.wire), with less in it: a 16-bit
+# bus d, and a microcode ROM (sap/sap2_microcode.hex, written by
+# sap/microcode.js) saying who talks on the bus (src) and who listens (dst).
+#
+#   src  1 B  2 C  7 A  8 ALU  9 memory  10 PC  15 WZ  17 PC high  18 PC low
+#        22 input port  24 FFFE  25 FFFF (where CALL keeps the return address)
+#   dst  1 B  2 C  7 A  8 TMP  9 memory  10 PC  15 MAR  18 IR  20 Z  21 W
+#        22 output port
+#
+# Ports: IN 01 reads in1, IN 02 reads in2, IN 03 the keypad. OUT 03 and
+# OUT 04 show A. The program in sap/square.hex computes (in1 + in2) squared.
+#
+# Instructions: ADD B/C, SUB B/C, ANA B/C, ORA B/C, XRA B/C, ANI, ORI, XRI,
+# INR A/B/C, DCR A/B/C, CMA, RAL, RAR, MOV between A, B and C, MVI A/B/C,
+# LDA, STA, IN, OUT, JMP, JZ, JNZ, JM, CALL, RET, NOP, HLT.
+
+import "sap/parts.wire"
+
+clock  clk (hz = 20)
+button reset
+input  in1[8], in2[8]
+keypad key
+output port3[8], port4[8]
+hex    p3hi, p3lo, p4hi, p4lo
+led    halted (color = red)
+
+bus d[16]
+
+# ---- the control unit: step counter and microcode ROM --------------------------------
+component control(ir[8], fs, fz, clk, rst) -> (se[32], de[32], op[5], pci, szp, hlt) {
+    step = counter(~clk, bits = 4, load = cw[23], d = 0, rst = rst)
+    # JNZ, JZ and JM (bits 5..3 of the opcode: 0, 1, 7)
+    cond = mux(~fz, fz, 0, 0, 0, 0, 0, fs, sel = ir[5:3])
+    cw   = rom({cond, ir, step}, bits = 25, file = "sap/sap2_microcode.hex")
+    se   = decoder(cw[4:0])
+    de   = decoder(cw[9:5])
+    op   = cw[14:10]
+    pci  = cw[17]
+    szp  = cw[20]
+    hlt  = cw[24]
+}
+
+# ---- registers: dst 1 B, 2 C, 7 A, 8 TMP; src 1 B, 2 C, 7 A -------------------------
+component registers(d[16], se[32], de[32], clk, rst) -> (out[16], a[8], tmp[8]) {
+    bus o[16]
+    B   = reg(d[7:0], clk, en = de[1], rst = rst)
+    C   = reg(d[7:0], clk, en = de[2], rst = rst)
+    A   = reg(d[7:0], clk, en = de[7], rst = rst)
+    TMP = reg(d[7:0], clk, en = de[8], rst = rst)
+    o   = tri({0x00, B}, se[1])
+    o   = tri({0x00, C}, se[2])
+    o   = tri({0x00, A}, se[7])
+    out = o
+    a   = A
+    tmp = TMP
+}
+
+# ---- the instruction register and Z, W (the bytes after an opcode) ------------------
+component temps(d[16], se[32], de[32], clk, rst) -> (out[16], ir[8], z[8]) {
+    IR  = reg(d[7:0], clk, en = de[18], rst = rst)
+    Z   = reg(d[7:0], clk, en = de[20], rst = rst)
+    W   = reg(d[7:0], clk, en = de[21], rst = rst)
+    out = tri({W, Z}, se[15])
+    ir  = IR
+    z   = Z
+}
+
+# ---- the program counter, and where CALL keeps the return address --------------------
+component counters(d[16], se[32], de[32], pci, clk, rst) -> (out[16]) {
+    bus o[16]
+    PC  = counter(clk, bits = 16, en = pci, load = de[10], d = d, rst = rst)
+    o   = tri(PC, se[10])
+    o   = tri({0x00, PC[15:8]}, se[17])
+    o   = tri({0x00, PC[7:0]}, se[18])
+    o   = tri(0xFFFE, se[24])
+    o   = tri(0xFFFF, se[25])
+    out = o
+}
+
+# ---- the ALU (no carry in) and the two flags, sign and zero ---------------------------
+component arith(se[32], a[8], tmp[8], op[5], szp, clk, rst) -> (out[16], s, z) {
+    alu = alu(a, tmp, op, 0, 0)
+    r   = alu.r
+    fl  = reg({r[7], ~(r[7] | r[6] | r[5] | r[4] | r[3] | r[2] | r[1] | r[0])}, clk, en = szp, rst = rst)
+    s   = fl[1]
+    z   = fl[0]
+    out = tri({0x00, r}, se[8])
+}
+
+# ---- memory: the MAR (dst 15) holds the address; dst 9 writes, src 9 reads -------------
+# Point the ram at your program (assembled with tools/asm8080.js).
+component memory(d[16], se[32], de[32], clk, rst) -> (out[16]) {
+    MAR = reg(d, clk, en = de[15], rst = rst)
+    mem = ram(MAR, d[7:0], de[9], clk, file = "sap/square.hex")
+    out = tri({0x00, mem}, se[9])
+}
+
+# ---- the ports: IN and OUT pick one with the byte after the opcode (in Z) ------------
+component ports(d[16], se[32], de[32], z[8], in1[8], in2[8], key[5], clk, rst) -> (out[16], p3[8], p4[8]) {
+    inport = mux(0x00, in1, in2, {0b000, key}, 0x00, 0x00, 0x00, 0x00, sel = z[2:0])
+    pd     = decoder(z[2:0])
+    p3     = reg(d[7:0], clk, en = de[22] & pd[3], rst = rst)
+    p4     = reg(d[7:0], clk, en = de[22] & pd[4], rst = rst)
+    out    = tri({0x00, inport}, se[22])
+}
+
+# ---- putting it together ---------------------------------------------------------------
+
+c   = clk & ~ctl.hlt                   # HLT stops the clock
+ctl = control(t.ir, k.s, k.z, c, reset)
+se  = ctl.se
+de  = ctl.de
+
+r   = registers(d, se, de, c, reset)
+t   = temps(d, se, de, c, reset)
+n   = counters(d, se, de, ctl.pci, c, reset)
+k   = arith(se, r.a, r.tmp, ctl.op, ctl.szp, c, reset)
+io  = ports(d, se, de, t.z, in1, in2, key, c, reset)
+m   = memory(d, se, de, c, reset)
+
+d = r.out
+d = t.out
+d = n.out
+d = k.out
+d = io.out
+d = m.out
+
+port3  = io.p3
+port4  = io.p4
+p3hi   = port3[7:4]
+p3lo   = port3[3:0]
+p4hi   = port4[7:4]
+p4lo   = port4[3:0]
+halted = ctl.hlt

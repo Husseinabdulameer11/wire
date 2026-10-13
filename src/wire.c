@@ -865,10 +865,10 @@ static int build_const(gram_node *e, int dst, int want)
 /* ---- memory contents ---------------------------------------------------- */
 
 /* Contents of a rom or ram, from `data = "..."` or a file named by
- * `file = "..."`. The text is numbers in hex (3E, or 0x3E; 0b0011 is
- * binary), separated by spaces, commas or new lines, filling words from
- * address 0 up. `@100` moves to address 0x100. `#`, `;` and `//` start
- * comments. */
+ * `file = "..."`. The text is numbers in hex (3E, or 0x3E), separated by
+ * spaces, commas or new lines, filling words from
+ * address 0 up. `%1010` is binary. `@100` moves to address 0x100. `#`, `;`
+ * and `//` start comments. */
 static const char *mem_where; static gram_node *mem_at;
 static void mem_fail(int line, const char *f, ...)
 {
@@ -901,9 +901,9 @@ static void parse_mem(Node *n, const char *t, size_t len)
             unsigned long v = 0;
             size_t start;
             if (at) i++;
+            /* 0x3E is hex like 3E; %1010 is binary (not 0b1010: 0B10 is a hex number) */
             if (i + 1 < len && t[i] == '0' && (t[i + 1] == 'x' || t[i + 1] == 'X')) i += 2;
-            else if (i + 2 < len && t[i] == '0' && (t[i + 1] == 'b' || t[i + 1] == 'B') &&
-                     (t[i + 2] == '0' || t[i + 2] == '1')) { base = 2; i += 2; }
+            else if (!at && t[i] == '%') { base = 2; i++; }
             start = i;
             while (i < len) {
                 char d = t[i];

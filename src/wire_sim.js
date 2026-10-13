@@ -681,6 +681,12 @@ function createSync(D) {
   return wrap(c, new WebAssembly.Instance(new WebAssembly.Module(c.bytes)), D);
 }
 
-return { compile, create, createSync };
+/* a fresh simulator from an already compiled module (the tests run many
+ * programs on one circuit; change D.nodes[j].init before calling this) */
+function instantiate(c, module, D) {
+  return wrap(c, new WebAssembly.Instance(module), D);
+}
+
+return { compile, create, createSync, instantiate };
 })();
 if (typeof module !== "undefined") module.exports = WireSim;

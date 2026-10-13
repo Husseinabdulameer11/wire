@@ -1,16 +1,23 @@
 /* run.js - run a circuit's clock in Node and print outputs.
- *   node tests/sim/run.js build/wire file.wire [cycles] [output names...]
+ *   node tests/sim/run.js build/wire file.wire [cycles] [name=value...] [output names...]
+ * name=value sets an input (decimal or 0x..) before the clock starts.
  * Stops early when an output called `halted` turns 1. */
 "use strict";
 const { execFileSync } = require("child_process");
 const WireSim = require("../../src/wire_sim.js");
-const [wire, file, cyc = "1000", ...names] = process.argv.slice(2);
+const [wire, file, cyc = "1000", ...rest] = process.argv.slice(2);
+const names = rest.filter(a => !a.includes("=")), sets = rest.filter(a => a.includes("="));
 const D = JSON.parse(execFileSync(wire, ["--json", file], { stdio: ["ignore", "pipe", "ignore"] }).toString());
 const sim = WireSim.createSync(D);
 const mask = w => w >= 32 ? 0xFFFFFFFF : ((1 << w) >>> 0) - 1;
 D.nets.forEach((n, i) => { sim.setV(i, 0); sim.setK(i, mask(n.w)); });
 const outs = D.nodes.filter(n => ["output", "led", "hex"].includes(n.kind) && (!names.length || names.includes(n.name)));
 const halted = D.nodes.find(n => n.name === "halted");
+sets.forEach(a => {
+  const [k, v] = a.split("="), j = D.nodes.findIndex(n => n.name === k && ["input", "keypad"].includes(n.kind));
+  if (j < 0) { console.error(`no input called ${k}`); process.exit(2); }
+  sim.setState(j, Number(v));
+});
 sim.simulate();
 let c = 0;
 const t0 = process.hrtime.bigint();

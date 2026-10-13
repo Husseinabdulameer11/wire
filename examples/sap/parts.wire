@@ -1,0 +1,73 @@
+# Parts shared by the SAP-2 and SAP-3 computers (examples/sap2.wire and
+# examples/sap3.wire): an 8080-style ALU and the flag register.
+
+# The ALU works on the accumulator a and the temporary register t.
+#
+#   op  0 ADD  a + t            op  9 DCR  t - 1
+#       1 ADC  a + t + carry        10 RLC  rotate a left (bit 7 to carry and bit 0)
+#       2 SUB  a - t                11 RRC  rotate a right (bit 0 to carry and bit 7)
+#       3 SBB  a - t - carry        12 RAL  rotate a left through the carry
+#       4 ANA  a and t              13 RAR  rotate a right through the carry
+#       5 XRA  a xor t              14 CMA  not a
+#       6 ORA  a or t               15 STC  carry = 1
+#       7 CMP  a - t (to compare)   16 CMC  carry = not carry
+#       8 INR  t + 1                17 DAA  decimal adjust a
+#
+# cy is the new carry (for SUB, SBB and CMP: 1 means a borrow) and ac the
+# carry out of bit 3, as the 8085 sets them.
+component alu(a[8], t[8], op[5], cyin, acin) -> (r[8], cy, ac) {
+    # how the adder is used, per op: y [1:0] (t, ~t, 0x00, 0xFF), carry in
+    # [3:2] (0, 1, carry, ~carry), x = t instead of a [4], borrow [5]
+    k    = rom(op, bits = 6, data = "00 08 25 2D 00 00 00 25 16 13")
+    x    = mux(a, t, sel = k[4])
+    y    = mux(t, ~t, 0x00, 0xFF, sel = k[1:0])
+    ci   = mux(0, 1, cyin, ~cyin, sel = k[3:2])
+    s    = add(x, y, cin = ci)
+    lo   = add(x[3:0], y[3:0], cin = ci)
+    acy  = s.cout ^ k[5]
+
+    # decimal adjust: add 6 if the low digit is over 9 (or ac), 0x60 if
+    # the whole is over 0x99 (or carry)
+    l9   = compare(a[3:0], 9)
+    h99  = compare(a, 0x99)
+    c1   = acin | l9.gt
+    c2   = cyin | h99.gt
+    corr = {0b0, c2, c2, 0b0, 0b0, c1, c1, 0b0}
+    da   = add(a, corr)
+    dlo  = add(a[3:0], corr[3:0])
+
+    r  = mux(s, s, s, s, a & t, a ^ t, a | t, s,
+             s, s, {a[6:0], a[7]}, {a[0], a[7:1]}, {a[6:0], cyin}, {cyin, a[7:1]}, ~a, a,
+             a, da, a, a, a, a, a, a,
+             a, a, a, a, a, a, a, a, sel = op)
+    cy = mux(acy, acy, acy, acy, 0, 0, 0, acy,
+             cyin, cyin, a[7], a[0], a[7], a[0], cyin, 1,
+             ~cyin, c2, cyin, cyin, cyin, cyin, cyin, cyin,
+             cyin, cyin, cyin, cyin, cyin, cyin, cyin, cyin, sel = op)
+    ac = mux(lo.cout, lo.cout, lo.cout, lo.cout, 1, 0, 0, lo.cout,
+             lo.cout, lo.cout, acin, acin, acin, acin, acin, acin,
+             acin, dlo.cout, acin, acin, acin, acin, acin, acin,
+             acin, acin, acin, acin, acin, acin, acin, acin, sel = op)
+}
+
+# The flags: sign, zero, auxiliary carry, parity (1 = even) and carry.
+# At the clock edge they take, from the ALU result r: s, z, ac, p while szp
+# is 1, and the carry while fcy is 1 (or the 16-bit adder's carry while
+# fdad is 1); or all of them from the bus (db) while fbus is 1 (POP PSW).
+# psw is the flag byte as the 8080 pushes it: S Z 0 AC 0 P 1 CY.
+component flagreg(r[8], ac, cy, dadcy, db[8], szp, fcy, fdad, fbus, clk, rst) -> (s, z, a, p, c, psw[8]) {
+    zero = ~(r[7] | r[6] | r[5] | r[4] | r[3] | r[2] | r[1] | r[0])
+    par  = ~(r[7] ^ r[6] ^ r[5] ^ r[4] ^ r[3] ^ r[2] ^ r[1] ^ r[0])
+    ns   = mux(mux(fl[4], r[7], sel = szp), db[7], sel = fbus)
+    nz   = mux(mux(fl[3], zero, sel = szp), db[6], sel = fbus)
+    na   = mux(mux(fl[2], ac, sel = szp), db[4], sel = fbus)
+    np   = mux(mux(fl[1], par, sel = szp), db[2], sel = fbus)
+    nc   = mux(mux(mux(fl[0], cy, sel = fcy), dadcy, sel = fdad), db[0], sel = fbus)
+    fl   = reg({ns, nz, na, np, nc}, clk, rst = rst)
+    s    = fl[4]
+    z    = fl[3]
+    a    = fl[2]
+    p    = fl[1]
+    c    = fl[0]
+    psw  = {fl[4], fl[3], 0b0, fl[2], 0b0, fl[1], 0b1, fl[0]}
+}

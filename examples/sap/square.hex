@@ -1,0 +1,14 @@
+# square.asm, assembled by tools/asm8080.js
+@0000
+DB 01        # 0000  IN   1          ; A = the first input
+47           # 0002  MOV  B, A
+DB 02        # 0003  IN   2          ; A = the second input
+80           # 0005  ADD  B          ; A = in1 + in2
+47           # 0006  MOV  B, A       ; B = the sum, to add again and again
+4F           # 0007  MOV  C, A       ; C = how many times
+3E 00        # 0008  MVI  A, 0
+80           # 000A  loop:   ADD  B          ; A = A + sum, C times
+0D           # 000B  DCR  C
+C2 0A 00     # 000C  JNZ  loop
+D3 03        # 000F  OUT  3
+76           # 0011  HLT

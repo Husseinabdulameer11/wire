@@ -1,0 +1,15 @@
+# keypad.asm, assembled by tools/asm8080.js
+@0000
+06 00        # 0000  MVI  B, 0          ; the total
+DB 03        # 0002  wait:   IN   3             ; the keypad: the last key, plus 10H while held
+E6 10        # 0004  ANI  10H
+CA 02 00     # 0006  JZ   wait          ; wait for a key to go down
+DB 03        # 0009  IN   3
+E6 0F        # 000B  ANI  0FH           ; which key
+80           # 000D  ADD  B
+47           # 000E  MOV  B, A
+D3 03        # 000F  OUT  3
+DB 03        # 0011  up:     IN   3
+E6 10        # 0013  ANI  10H
+C2 11 00     # 0015  JNZ  up            ; wait for it to come up again
+C3 02 00     # 0018  JMP  wait
