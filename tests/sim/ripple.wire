@@ -1,0 +1,13 @@
+circuit "Ripple counter"
+
+# each flip-flop is clocked by the one before it, so one clock edge
+# takes several rounds to settle; for tests/sim/simtest.js
+clock  clk
+input  rst
+output n[4]
+
+q0 = tff(1, clk, rst = rst)
+q1 = tff(1, ~q0, rst = rst)
+q2 = tff(1, ~q1, rst = rst)
+q3 = tff(1, ~q2, rst = rst)
+n  = {q3, q2, q1, q0}

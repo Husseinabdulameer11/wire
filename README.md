@@ -29,7 +29,9 @@ wire full_adder.wire          # writes full_adder.html
   per bit (click a cell to flip that bit) and the value underneath (click it
   to type a number: decimal, `0x..` or `0b..`).
 - **Buttons** are 1 while you hold them. **Clocks** have Run, Step (one full
-  cycle) and a speed control; space also steps; clicking a clock flips it by hand.
+  cycle) and a speed control from ½× up to 1M× and Max; space also steps;
+  clicking a clock flips it by hand. While it runs fast, the rate actually
+  simulated is shown next to the speed.
 - **Wires** are bright green for 1, dark green for 0, blue when unknown;
   buses are drawn thick. Hover or tap a wire to see its name and value.
 - **Truth table** lists every input combination for circuits without
@@ -202,7 +204,11 @@ alu.wire:7:18: error: every input of and must be 4 bits, but b is 1 bit
 alu.wire:9:8: error: add has no output called carry; it has sum and cout
 ```
 
-`make test` runs the examples and checks the error messages in `tests/errors`.
+`make test` runs the examples, checks the error messages in `tests/errors`,
+and (if Node is installed) runs `tests/sim/simtest.js`, which checks the
+WebAssembly simulator against the original JavaScript one on every example
+and on the circuits in `tests/sim`: both get the same random clicks, clock
+ticks and resets, and every wire must agree after every step.
 
 ## Building
 
@@ -232,9 +238,26 @@ circuit while the page can still draw each use as a chip and open it.
 The netlist is written as JSON into a copy of `src/wire_view.html`, which is
 baked into the binary. The page does the rest: a layered layout (columns by
 longest path, loops broken at feedback, crossings reduced by barycentre
-sweeps), channel routing with one vertical track per wire, and an event-free
-simulator that settles the gates and then clocks the flip-flops that saw a
-rising edge.
+sweeps) and channel routing with one vertical track per wire.
+
+The simulator is `src/wire_sim.js`, pasted into the page when Wire is built.
+When the page opens it compiles the netlist straight into a WebAssembly
+module (it writes the bytes itself; no toolchain is involved):
+
+- Every wire's value and known-mask, and every part's state, live in one
+  WebAssembly memory. The page reads that memory to draw.
+- The logic is put in order once. A flip-flop's outputs depend at once only
+  on `rst`, so the logic between flip-flops becomes straight-line code that
+  settles in one pass. Loops made of gates (an SR latch) are found and only
+  they are repeated until nothing changes; after 200 passes the page says
+  the circuit oscillates.
+- Pins at the edge of a chip share one memory slot with the wire outside,
+  so chips cost nothing extra.
+- Running the clock calls `toggle(n)` once per animation frame, which does
+  n clock flips inside WebAssembly, and the page is drawn once per frame.
+
+In the browser console, `wireSim.dump()` shows where each wire lives in
+memory and the order the logic runs in.
 
 ## License
 

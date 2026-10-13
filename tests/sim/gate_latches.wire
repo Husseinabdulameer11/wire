@@ -1,0 +1,26 @@
+circuit "Flip-flops made of gates"
+
+# loops of gates, which the simulator repeats until they settle;
+# for tests/sim/simtest.js
+input  d, en
+clock  clk
+output lq, mq_out, sq_out
+
+# gated D latch
+ls  = nand(d, en)
+lr  = nand(~d, en)
+lq  = nand(ls, lnq)
+lnq = nand(lr, lq)
+
+# master-slave D flip-flop: master open while clk is 0, slave while 1
+nclk = ~clk
+ms  = nand(d, nclk)
+mr  = nand(~d, nclk)
+mq  = nand(ms, mnq)
+mnq = nand(mr, mq)
+ss  = nand(mq, clk)
+sr  = nand(mnq, clk)
+sq  = nand(ss, snq)
+snq = nand(sr, sq)
+mq_out = mq
+sq_out = sq

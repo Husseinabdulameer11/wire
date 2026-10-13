@@ -1551,8 +1551,9 @@ static void finish(void)
     /* slices of the same bus become one splitter */
     for (i = 0; i < ntaps; i++) {
         Node *n;
-        int src = find(taps[i].src);
-        if (taps[i].src < 0) continue;
+        int src;
+        if (taps[i].src < 0) continue;      /* already part of a splitter */
+        src = find(taps[i].src);
         cur_inst = taps[i].inst;
         n = new_node(K_SPLIT, taps[i].at);
         node_in(n, "in", src);

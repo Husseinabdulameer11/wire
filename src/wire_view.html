@@ -75,6 +75,8 @@ button:hover { background: var(--hi-soft); }
 button:focus-visible { outline: 2px solid var(--hi); outline-offset: -2px; }
 button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
 button svg { width: 14px; height: 14px; }
+#rate { align-self: center; padding: 0 10px 0 4px; font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+#rate:empty { display: none; }
 select { font: inherit; color: var(--ink); background: transparent; border: 0; border-left: 1px solid var(--panel-line); padding: 0 8px; min-height: 36px; }
 .spacer { flex: 1; pointer-events: none; }
 #crumbs button { gap: 5px; }
@@ -193,8 +195,11 @@ table.tt td.one { color: var(--on); font-weight: 500; }
     <button id="step" title="One clock cycle">Step</button>
     <select id="speed" aria-label="Clock speed">
       <option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option>
-      <option value="4">4×</option><option value="10">10×</option>
+      <option value="4">4×</option><option value="10">10×</option><option value="100">100×</option>
+      <option value="1000">1000×</option><option value="10000">10k×</option><option value="100000">100k×</option>
+      <option value="1000000">1M×</option><option value="max">Max</option>
     </select>
+    <span id="rate" class="mono" title="Clock cycles per second actually simulated"></span>
   </div>
   <div class="group">
     <button id="reset" title="Inputs to 0, flip-flops cleared">Reset</button>
@@ -333,150 +338,35 @@ function constText(n) {
 }
 
 /* =============================================================== simulation */
-function rd(n, p) { const net = nets[n.in[p]]; return net; }
-function inByName(n, name) { const i = n.inNames.indexOf(name); return i < 0 ? null : nets[n.in[i]]; }
-function setOut(n, p, v, k) {
-  const net = nets[n.out[p]], m = mask(net.w);
-  k = u32(k & m); v = u32(v & k);
-  if (net.v !== v || net.k !== k) { net.v = v; net.k = k; return true; }
-  return false;
-}
+/* The simulator is the netlist compiled to WebAssembly by wire_sim.js
+ * (pasted in below when wire is built). Every net's value and known mask
+ * and every part's state live in its memory; the properties set up in
+ * bindSim read and write that memory, so the drawing code just uses
+ * net.v, net.k and node.state. In the console, wireSim.dump() shows where
+ * each net lives and the order the logic runs in. */
+//@include wire_sim.js
 const known = net => net.k === mask(net.w);
-
-function evalNode(n) {
-  const k = n.kind;
-  let v, kn, ch = false;
-  switch (k) {
-  case "input": case "button": case "clock":
-    return setOut(n, 0, n.state, 0xFFFFFFFF);
-  case "const":
-    return setOut(n, 0, n.value, 0xFFFFFFFF);
-  case "and": case "nand": case "or": case "nor": case "xor": case "xnor": {
-    const w = nets[n.out[0]].w, m = mask(w);
-    let a = rd(n, 0); v = a.v; kn = a.k;
-    for (let i = 1; i < n.in.length; i++) {
-      const b = rd(n, i);
-      if (k === "and" || k === "nand") { const nk = (kn & b.k) | (kn & ~v) | (b.k & ~b.v); v = v & b.v & nk; kn = nk; }
-      else if (k === "or" || k === "nor") { const nk = (kn & b.k) | (kn & v) | (b.k & b.v); v = (v | b.v) & nk; kn = nk; }
-      else { kn = kn & b.k; v = (v ^ b.v) & kn; }
-    }
-    if (k === "nand" || k === "nor" || k === "xnor") v = ~v & kn & m;
-    return setOut(n, 0, v, kn);
-  }
-  case "not": { const a = rd(n, 0); return setOut(n, 0, ~a.v & a.k, a.k); }
-  case "pin_in": case "pin_out": { const a = rd(n, 0); return setOut(n, 0, a.v, a.k); }
-  case "buf": { const a = rd(n, 0); return setOut(n, 0, a.v, a.k); }
-  case "mux": {
-    const sel = nets[n.in[n.in.length - 1]];
-    if (!known(sel)) return setOut(n, 0, 0, 0);
-    const d = rd(n, sel.v); return setOut(n, 0, d.v, d.k);
-  }
-  case "demux": {
-    const d = rd(n, 0), sel = rd(n, 1);
-    for (let i = 0; i < n.out.length; i++)
-      ch = (known(sel) ? (i === sel.v ? setOut(n, i, d.v, d.k) : setOut(n, i, 0, 0xFFFFFFFF)) : setOut(n, i, 0, 0)) || ch;
-    return ch;
-  }
-  case "decoder": {
-    const sel = rd(n, 0), en = inByName(n, "en");
-    if (en && known(en) && !en.v) return setOut(n, 0, 0, 0xFFFFFFFF);
-    if (!known(sel) || (en && !known(en))) return setOut(n, 0, 0, 0);
-    return setOut(n, 0, u32(1 << sel.v), 0xFFFFFFFF);
-  }
-  case "encoder": {
-    const a = rd(n, 0);
-    if (!known(a)) return setOut(n, 0, 0, 0) | setOut(n, 1, 0, 0);
-    let hi = 0; for (let b = 0; b < a.w; b++) if ((a.v >>> b) & 1) hi = b;
-    return setOut(n, 0, hi, 0xFFFFFFFF) | setOut(n, 1, a.v ? 1 : 0, 1);
-  }
-  case "add": {
-    const a = rd(n, 0), b = rd(n, 1), c = inByName(n, "cin"), w = a.w;
-    if (!known(a) || !known(b) || (c && !known(c))) return setOut(n, 0, 0, 0) | setOut(n, 1, 0, 0);
-    const s = a.v + b.v + (c ? c.v : 0);
-    return setOut(n, 0, s, 0xFFFFFFFF) | setOut(n, 1, w >= 32 ? (s > 0xFFFFFFFF ? 1 : 0) : (s >>> w) & 1, 1);
-  }
-  case "compare": {
-    const a = rd(n, 0), b = rd(n, 1);
-    if (!known(a) || !known(b)) return setOut(n, 0, 0, 0) | setOut(n, 1, 0, 0) | setOut(n, 2, 0, 0);
-    return setOut(n, 0, a.v < b.v ? 1 : 0, 1) | setOut(n, 1, a.v === b.v ? 1 : 0, 1) | setOut(n, 2, a.v > b.v ? 1 : 0, 1);
-  }
-  case "dff": case "tff": case "jkff": case "counter": {
-    const rst = inByName(n, "rst");
-    if (rst && known(rst) && rst.v) n.state = 0;
-    const w = nets[n.out[0]].w;
-    ch = setOut(n, 0, n.state, 0xFFFFFFFF);
-    if (k === "counter") {
-      const en = inByName(n, "en"), on = !en || (known(en) && en.v);
-      ch = setOut(n, 1, on && n.state === mask(w) ? 1 : 0, 1) || ch;
-    } else ch = setOut(n, 1, ~n.state & mask(w), 0xFFFFFFFF) || ch;
-    return ch;
-  }
-  case "split": {
-    const a = rd(n, 0);
-    n.ranges.forEach((r, i) => {
-      const m = mask(r[0] - r[1] + 1);
-      ch = setOut(n, i, (a.v >>> r[1]) & m, (a.k >>> r[1]) & m) || ch;
-    });
-    return ch;
-  }
-  case "merge": {
-    v = 0; kn = 0;
-    n.ranges.forEach((r, i) => { const a = rd(n, i); v |= a.v << r[1]; kn |= a.k << r[1]; });
-    return setOut(n, 0, v, kn);
-  }
-  }
-  return false;
-}
-/* the next state of a flip-flop on a rising clock edge */
-function nextState(n) {
-  const w = nets[n.out[0]].w, en = inByName(n, "en");
-  if (en && !(known(en) && en.v)) return n.state;
-  const val = name => { const x = inByName(n, name); return x ? x.v : 0; };
-  switch (n.kind) {
-  case "dff": return rd(n, 0).v;
-  case "tff": return val("t") ? n.state ^ 1 : n.state;
-  case "jkff": { const j = val("j"), kk = val("k"); return j && kk ? n.state ^ 1 : j ? 1 : kk ? 0 : n.state; }
-  case "counter": return (n.state + 1) & mask(w);
-  }
-  return n.state;
-}
-
-let order = [];        /* evaluation order (sources first, then topological) */
-function computeOrder() {
-  nodes.forEach((n, i) => { n.vi = i; });
-  const drv = new Map();
-  nets.forEach((net, i) => { if (net.driver) drv.set(i, net.driver); });
-  order = graphOf(nodes, drv).topo.map(i => nodes[i]);
-}
 const seqNodes = nodes.filter(n => SEQ.has(n.kind));
-let unstable = false;
-function settle() {
-  for (let pass = 0; pass < 200; pass++) {
-    let ch = false;
-    for (const n of order) if (evalNode(n)) ch = true;
-    if (!ch) { unstable = false; return true; }
-  }
-  unstable = true;
-  return false;
+let sim = null, unstable = false;
+function bindSim(s) {
+  sim = s;
+  const m = s.mem, c = s.compiled;
+  nets.forEach((net, i) => {
+    const a = c.V(i) >> 2, b = c.K(i) >> 2;
+    Object.defineProperty(net, "v", { get: () => m[a] >>> 0, set: x => { m[a] = x; } });
+    Object.defineProperty(net, "k", { get: () => m[b] >>> 0, set: x => { m[b] = x; } });
+  });
+  nodes.forEach((n, j) => {
+    const a = c.S(j) >> 2, b = c.LC(j) >> 2;
+    Object.defineProperty(n, "state", { get: () => m[a] >>> 0, set: x => { m[a] = x; } });
+    Object.defineProperty(n, "lastClk", { get: () => m[b], set: x => { m[b] = x; } });
+  });
+  window.wireSim = s;
 }
-/* settle, then clock every flip-flop that saw a rising edge; repeat for
- * ripple counters, where one flip-flop clocks the next */
-function simulate() {
-  settle();
-  for (let round = 0; round < 64; round++) {
-    const fire = [];
-    for (const n of seqNodes) {
-      const c = inByName(n, "clk"), now = c && known(c) ? c.v : 0;
-      if (!n.lastClk && now) fire.push(n);
-      n.lastClk = now;
-    }
-    if (!fire.length) break;
-    const next = fire.map(nextState);
-    fire.forEach((n, i) => { n.state = next[i]; });
-    settle();
-  }
-  redraw();
-}
+/* evaluate the logic; returns false if it never settles */
+function settle() { unstable = !sim.settle(); return !unstable; }
+/* settle, clock the flip-flops that saw a rising edge, and draw */
+function simulate() { unstable = !sim.simulate(); redraw(); }
 
 /* ================================================================== graph */
 /* items have .vi (their index) .in .out (nets); drv: net -> {node: vi, port} */
@@ -1280,15 +1170,49 @@ function hover(e) {
 
 /* ================================================================ clock */
 const clocks = nodes.filter(n => n.kind === "clock");
-let timer = null;
+/* While running, each animation frame works out how many clock flips are
+ * due, does them all inside WebAssembly with one call, and draws once.
+ * At most about 10 ms of each frame goes to simulating; when the circuit
+ * cannot keep up, it runs as fast as it can and the rate shows it. */
+let timer = false, lastT = 0, owed = 0, budget = 64, rateT = 0, rateN = 0;
 function setRun(on) {
-  clearInterval(timer); timer = null;
+  const was = timer;
+  timer = on;
   $("run").setAttribute("aria-pressed", on);
   $("runlabel").textContent = on ? "Pause" : "Run";
   $("runicon").setAttribute("d", on ? "M3 2h3v10H3zM8 2h3v10H8z" : "M3 2l9 5-9 5z");
+  $("rate").textContent = "";
   if (!on) return;
-  const hz = (clocks[0] && clocks[0].hz || 1) * +$("speed").value;
-  timer = setInterval(() => { clocks.forEach(c => { c.state ^= 1; }); simulate(); }, Math.max(15, 500 / hz));
+  lastT = rateT = performance.now(); owed = 0; rateN = 0;
+  if (!was) requestAnimationFrame(frame);    /* a speed change keeps the same loop */
+}
+function frame(now) {
+  if (!timer) return;
+  const sp = $("speed").value, max = sp === "max";
+  const hz = (clocks[0] && clocks[0].hz || 1) * (max ? 0 : +sp);
+  owed += Math.min(now - lastT, 250) / 1000 * hz * 2;   /* two flips per cycle */
+  lastT = now;
+  let n = max ? budget : Math.min(Math.floor(owed), budget);
+  if (n > 0) {
+    const t0 = performance.now();
+    unstable = !sim.toggle(n);
+    const dt = performance.now() - t0;
+    owed = Math.max(0, owed - n);
+    if (owed > budget) owed = 0;               /* fell behind: do not try to catch up */
+    if (dt > 0.5) budget = Math.max(1, Math.min(1e8, Math.floor(budget * 0.5 + n / dt * 10 * 0.5)));
+    else if (n === budget) budget *= 2;
+    rateN += n;
+    redraw();
+  }
+  if (now - rateT >= 500) {
+    const hzNow = rateN / 2 / ((now - rateT) / 1000);
+    $("rate").textContent = hzNow >= 20 ? fmtHz(hzNow) : "";
+    rateN = 0; rateT = now;
+  }
+  requestAnimationFrame(frame);
+}
+function fmtHz(h) {
+  return h >= 1e6 ? (h / 1e6).toFixed(h >= 1e7 ? 0 : 1) + " MHz" : h >= 1e3 ? (h / 1e3).toFixed(h >= 1e4 ? 0 : 1) + " kHz" : Math.round(h) + " Hz";
 }
 function stepClock() {
   if (timer) setRun(false);
@@ -1433,10 +1357,16 @@ const comps = nodes.filter(n => !SOURCES.has(n.kind) && !SINKS.has(n.kind) && ![
 const chips = D.insts ? D.insts.length - 1 : 0;
 $("tb-parts").textContent = `${comps} part${comps === 1 ? "" : "s"}${chips ? `, ${chips} chip${chips === 1 ? "" : "s"}` : ""}, ${ttIn.length + clocks.length} in, ${ttOut.length} out`;
 
-computeOrder();
-nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
-openView(0);
-simulate();
+WireSim.create(D).then(s => {
+  bindSim(s);
+  nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
+  openView(0);
+  simulate();
+}).catch(e => {
+  const w = $("warn");
+  w.style.display = "block";
+  w.textContent = "This browser could not run the simulator (WebAssembly): " + e.message;
+});
 $("fit").onclick = fit;
 $("tidy").onclick = () => {
   shared.delete(compOf(V.id));

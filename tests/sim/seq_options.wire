@@ -1,0 +1,16 @@
+circuit "Flip-flop options"
+
+# every flip-flop and counter option, for tests/sim/simtest.js
+input  d[8], en, rst, t, j, k, cen, crst
+clock  clk
+output q[8], nq[8], tq, jq, cnt[4], carry, free[3]
+
+r     = dff(d, clk, en = en, rst = rst)
+q     = r
+nq    = r.nq
+tq    = tff(t, clk, rst = rst)
+jq    = jkff(j, k, clk, rst = crst)
+c     = counter(clk, bits = 4, en = cen, rst = crst)
+cnt   = c
+carry = c.carry
+free  = counter(clk, bits = 3)

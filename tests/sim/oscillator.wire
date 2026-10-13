@@ -1,0 +1,14 @@
+circuit "Oscillators"
+
+# loops that never settle, so the page must say "unstable";
+# for tests/sim/simtest.js
+input  go
+output o1, o2
+
+x  = nand(go, x)
+o1 = x
+
+r1 = ~r3
+r2 = ~r1
+r3 = ~r2 & go
+o2 = r3

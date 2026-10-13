@@ -87,7 +87,7 @@ build/wire_grammar.h: src/wire.gram $(GRAMGEN) | need-gram build
 	$(GRAMGEN) src/wire.gram wire build
 
 # the HTML viewer, baked into the binary as a string
-build/wire_view.h: src/wire_view.html $(EMBED)
+build/wire_view.h: src/wire_view.html src/wire_sim.js $(EMBED)
 	$(EMBED) src/wire_view.html wire_view > $@
 
 $(WIRE): $(SRC) build/wire_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram
@@ -100,6 +100,8 @@ test: $(WIRE)
 	    if $(WIRE) --check $$f 2> build/err.txt; then echo "$$f: expected an error"; exit 1; fi; \
 	    grep -qF "$$(sed -n 's/^# expect: //p' $$f)" build/err.txt || { echo "$$f: wrong error:"; cat build/err.txt; exit 1; }; \
 	done
+	@if command -v node >/dev/null 2>&1; then node tests/sim/simtest.js $(WIRE) || exit 1; \
+	 else echo "wire: node not found, skipping the simulator tests (tests/sim)"; fi
 	@echo "wire: all tests passed"
 
 # Linux/macOS: installs build/wire as $(PREFIX)/bin/wire

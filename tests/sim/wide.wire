@@ -1,0 +1,28 @@
+circuit "Wide parts"
+
+# 32-bit values and every combinational part, for tests/sim/simtest.js
+input  a[32], b[32], ci, s5[5], en, s3[3], x[8]
+output sum[32], co, lt, eq, gt, pick, dec[8], cat[32], g1[8], g2[8], g3[8], enc[5], ok, dm0[8], dm5[8]
+
+s   = add(a, b, cin = ci)
+sum = s
+co  = s.cout
+c   = compare(a, b)
+lt  = c.lt
+eq  = c.eq
+gt  = c.gt
+pick = mux(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7],
+           a[8], a[9], a[10], a[11], a[12], a[13], a[14], a[15],
+           a[16], a[17], a[18], a[19], a[20], a[21], a[22], a[23],
+           a[24], a[25], a[26], a[27], a[28], a[29], a[30], a[31], sel = s5)
+dec = decoder(s3, en = en)
+cat = {b[15:0], a[31:16]}
+g1  = nand(x, a[7:0], b[7:0])
+g2  = nor(x, a[15:8])
+g3  = xnor(x, b[31:24], a[23:16])
+e   = encoder(a)
+enc = e
+ok  = e.valid
+dm  = demux(x, sel = s3)
+dm0 = dm[0]
+dm5 = dm[5]
