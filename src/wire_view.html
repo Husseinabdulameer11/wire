@@ -253,7 +253,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
 </form>
 
 <section class="drawer" id="tabledrawer" aria-label="Truth table">
-  <header><h2 id="tabletitle">Truth table</h2><button data-close="tabledrawer">Close</button></header>
+  <header><h2 id="tabletitle">Truth table</h2><button id="tableall" hidden title="Unselect the part and show the whole view">Show all</button><button data-close="tabledrawer">Close</button></header>
   <div class="scroll" id="tablebody"></div>
 </section>
 <section class="drawer" id="memdrawer" aria-label="Memory">
@@ -1232,6 +1232,7 @@ function select(n) {
   selected = n;
   if (n) n.el.classList.add("selected");
   markSource(n ? n.line : 0);
+  if (tableOpen) { buildTable(); markRow(); }
 }
 
 /* wire values on hover (mouse) or tap (touch) */
@@ -1331,9 +1332,16 @@ const ttBits = ttIn.reduce((s, n) => s + nets[n.out[0]].w, 0);
 let tableOpen = false, tableRows = [], tableChip = null, tableToken = 0;
 /* The truth table is for what is on screen: the circuit, or, inside a chip,
  * that chip on its own (see chipTable). */
+/* parts that have a truth table of their own when selected */
+const LOGIC = new Set([...GATES, "not", "buf", "mux", "demux", "decoder", "encoder", "add", "compare", "rom", "tri", "split", "merge", "bus", "const"]);
 function buildTable() {
   tableToken++;
   tableChip = null;
+  tableRows = [];
+  const sel = selected && (selected.kind === "chip" || LOGIC.has(selected.kind) || SEQ.has(selected.kind) || selected.kind === "ram") ? selected : null;
+  $("tableall").hidden = !sel;
+  if (sel && sel.kind === "chip") return chipTable(sel.inst);
+  if (sel) return showTable(partNetlist(sel.node), sel.node.name ? `${sel.node.name} (${kindLabel(sel.node)})` : `the selected ${kindLabel(sel.node)}`, kindLabel(sel.node));
   if (V && V.id !== 0) return chipTable(V.id);
   $("tabletitle").textContent = "Truth table";
   const box = $("tablebody");
@@ -1449,14 +1457,35 @@ function chipNetlist(id) {
   });
   return { D2: { nets: nets2, nodes: nodes2, insts: [{}] }, ins, outs, memory };
 }
+/* one part on its own: each different wire into it is an input */
+const kindLabel = n => GATES.has(n.kind) || n.kind === "not" || n.kind === "buf" ? `${n.kind} gate` : n.kind;
+function partNetlist(n) {
+  const map = new Map(), nets2 = [];
+  const net = i => { if (!map.has(i)) { map.set(i, nets2.length); nets2.push(D.nets[i]); } return map.get(i); };
+  const nodes2 = [], ins = [];
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  n.in.forEach((i, k) => {
+    if (map.has(i)) return;                       /* the same wire twice is one input */
+    const name = (n.inNames && n.inNames[k]) || (n.in.length === 1 ? "in" : letters[k] || "in" + k);
+    ins.push({ node: nodes2.length, name, w: D.nets[i].w, outer: i });
+    nodes2.push({ kind: "input", name, in: [], inNames: [], out: [net(i)], outNames: ["out"], inst: 0 });
+  });
+  const part = { ...n, in: n.in.map(net), out: n.out.map(net), inst: 0 };
+  nodes2.push(part);
+  const outs = n.out.map((o, k) => ({ name: (n.outNames && n.outNames[k] && n.outNames[k] !== "out") ? n.outNames[k] : n.out.length === 1 ? "out" : "out" + k, w: D.nets[o].w, net: part.out[k] }));
+  return { D2: { nets: nets2, nodes: nodes2, insts: [{}] }, ins, outs, memory: SEQ.has(n.kind) || n.kind === "ram" };
+}
 function chipTable(id) {
+  const comp = D.insts[id].comp;
+  showTable(chipNetlist(id), `${instLabel(id)}${D.insts[id].name ? " (" + comp + ")" : ""}`, comp);
+}
+function showTable(c, title, comp) {
   const token = tableToken, box = $("tablebody");
-  const label = instLabel(id), comp = D.insts[id].comp;
-  $("tabletitle").textContent = `Truth table of ${label}${D.insts[id].name ? " (" + comp + ")" : ""}`;
+  $("tabletitle").textContent = `Truth table of ${title}`;
   box.textContent = "";
   const note = t => { const p = document.createElement("p"); p.className = "note"; p.textContent = t; box.append(p); };
-  const c = chipNetlist(id), bits = c.ins.reduce((s, p) => s + p.w, 0);
-  if (c.memory) return note(`${comp} has memory inside (flip-flops, a counter or ram), so its outputs depend on more than its inputs. Truth tables are for chips without memory; open a chip inside it that has none.`);
+  const bits = c.ins.reduce((s, p) => s + p.w, 0);
+  if (c.memory) return note(`${comp} has memory (flip-flops, a counter or ram), so its outputs depend on more than its inputs: no truth table. Select a part without memory, or open a chip inside it that has none.`);
   if (!c.ins.length) return note(`${comp} has no inputs.`);
   if (bits > 12) note(`The inputs of ${comp} add up to ${bits} bits, ${2 ** bits} rows: too many for a table. Try it instead: type inputs (decimal, 0x.. or 0b..) and see what comes out. It starts from what the chip has now.`);
   else note(`${comp} on its own, for every input. The lit row is where it is now.`);
@@ -1503,6 +1532,7 @@ function openDrawer(id) {
   $("membtn").setAttribute("aria-pressed", memOpen);
   requestAnimationFrame(fit);
 }
+$("tableall").onclick = () => select(null);
 $("tablebtn").onclick = () => { if (tableOpen) return openDrawer(null); buildTable(); openDrawer("tabledrawer"); markRow(); };
 $("srcbtn").onclick = () => openDrawer($("srcdrawer").classList.contains("open") ? null : "srcdrawer");
 
