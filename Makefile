@@ -108,6 +108,11 @@ test: $(WIRE)
 	 else echo "wire: node not found, skipping the simulator tests (tests/sim)"; fi
 	@echo "wire: all tests passed"
 
+# every example as a page, plus an index, in build/site: drag that folder
+# onto Netlify Drop (app.netlify.com/drop), or serve it from any static host
+site: $(WIRE)
+	node tools/site.js $(WIRE) build/site
+
 # Linux/macOS: installs build/wire as $(PREFIX)/bin/wire
 install: $(WIRE)
 	mkdir -p $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/wire/lib
@@ -121,4 +126,4 @@ uninstall:
 clean:
 	rm -rf build
 
-.PHONY: all test install uninstall clean need-gram
+.PHONY: all test install uninstall clean need-gram site
