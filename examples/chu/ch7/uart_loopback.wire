@@ -1,0 +1,27 @@
+circuit "UART talking to itself"
+
+# The UART of Listing 7.4 with its tx wired to its own rx, like the
+# loop-back test of Chu's section 7.4.2 without the PC. Set w_data and
+# press wr_uart: the word goes into the transmit FIFO, out bit by bit on
+# tx (watch the LED; each bit is 64 clocks), back in through the
+# receiver, and into the receive FIFO, so rx_empty goes out and r_data
+# shows it. Press rd_uart to take it out. Run the clock fast.
+
+import "lib/uart_parts.wire"
+
+clock  clk (hz = 1000)
+button reset, rd_uart, wr_uart
+input  w_data[8]
+output r_data[8]
+led    line, tx_full, rx_empty
+hex    r_hi, r_lo
+
+# test: steps=4000 rd_uart=0.01 wr_uart=0.01
+
+u        = uart(clk, reset, rd_uart, wr_uart, u.tx, w_data)
+line     = u.tx
+tx_full  = u.tx_full
+rx_empty = u.rx_empty
+r_data   = u.r_data
+r_hi     = r_data[7:4]
+r_lo     = r_data[3:0]

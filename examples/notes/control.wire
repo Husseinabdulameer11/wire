@@ -1,0 +1,27 @@
+circuit "SAP-1 control matrix"
+
+# control.vhd: the instruction decoder (one AND gate per opcode) and the
+# control matrix (AND-OR networks of T-states and instructions) that make
+# the twelve control signals. Set op to an opcode (LDA 0, ADD 1, SUB 2,
+# OUT E, HLT F) and t to one T-state (T1 = 100000 ... T6 = 000001) and see
+# which signals are on. Names ending in _n are active low.
+
+import "lib/sap1_parts.wire"
+
+input  op[4], t[6]
+output hlt, cp, ep, lm_n, ce_n, li_n, ei_n, la_n, ea, su, eu, lb_n, lo_n
+
+c    = control(op, t)
+hlt  = c.hlt
+cp   = c.cp
+ep   = c.ep
+lm_n = c.lm_n
+ce_n = c.ce_n
+li_n = c.li_n
+ei_n = c.ei_n
+la_n = c.la_n
+ea   = c.ea
+su   = c.su
+eu   = c.eu
+lb_n = c.lb_n
+lo_n = c.lo_n

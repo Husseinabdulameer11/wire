@@ -1,0 +1,15 @@
+circuit "Rising-edge detector, Mealy machine"
+
+# Chu, Listings 5.4 and 5.5: the same job with two states, zero and one.
+# In zero, level = 1 gives tick at once (it depends on the input: Mealy)
+# and goes to one. Code zero as 0 and one as 1 and the state is just the
+# last level, one flip-flop: tick = level and not the old level. That is
+# Listing 5.5, the gate-level version, and this drawing.
+
+clock  clk (hz = 1)
+button reset
+input  level
+led    tick
+
+delay = dff(level, clk, rst = reset)   # the state: last clock's level
+tick  = level & ~delay

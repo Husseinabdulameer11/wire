@@ -1,0 +1,19 @@
+circuit "The basic gates"
+
+# Every gate on the same two inputs, a and b. Click them and watch the
+# outputs, or open Table for all four rows at once. NAND and NOR are the
+# universal gates: nand_not and nor_not make an inverter from one of each.
+
+input  a, b
+output y_and, y_or, y_nand, y_nor, y_xor, y_xnor, y_not, y_buf, nand_not, nor_not
+
+y_and    = and(a, b)
+y_or     = or(a, b)
+y_nand   = nand(a, b)
+y_nor    = nor(a, b)
+y_xor    = xor(a, b)
+y_xnor   = xnor(a, b)
+y_not    = not(a)
+y_buf    = buf(a)
+nand_not = nand(a, a)      # NAND with its inputs tied: NOT a
+nor_not  = nor(a, a)       # NOR with its inputs tied: NOT a

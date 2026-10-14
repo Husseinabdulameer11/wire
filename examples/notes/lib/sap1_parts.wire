@@ -1,0 +1,102 @@
+# The blocks of the SAP-1, as in the VHDL of my notes (vhdl/*.vhd): every
+# component here is one entity there, with the same ports in the same order.
+# Wire has no generics, so reg_n (8 bits) has a 4-bit twin, reg_n4.
+
+# ---- full_adder.vhd: two half adders (XOR + AND) and an OR -----------------
+component full_adder(a, b, cin) -> (s, cout) {
+    p    = a ^ b              # half adder 1: sum
+    g1   = a & b              # half adder 1: carry
+    s    = p ^ cin            # half adder 2: sum
+    g2   = p & cin            # half adder 2: carry
+    cout = g1 | g2            # OR of the two carries
+}
+
+# ---- addsub8.vhd: su = 0 adds, su = 1 subtracts ------------------------------
+# XOR gates invert B when su is 1, and su is also the carry in, so
+# A + not(B) + 1 = A - B. The carry out is not used (SAP-1 has no flags).
+component addsub8(a[8], b[8], su) -> (s[8]) {
+    bx = b ^ {su, su, su, su, su, su, su, su}   # controlled inverters
+    f0 = full_adder(a[0], bx[0], su)
+    f1 = full_adder(a[1], bx[1], f0.cout)
+    f2 = full_adder(a[2], bx[2], f1.cout)
+    f3 = full_adder(a[3], bx[3], f2.cout)
+    f4 = full_adder(a[4], bx[4], f3.cout)
+    f5 = full_adder(a[5], bx[5], f4.cout)
+    f6 = full_adder(a[6], bx[6], f5.cout)
+    f7 = full_adder(a[7], bx[7], f6.cout)
+    s  = {f7.s, f6.s, f5.s, f4.s, f3.s, f2.s, f1.s, f0.s}
+}
+
+# ---- reg_n.vhd: a register with an active-low load (like La', Lb') ----------
+# Each bit is a D flip-flop whose D comes from a 2-to-1 mux written as an
+# AND-OR: load ? bus : keep the old value. en is the clock enable (HLT).
+component reg_n(clk, clr, en, load_n, d[8]) -> (q[8]) {
+    ld = ~load_n & en
+    l  = {ld, ld, ld, ld, ld, ld, ld, ld}
+    q  = dff((l & d) | (~l & q), clk, rst = clr)
+}
+
+component reg_n4(clk, clr, en, load_n, d[4]) -> (q[4]) {
+    ld = ~load_n & en
+    l  = {ld, ld, ld, ld}
+    q  = dff((l & d) | (~l & q), clk, rst = clr)
+}
+
+# ---- pc4.vhd: the program counter from T flip-flops --------------------------
+# Bit i toggles when cp is 1 and all the lower bits are 1 (an AND chain).
+component pc4(clk, clr, en, cp) -> (q[4]) {
+    t0 = cp & en
+    t1 = t0 & q[0]
+    t2 = t1 & q[1]
+    t3 = t2 & q[2]
+    q0 = tff(t0, clk, rst = clr)
+    q1 = tff(t1, clk, rst = clr)
+    q2 = tff(t2, clk, rst = clr)
+    q3 = tff(t3, clk, rst = clr)
+    q  = {q3, q2, q1, q0}
+}
+
+# ---- ring6.vhd: the ring counter, T1..T6, exactly one is 1 -------------------
+# t[5] is T1 and t[0] is T6 (VHDL's t(1 to 6), left to right). It rotates
+# right: T1 takes T6, T2 takes T1, and so on. CLR must start it at T1, but a
+# reset clears every flip-flop, so T1 is kept inverted (nt1 = not T1).
+component ring6(clk, clr, en) -> (t[6]) {
+    nt1  = dff(mux(nt1, ~t[0], sel = en), clk, rst = clr)
+    rest = dff(mux(t[4:0], t[5:1], sel = en), clk, rst = clr)
+    t    = {~nt1, rest}
+}
+
+# ---- control.vhd: instruction decoder + control matrix, all gates ------------
+# op is the opcode (IR high nibble): LDA 0000, ADD 0001, SUB 0010, OUT 1110,
+# HLT 1111. The outputs ending in _n are active low.
+component control(op[4], t[6]) -> (hlt, cp, ep, lm_n, ce_n, li_n, ei_n, la_n, ea, su, eu, lb_n, lo_n) {
+    n     = ~op                                  # the inverted rails
+    i_lda = n[3] & n[2] & n[1] & n[0]            # 0000
+    i_add = n[3] & n[2] & n[1] & op[0]           # 0001
+    i_sub = n[3] & n[2] & op[1] & n[0]           # 0010
+    i_out = op[3] & op[2] & op[1] & n[0]         # 1110
+    hlt   = op[3] & op[2] & op[1] & op[0]        # 1111
+    mem   = i_lda | i_add | i_sub                # uses the RAM
+    ari   = i_add | i_sub                        # uses B and the ALU
+    # T1 = t[5], T2 = t[4], T3 = t[3], T4 = t[2], T5 = t[1], T6 = t[0]
+    cp    = t[4]
+    ep    = t[5]
+    lm_n  = ~(t[5] | (t[2] & mem))
+    ce_n  = ~(t[3] | (t[1] & mem))
+    li_n  = ~t[3]
+    ei_n  = ~(t[2] & mem)
+    la_n  = ~((t[1] & i_lda) | (t[0] & ari))
+    ea    = t[2] & i_out
+    su    = t[0] & i_sub
+    eu    = t[0] & ari
+    lb_n  = ~(t[1] & ari)
+    lo_n  = ~(t[2] & i_out)
+}
+
+# ---- ram16x8.vhd: 16 bytes with the program in them (the "switches") ---------
+# Read at once, like the 74189: address in, data out.
+component ram16x8(addr[4]) -> (dout[8]) {
+    # 0: LDA 9H  1: ADD AH  2: ADD BH  3: SUB CH  4: OUT  5: HLT
+    # 9: 16  A: 20  B: 24  C: 32
+    dout = rom(addr, bits = 8, data = "09 1A 1B 2C E0 F0 @9 10 14 18 20")
+}

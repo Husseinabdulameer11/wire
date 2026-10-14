@@ -1,0 +1,11 @@
+circuit "ROM with asynchronous read"
+
+# Chu, Listing 11.5: a ROM written as a constant array in VHDL, the
+# hex-to-7-segment table again (Listing 3.12): address in, word out, no
+# clock. With no register around it, the tools build it from logic cells,
+# so it is only for small tables. Open Memory to see the 16 words.
+
+input  addr[4]
+output data[7]
+
+data = rom(addr, bits = 7, data = "01 4F 12 06 4C 24 20 0F 00 04 08 60 31 42 30 38")

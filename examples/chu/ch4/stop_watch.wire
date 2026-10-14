@@ -1,0 +1,39 @@
+circuit "Stopwatch, 0.0 to 99.9 seconds"
+
+# Chu, Listings 4.17 and 4.18: three BCD digits d2 d1 d0 (seconds, tens of
+# a second... read d2 d1 . d0). A mod-(DVSR+1) counter makes a tick every
+# 0.1 s while go is 1, and the tick steps d0; d0 wrapping from 9 to 0
+# steps d1, and d1 wrapping steps d2. clr zeroes everything at the next
+# clock (there is no reset input).
+#
+# Chu's DVSR is 5,000,000 (0.1 s at 50 MHz); here it is 4, so a tick comes
+# every 5 clocks. Also, Chu's tick does not look at go, so pausing at the
+# very count of a tick lets the digits run on; here the tick needs go too.
+
+clock  clk (hz = 20)
+input  go, clr
+output d2[4], d1[4], d0[4]
+hex    s_hi, s_lo, tenth
+
+# a digit 0..9: steps when inc is 1; carry is 1 when it wraps
+component bcd_digit(clk, clr, inc) -> (q[4], carry) {
+    nine  = compare(q, 9).eq
+    carry = inc & nine
+    q     = dff(mux(mux(q, mux(add(q, 1), 0, sel = nine), sel = inc), 0, sel = clr), clk)
+}
+
+wire    ms[3]
+at_dvsr = compare(ms, 4).eq
+ms      = dff(mux(mux(ms, add(ms, 1), sel = go), 0, sel = clr | (at_dvsr & go)), clk)
+tick    = at_dvsr & go
+
+c0 = bcd_digit(clk, clr, tick)
+c1 = bcd_digit(clk, clr, c0.carry)
+c2 = bcd_digit(clk, clr, c1.carry)
+d0 = c0
+d1 = c1
+d2 = c2
+
+s_hi  = d2
+s_lo  = d1
+tenth = d0

@@ -1,0 +1,19 @@
+circuit "2-bit comparator from two eq1 (eq2)"
+
+# Chu, Listings 1.2 and 1.3: two 2-bit numbers are equal when both pairs
+# of bits are. Listing 1.3 builds it from two 1-bit comparators and an AND,
+# the structural style: open a chip to see the eq1 inside. Listing 1.2
+# writes the same thing as one sum of four products.
+
+input  a[2], b[2]
+output aeqb
+
+component eq1(i0, i1) -> (eq) {
+    p0 = ~i0 & ~i1
+    p1 = i0 & i1
+    eq = p0 | p1
+}
+
+e0   = eq1(a[0], b[0])
+e1   = eq1(a[1], b[1])
+aeqb = e0 & e1

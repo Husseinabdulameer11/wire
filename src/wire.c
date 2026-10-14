@@ -211,6 +211,7 @@ typedef struct {
     int conn;                 /* given its value by `expr -> name` */
     Part *parts; int nparts, capparts;
     int net, w, state;        /* state: 0 new, 1 inferring, 2 done */
+    int looped;               /* its width was asked while working it out */
 } Sym;
 
 /* `c.cout`, `dm[2]`: output ports of a named component, created on first use */
@@ -724,7 +725,7 @@ static int sym_width(Sym *s)
 {
     int w = 0, i;
     if (s->state == 2) return s->w;
-    if (s->state == 1) return 0;        /* a loop: decided by the other inputs */
+    if (s->state == 1) { s->looped = 1; return 0; }   /* a loop: decided by the other inputs */
     s->state = 1;
     if (s->dw) w = s->dw;
     else if (s->dkind == D_INPUT || s->dkind == D_BUTTON || s->dkind == D_CLOCK || s->dkind == D_LED) w = 1;
@@ -738,6 +739,10 @@ static int sym_width(Sym *s)
         } else w = ew(s->expr);
     } else for (i = 0; i < s->nparts; i++) if (s->parts[i].hi + 1 > w) w = s->parts[i].hi + 1;
     if (s->dkind == D_SEG7 && !w) w = 7;
+    /* q = dff(mux(q, add(q, 1), ...)): nothing but q itself says how wide */
+    if (!w && s->expr && s->looped)
+        fail(s->at ? s->at : s->expr, "the width of %.*s depends only on itself; declare it, like wire %.*s[8]",
+             s->len, s->name, s->len, s->name);
     s->state = 2;
     s->w = w;
     return w;
@@ -779,6 +784,16 @@ static int ew(gram_node *e)
         c = base->next;
         if (base->rule == WIRE_R_call) call = base;
         if (base->rule == WIRE_R_ident) { s = lookup(base); call = sym_call(s); }
+        /* bits of a part's output: the range alone says how wide, so the
+         * part need not be looked at (it may be fed by these very bits,
+         * as in q = dff({x, q[7:1]}, clk)); a demux's [i] is an output */
+        if (call && c && c->rule == WIRE_R_range && kind_of(call->child) != K_DEMUX) {
+            for (; c; c = c->next) {
+                if (c->rule != WIRE_R_range) return 0;
+                w = (c->child->next ? number(c->child) - number(c->child->next) : 0) + 1;
+            }
+            return w;
+        }
         if (call && c) {
             Call cl;
             analyze(call, &cl, 0);
@@ -1381,7 +1396,13 @@ static void write_json(void)
 
 /* ---- the book: a pdf to read beside the circuit --------------------------- */
 
-static const char *book_pdf, *book_url, *book_topics;
+/* books: pdfs to read beside the circuit; --book or --book-url starts one,
+ * --topics and --book-name apply to the last one started */
+typedef struct { const char *pdf, *url, *topics, *name; } Book;
+#define MAXBOOKS 8
+static Book books[MAXBOOKS];
+static int nbooks;
+static const char *vhdl_file;   /* --vhdl, else the .vhd next to the .wire file */
 
 static void b64(const unsigned char *d, size_t n)
 {
@@ -1399,56 +1420,90 @@ static void b64(const unsigned char *d, size_t n)
     }
 }
 
-/* BOOK in the page: null, or { name, url, pdf (base64), topics (text) } */
+/* BOOKS in the page: [ { name, file, url, pdf (base64), topics (text) } ] */
 static void write_book(void)
 {
     size_t n;
     char *data;
-    if (!book_pdf && !book_url) { fputs("null", jf); return; }
-    fputs("{\"name\":", jf);
-    {
-        const char *p = book_pdf ? book_pdf : book_url, *b = p;
+    int k;
+    fputc('[', jf);
+    for (k = 0; k < nbooks; k++) {
+        Book *bk = &books[k];
+        const char *p = bk->pdf ? bk->pdf : bk->url, *b = p;
         for (; *p; p++) if (*p == '/' || *p == '\\') b = p + 1;
+        fputs(k ? ",{\"file\":" : "{\"file\":", jf);
         jcstr(b);
+        fputs(",\"name\":", jf);
+        jcstr(bk->name ? bk->name : b);
+        fputs(",\"url\":", jf);
+        if (bk->url) jcstr(bk->url); else fputs("null", jf);
+        fputs(",\"pdf\":", jf);
+        if (bk->pdf) {
+            data = read_file(bk->pdf, &n);
+            if (!data) { perror(bk->pdf); exit(1); }
+            fputc('"', jf);
+            b64((const unsigned char *)data, n);
+            fputc('"', jf);
+            free(data);
+        } else fputs("null", jf);
+        fputs(",\"topics\":", jf);
+        if (bk->topics) {
+            data = read_file(bk->topics, &n);
+            if (!data) { perror(bk->topics); exit(1); }
+            jstr(data, (int)n);
+            free(data);
+        } else fputs("null", jf);
+        fputc('}', jf);
     }
-    fputs(",\"url\":", jf);
-    if (book_url) jcstr(book_url); else fputs("null", jf);
-    fputs(",\"pdf\":", jf);
-    if (book_pdf) {
-        data = read_file(book_pdf, &n);
-        if (!data) { perror(book_pdf); exit(1); }
-        fputc('"', jf);
-        b64((const unsigned char *)data, n);
-        fputc('"', jf);
-        free(data);
-    } else fputs("null", jf);
-    fputs(",\"topics\":", jf);
-    if (book_topics) {
-        data = read_file(book_topics, &n);
-        if (!data) { perror(book_topics); exit(1); }
-        jstr(data, (int)n);
-        free(data);
-    } else fputs("null", jf);
+    fputc(']', jf);
+}
+
+/* VHDL in the page: null, or { name, text } */
+static void write_vhdl(void)
+{
+    char *path = NULL, *data;
+    size_t n;
+    const char *name;
+    if (vhdl_file) path = (char *)vhdl_file;
+    else {
+        size_t l = strlen(src_name);
+        path = (char *)malloc(l + 5);
+        strcpy(path, src_name);
+        if (l > 5 && !strcmp(path + l - 5, ".wire")) path[l - 5] = 0;
+        strcat(path, ".vhd");
+    }
+    data = read_file(path, &n);
+    if (!data) {
+        if (vhdl_file) { perror(vhdl_file); exit(1); }
+        fputs("null", jf);
+        return;
+    }
+    for (name = path; *path; path++) if (*path == '/' || *path == '\\') name = path + 1;
+    fputs("{\"name\":", jf);
+    jcstr(name);
+    fputs(",\"text\":", jf);
+    jstr(data, (int)n);
     fputc('}', jf);
+    free(data);
 }
 
 /* the page: the viewer with the netlist (and the book) put in at their marks */
 static int write_html(const char *path)
 {
-    static const char *marks[] = { "/*WIRE_DATA*/", "/*WIRE_BOOK*/null" };
+    static const char *marks[] = { "/*WIRE_DATA*/", "/*WIRE_BOOK*/null", "/*WIRE_VHDL*/null" };
     const char *at = wire_view;
     jf = fopen(path, "wb");
     if (!jf) return 0;
     for (;;) {
         const char *best = NULL;
         int k, which = -1;
-        for (k = 0; k < 2; k++) {
+        for (k = 0; k < 3; k++) {
             const char *m = strstr(at, marks[k]);
             if (m && (!best || m < best)) { best = m; which = k; }
         }
         if (!best) { fputs(at, jf); break; }
         fwrite(at, 1, (size_t)(best - at), jf);
-        if (which == 0) write_json(); else write_book();
+        if (which == 0) write_json(); else if (which == 1) write_book(); else write_vhdl();
         at = best + strlen(marks[which]);
     }
     return fclose(jf) == 0;
@@ -2118,7 +2173,10 @@ int main(int argc, char **argv)
                    "  -I dir           also look for imports in dir (and in $WIRE_PATH)\n"
                    "  --book f.pdf     put a pdf in the page, to read beside the circuit\n"
                    "  --book-url u     or link to one (a web address, or a file next to the page)\n"
-                   "  --topics f       which pages are about which parts (see books/README)\n"
+                   "  --topics f       which pages of that book are about which parts (books/README)\n"
+                   "  --book-name n    what to call that book in the page\n"
+                   "                   (repeat --book/--book-url for more books)\n"
+                   "  --vhdl f.vhd     VHDL to show (default: the .vhd next to the .wire file)\n"
                    "  -t               print the syntax tree\n"
                    "  --version        print the version\n", WIRE_VERSION);
             return 0;
@@ -2127,9 +2185,14 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--check")) check = 1;
         else if (!strcmp(argv[i], "-t")) tree = 1;
         else if (!strcmp(argv[i], "-I") && i + 1 < argc && nincdirs < 16) incdirs[nincdirs++] = argv[++i];
-        else if (!strcmp(argv[i], "--book") && i + 1 < argc) book_pdf = argv[++i];
-        else if (!strcmp(argv[i], "--book-url") && i + 1 < argc) book_url = argv[++i];
-        else if (!strcmp(argv[i], "--topics") && i + 1 < argc) book_topics = argv[++i];
+        else if ((!strcmp(argv[i], "--book") || !strcmp(argv[i], "--book-url")) && i + 1 < argc) {
+            if (nbooks == MAXBOOKS) { fprintf(stderr, "wire: at most %d books\n", MAXBOOKS); return 2; }
+            memset(&books[nbooks], 0, sizeof books[0]);
+            if (argv[i][6] == '-') books[nbooks++].url = argv[++i]; else books[nbooks++].pdf = argv[++i];
+        } else if ((!strcmp(argv[i], "--topics") || !strcmp(argv[i], "--book-name")) && i + 1 < argc) {
+            if (!nbooks) { fprintf(stderr, "wire: %s goes after the --book it is about\n", argv[i]); return 2; }
+            if (argv[i][2] == 't') books[nbooks - 1].topics = argv[++i]; else books[nbooks - 1].name = argv[++i];
+        } else if (!strcmp(argv[i], "--vhdl") && i + 1 < argc) vhdl_file = argv[++i];
         else return usage();
     }
     if (i != argc - 1) return usage();

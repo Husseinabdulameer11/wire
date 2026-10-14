@@ -1,0 +1,37 @@
+circuit "Debouncing FSM"
+
+# Chu, Listing 5.6: a button bounces for a few milliseconds when pressed or
+# let go. This FSM only believes a new level that lasts: after sw changes
+# it waits for three ticks of a slow counter (wait1_1, wait1_2, wait1_3,
+# or wait0_1 ... for the way back) and goes back if sw returns before.
+# db is the clean level.
+#
+# The eight states are coded in 3 bits so that the logic is small:
+#   bit 2 is the level (and db): zero 000, wait1_1..3 001..011,
+#   one 100, wait0_1..3 101..111.
+# Counting up then does the right thing: 011 + 1 = 100 (to one) and
+# 111 + 1 = 000 (to zero). Chu's tick is every 2^19 clocks (10 ms at
+# 50 MHz); here every 8 clocks.
+
+clock  clk (hz = 10)
+button reset
+input  sw
+led    db
+
+# test: hold sw=12
+
+# the tick: a free-running 3-bit counter, m_tick when it is 0
+wire   q[3]
+q      = dff(add(q, 1), clk)
+m_tick = compare(q, 0).eq
+
+# the FSM
+wire    st[3]
+lvl     = st[2]
+changed = sw ^ lvl                    # sw says something new
+waiting = st[1] | st[0]               # one of the wait states
+inc     = add(st, 1)
+from_w  = mux({lvl, 0b00}, mux(st, inc, sel = m_tick), sel = changed)
+from_s  = mux(st, inc, sel = changed)
+st      = dff(mux(from_s, from_w, sel = waiting), clk, rst = reset)
+db      = lvl

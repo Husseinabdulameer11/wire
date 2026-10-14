@@ -1,0 +1,16 @@
+circuit "Free-running binary counter"
+
+# Chu, Listing 4.9 (N = 8): a register and an incrementer, counting 0 to
+# 255 and wrapping around. max_tick is 1 while q is 255, one clock in 256:
+# the usual way to make a slow tick from a fast clock.
+
+clock  clk (hz = 8)
+button reset
+output q[8]
+led    max_tick
+hex    q_hi, q_lo
+
+q        = dff(add(q, 1), clk, rst = reset)
+max_tick = compare(q, 255).eq
+q_hi     = q[7:4]
+q_lo     = q[3:0]

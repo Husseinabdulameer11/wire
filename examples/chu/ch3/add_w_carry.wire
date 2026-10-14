@@ -1,0 +1,16 @@
+circuit "4-bit adder with carry out"
+
+# Chu, Listings 3.9 to 3.11: VHDL's + on unsigned numbers gives no carry,
+# so both operands are made one bit wider ('0' & a) and the top bit of the
+# sum is the carry. 3.10 names the width with a constant and 3.11 with a
+# generic N; the circuit is the same 4-bit adder. Open add to see the
+# full adders.
+
+input  a[4], b[4]
+output sum[4], cout
+hex    show
+
+s    = add(a, b)
+sum  = s
+cout = s.cout
+show = sum

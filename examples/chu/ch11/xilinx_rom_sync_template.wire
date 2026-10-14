@@ -1,0 +1,13 @@
+circuit "ROM with synchronous read"
+
+# Chu, Listing 11.6: the same table, but the address goes through a
+# register first, so the word appears one clock after the address. That
+# register is what lets the Xilinx tools put the table in a block RAM,
+# the way to hold a large table.
+
+clock  clk (hz = 1)
+input  addr[4]
+output data[7]
+
+addr_reg = dff(addr, clk)
+data     = rom(addr_reg, bits = 7, data = "01 4F 12 06 4C 24 20 0F 00 04 08 60 31 42 30 38")

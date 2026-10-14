@@ -66,7 +66,7 @@ body {
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center; pointer-events: none;
 }
 #bar > * { pointer-events: auto; }
-.group { display: flex; gap: 0; border: 1px solid var(--panel-line); background: var(--panel); border-radius: 6px; overflow: hidden; }
+.group { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--panel-line); background: var(--panel); border-radius: 6px; overflow: hidden; }
 .group button + button { border-left: 1px solid var(--panel-line); }
 button {
   font: inherit; font-weight: 500; color: var(--ink); background: transparent; border: 0;
@@ -137,6 +137,17 @@ select { font: inherit; color: var(--ink); background: transparent; border: 0; b
 #src .no { width: 3.2em; text-align: right; padding-right: 1em; color: var(--ink-soft); flex: none; user-select: none; }
 #src .tx { white-space: pre; }
 #src .cm { color: var(--ink-soft); }
+#vhdl { margin: 0; padding: 8px 0; font: 12.5px/1.55 "IBM Plex Mono", ui-monospace, monospace; }
+#vhdl .ln { display: flex; padding: 0 14px 0 0; }
+#vhdl .ln.sel { background: var(--hi-soft); box-shadow: inset 3px 0 var(--hi); }
+#vhdl .no { width: 3.2em; text-align: right; padding-right: 1em; color: var(--ink-soft); flex: none; user-select: none; }
+#vhdl .tx { white-space: pre; }
+#vhdl .tx b { font-weight: 600; color: var(--ink); }
+#vhdl .tx i { font-style: normal; color: var(--off); }
+#vhdl .cm { color: var(--ink-soft); font-style: italic; }
+#vhdlwhat { padding: 6px 14px 0; font-size: 12px; }
+#vhdlwhat:empty { display: none; }
+#booksel { font: inherit; font-size: 13px; border: 1px solid var(--panel-line); border-radius: 4px; min-height: 30px; max-width: 45%; background: var(--paper); color: var(--ink); }
 
 /* the book: a pdf beside the circuit, on the left */
 #book {
@@ -255,6 +266,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
     <button id="tablebtn" title="Truth table">Truth table</button>
     <button id="srcbtn" title="Show the .wire source">Source</button>
     <button id="membtn" title="Contents of the roms and rams" hidden>Memory</button>
+    <button id="vhdlbtn" title="The VHDL for this example" hidden>VHDL</button>
     <button id="bookbtn" title="Read the book beside the circuit; the pages follow what you select">Book</button>
   </div>
   <div class="group">
@@ -288,6 +300,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
 <aside id="book" hidden aria-label="Book">
   <header>
     <b id="bookname">Book</b>
+    <select id="booksel" aria-label="Which book" hidden></select>
     <label class="follow"><input type="checkbox" id="bookfollow" checked> Follow selection</label>
     <button id="bookclose">Close</button>
   </header>
@@ -305,6 +318,11 @@ table.tt td.one { color: var(--on); font-weight: 500; }
   <div id="bookbody"><p id="booknote"></p><canvas id="bookcanvas"></canvas></div>
 </aside>
 
+<section class="drawer" id="vhdldrawer" aria-label="VHDL">
+  <header><h2 id="vhdltitle">VHDL</h2><button id="vhdlcopy" title="Copy the VHDL">Copy</button><button data-close="vhdldrawer">Close</button></header>
+  <div class="note" id="vhdlwhat"></div>
+  <div class="scroll"><div id="vhdl"></div></div>
+</section>
 <section class="drawer" id="memdrawer" aria-label="Memory">
   <header><h2>Memory</h2><button data-close="memdrawer">Close</button></header>
   <div id="memtools">
@@ -324,7 +342,8 @@ table.tt td.one { color: var(--on); font-weight: 500; }
 <script>
 "use strict";
 const D = /*WIRE_DATA*/;
-const BOOK = /*WIRE_BOOK*/null;
+const BOOKS = /*WIRE_BOOK*/null;
+const VHDL = /*WIRE_VHDL*/null;
 
 /* ================================================================== model */
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -1286,6 +1305,7 @@ function select(n) {
   if (n) n.el.classList.add("selected");
   markSource(n ? n.line : 0);
   if (tableOpen) { buildTable(); markRow(); }
+  markVhdl();
   bookFollow();
 }
 
@@ -1578,9 +1598,13 @@ function showTable(c, title, comp) {
   });
 }
 function openDrawer(id) {
-  ["tabledrawer", "srcdrawer", "memdrawer"].forEach(d => $(d).classList.toggle("open", d === id));
+  ["tabledrawer", "srcdrawer", "memdrawer", "vhdldrawer"].forEach(d => $(d).classList.toggle("open", d === id));
   tableOpen = id === "tabledrawer";
   memOpen = id === "memdrawer";
+  const wasVhdl = vhdlOpen;
+  vhdlOpen = id === "vhdldrawer";
+  $("vhdlbtn").setAttribute("aria-pressed", vhdlOpen);
+  if (vhdlOpen && !wasVhdl) buildVhdl();
   $("tablebtn").setAttribute("aria-pressed", tableOpen);
   $("srcbtn").setAttribute("aria-pressed", id === "srcdrawer");
   $("membtn").setAttribute("aria-pressed", memOpen);
@@ -1746,19 +1770,20 @@ function openView(id) {
   buildSource(viewFile(id));
   markSource(id === 0 ? 0 : D.insts[id].defLine);
   if (tableOpen) { buildTable(); markRow(); }
+  markVhdl();
   bookFollow();
   requestAnimationFrame(fit);
 }
 function goUp() { if (V && V.id !== 0) openView(D.insts[V.id].parent); }
 
 /* ================================================================ book */
-/* A pdf read beside the circuit (wire --book, or Open PDF). With "Follow
- * selection" on, selecting a part or opening a chip turns to the pages
- * about it: from the topics file (wire --topics) when there is one, else
- * by searching the pdf's text for the part's name. The pdf reader, PDF.js,
- * is loaded from cdnjs the first time the book is opened. */
+/* Pdfs read beside the circuit (wire --book, or Open PDF). With "Follow
+ * selection" on, selecting a part or opening a chip lists the sections
+ * about it in every book and turns to the first: from each book's topics
+ * file (wire --topics) when it has one, else by searching its text for the
+ * part's name. The pdf reader, PDF.js, is loaded from cdnjs the first time
+ * the book is opened. */
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
-const bk = { doc: null, name: BOOK ? BOOK.name : "", page: 1, zoom: 1, topics: null, text: null, loading: null, shown: [], rendering: null };
 /* "13-14  The ALU   : *alu* arith" -> { first, last, title, pats } */
 function parseTopics(text) {
   const glob = p => new RegExp("^" + p.toLowerCase().split("*").map(x => x.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
@@ -1771,7 +1796,10 @@ function parseTopics(text) {
   }
   return out;
 }
-if (BOOK && BOOK.topics) bk.topics = parseTopics(BOOK.topics);
+/* every book: what the page was built with, and what is loaded */
+const books = (Array.isArray(BOOKS) ? BOOKS : []).map(b => ({ ...b, topics: b.topics ? parseTopics(b.topics) : null, doc: null, text: null, loading: null, failed: null, page: 1 }));
+const bk = { cur: 0, zoom: 1, rendering: null, task: null };
+const book = () => books[bk.cur];
 
 /* what is being looked at: [label, the names to match] */
 function bookSubject() {
@@ -1793,12 +1821,12 @@ const SEARCH = {
   rom: ["ROM"], ram: ["RAM"], seg7: ["7-segment", "seven-segment"], hex: ["7-segment", "hexadecimal"],
   keypad: ["keypad", "keyboard"], button: ["debounc", "button"], clock: ["clock"], led: ["LED"]
 };
-async function searchPages(keys) {
-  if (!bk.text) {
-    bk.text = [];
-    for (let i = 1; i <= bk.doc.numPages; i++) {
-      const tc = await (await bk.doc.getPage(i)).getTextContent();
-      bk.text.push(tc.items.map(t => t.str).join(" "));
+async function searchPages(b, keys) {
+  if (!b.text) {
+    b.text = [];
+    for (let i = 1; i <= b.doc.numPages; i++) {
+      const tc = await (await b.doc.getPage(i)).getTextContent();
+      b.text.push(tc.items.map(t => t.str).join(" "));
     }
   }
   const words = [];
@@ -1807,14 +1835,14 @@ async function searchPages(keys) {
     else k.split(/[_\d\s]+/).filter(w => w.length > 1).forEach(w => words.push(w.length <= 3 ? w.toUpperCase() : w));
   });
   if (!words.length) return [];
-  const hits = bk.text.map((t, i) => {
+  const hits = b.text.map((t, i) => {
     let n = 0;
     for (const w of words) {
       const re = new RegExp(w.length <= 4 && w === w.toUpperCase() ? `\\b${w}\\b` : w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), w === w.toUpperCase() ? "g" : "gi");
       n += (t.match(re) || []).length;
     }
     return { page: i + 1, n };
-  }).filter(h => h.n).sort((a, b) => b.n - a.n).slice(0, 8);
+  }).filter(h => h.n).sort((x, y) => y.n - x.n).slice(0, 8);
   return hits.map(h => ({ first: h.page, last: h.page, title: `${h.n} mention${h.n === 1 ? "" : "s"} of ${words.slice(0, 2).join(" / ")}` }));
 }
 
@@ -1829,110 +1857,224 @@ async function pdfjs() {
   return window.pdfjsLib;
 }
 const bookNote = t => { $("booknote").textContent = t || ""; };
-async function openBookData(data, name) {
+async function openBookData(b, data, file) {
   const lib = await pdfjs();
-  bk.doc = await lib.getDocument({ data }).promise;
-  bk.name = name;
-  bk.text = null;
-  bk.page = 1;
-  $("bookname").textContent = name;
-  $("bookof").textContent = `of ${bk.doc.numPages}`;
-  bookNote("");
+  b.doc = await lib.getDocument({ data }).promise;
+  b.text = null;
+  b.failed = null;
+  if (file) b.picked = file;
 }
-async function loadBook() {
-  if (bk.doc || bk.loading) return bk.loading;
-  bk.loading = (async () => {
-    if (!BOOK) { bookNote("No book in this page. Open a pdf to read it here: it turns to the pages that mention what you select."); return; }
-    bookNote(`Loading ${BOOK.name}...`);
+/* load book b (once); on failure, b.failed says why */
+async function loadBook(b) {
+  if (b.doc) return;
+  if (b.loading) return b.loading;
+  b.loading = (async () => {
     try {
-      if (BOOK.pdf) {
-        const bin = atob(BOOK.pdf), data = new Uint8Array(bin.length);
+      if (b.pdf) {
+        const bin = atob(b.pdf), data = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
-        await openBookData(data, BOOK.name);
-      } else {
-        const r = await fetch(BOOK.url);
-        if (!r.ok) throw new Error(r.status + " " + r.statusText);
-        await openBookData(new Uint8Array(await r.arrayBuffer()), BOOK.name);
-      }
+        await openBookData(b, data);
+      } else if (b.url) {
+        const r = await fetch(b.url);
+        if (!r.ok) throw new Error(r.status === 404 ? "it is not on this site" : r.status + " " + r.statusText);
+        await openBookData(b, new Uint8Array(await r.arrayBuffer()));
+      } else throw new Error("no file");
     } catch (e) {
-      bookNote(/could not load/.test(e.message)
+      b.failed = /could not load/.test(e.message)
         ? "The pdf reader (PDF.js) is loaded from the internet, and that did not work. Check the connection and open the book again."
-        : `Could not read ${BOOK.name} from here (${e.message}). A page opened straight from disk is not allowed to read files next to it: use Open PDF and pick ${BOOK.name}.`);
+        : `${b.name} is not loaded here (${e.message}). If you have it, use Open PDF and pick ${b.file}: its pages are already mapped.`;
     }
   })();
-  await bk.loading;
-  bk.loading = null;
+  await b.loading;
+  b.loading = null;
 }
 async function renderBook() {
-  if (!bk.doc) return;
-  bk.page = Math.max(1, Math.min(bk.doc.numPages, bk.page));
-  $("bookpage").value = bk.page;
-  [...$("booktopics").children].forEach(b => b.setAttribute("aria-current", bk.page >= +b.dataset.first && bk.page <= +b.dataset.last));
-  const want = bk.page, job = Symbol();
+  const b = book();
+  $("bookname").textContent = b ? b.name : "Book";
+  if (!b) return;
+  if (!b.doc) {
+    $("bookof").textContent = "";
+    $("bookcanvas").style.display = "none";
+    bookNote(b.failed || (b.loading ? `Loading ${b.name}...` : ""));
+    return;
+  }
+  bookNote("");
+  $("bookcanvas").style.display = "";
+  b.page = Math.max(1, Math.min(b.doc.numPages, b.page));
+  $("bookpage").value = b.page;
+  $("bookof").textContent = `of ${b.doc.numPages}`;
+  [...$("booktopics").children].forEach(x => x.setAttribute("aria-current", +x.dataset.book === bk.cur && b.page >= +x.dataset.first && b.page <= +x.dataset.last));
+  const want = b.page, job = Symbol();
   bk.rendering = job;
-  const page = await bk.doc.getPage(want);
+  const page = await b.doc.getPage(want);
   if (bk.rendering !== job) return;
   const box = $("bookbody"), cv = $("bookcanvas");
   const base = page.getViewport({ scale: 1 });
   const scale = Math.max(.3, (box.clientWidth - 20) / base.width) * bk.zoom;
   const vp = page.getViewport({ scale }), dpr = window.devicePixelRatio || 1;
-  cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
-  cv.style.width = Math.floor(vp.width) + "px"; cv.style.height = Math.floor(vp.height) + "px";
   /* one drawing at a time on the canvas: stop the one before */
   if (bk.task) { bk.task.cancel(); try { await bk.task.promise; } catch (e) { /* cancelled */ } }
   if (bk.rendering !== job) return;
+  cv.width = Math.floor(vp.width * dpr); cv.height = Math.floor(vp.height * dpr);
+  cv.style.width = Math.floor(vp.width) + "px"; cv.style.height = Math.floor(vp.height) + "px";
   bk.task = page.render({ canvasContext: cv.getContext("2d"), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null });
   try { await bk.task.promise; } catch (e) { return; }
   bk.task = null;
   if (bk.rendering === job) box.scrollTop = 0;
 }
-function goPage(p) { bk.page = p; renderBook(); }
+async function goBook(i, page) {
+  bk.cur = i;
+  $("booksel").value = i;
+  const b = book();
+  if (page) b.page = page;
+  renderBook();
+  await loadBook(b);
+  if (bk.cur === i) renderBook();
+}
+const goPage = p => { book().page = p; renderBook(); };
 
-/* show the sections about what is selected (or on screen), and turn to the first */
+/* the sections about what is selected (or on screen), from every book;
+ * turn to the first one in the book being read, else in the first book that has one */
 async function bookFollow(force) {
   if ($("book").hidden || (!force && !$("bookfollow").checked)) return;
-  await loadBook();
-  if (!bk.doc) return;
   const [label, keys] = bookSubject(), names = keys.filter(Boolean).map(k => k.toLowerCase());
-  let found;
-  if (bk.topics && bk.name === (BOOK && BOOK.name)) found = bk.topics.filter(t => t.pats.some(re => names.some(n => re.test(n))));
-  else found = await searchPages(keys.slice(0, 1));     /* the kind of part or chip, not its own name */
+  const found = [];
+  for (let i = 0; i < books.length; i++) {
+    const b = books[i];
+    let list = [];
+    if (b.topics) {
+      /* a section naming exactly this chip or example comes before one that
+       * only matches a wildcard (*reg*); otherwise the file's order */
+      const rank = t => Math.min(...t.pats.map(re => names.some(n => re.test(n)) ? (re.source.includes(".*") ? 1 : 0) : 9));
+      list = b.topics.map((t, j) => ({ t, j, r: rank(t) })).filter(x => x.r < 9).sort((x, y) => x.r - y.r || x.j - y.j).map(x => x.t);
+    }
+    else if (b.doc) list = await searchPages(b, keys.slice(0, 1));   /* the kind of part or chip, not its own name */
+    list.forEach(t => found.push({ ...t, book: i }));
+  }
   const box = $("booktopics");
   box.textContent = "";
-  $("bookabout").textContent = found.length ? `About ${label}:` : `Nothing in ${bk.name} about ${label}.`;
+  $("bookabout").textContent = found.length ? `About ${label}:` : books.length ? `Nothing in ${books.length > 1 ? "the books" : books[0].name} about ${label}.` : "";
   found.forEach(t => {
-    const b = document.createElement("button");
-    b.dataset.first = t.first; b.dataset.last = t.last;
+    const x = document.createElement("button");
+    x.dataset.first = t.first; x.dataset.last = t.last; x.dataset.book = t.book;
     const pg = document.createElement("b");
-    pg.textContent = t.first === t.last ? `p.${t.first}` : `p.${t.first}–${t.last}`;
-    b.append(pg, t.title);
-    b.onclick = () => goPage(t.first);
-    box.append(b);
+    pg.textContent = (books.length > 1 ? books[t.book].short + " " : "") + (t.first === t.last ? `p.${t.first}` : `p.${t.first}–${t.last}`);
+    x.append(pg, t.title);
+    x.onclick = () => goBook(t.book, t.first);
+    box.append(x);
   });
-  if (found.length) goPage(found[0].first); else renderBook();
+  const first = found.find(t => t.book === bk.cur) || found[0];
+  if (first) goBook(first.book, first.first); else goBook(bk.cur);
 }
 function showBook(on) {
   $("book").hidden = !on;
   document.body.classList.toggle("book-open", on);
   $("bookbtn").setAttribute("aria-pressed", on);
-  if (on) { $("bookname").textContent = bk.name || "Book"; bookFollow(true); }
+  if (on) {
+    if (!books.length) {
+      books.push({ name: "Book", file: "a pdf", short: "", topics: null, doc: null, page: 1 });
+      bookNote("No book in this page. Open a pdf to read it here: it turns to the pages that mention what you select.");
+    }
+    bookFollow(true);
+  }
   requestAnimationFrame(fit);
 }
+books.forEach((b, i) => {
+  b.short = b.name.length <= 12 ? b.name : (b.name.match(/^\S+/) || [b.name])[0];
+  const o = document.createElement("option");
+  o.value = i; o.textContent = b.name;
+  $("booksel").append(o);
+});
+$("booksel").hidden = books.length < 2;
+$("booksel").onchange = () => goBook(+$("booksel").value);
 $("bookbtn").onclick = () => showBook($("book").hidden);
 $("bookclose").onclick = () => showBook(false);
 $("bookfollow").onchange = () => { if ($("bookfollow").checked) bookFollow(); };
-$("bookprev").onclick = () => goPage(bk.page - 1);
-$("booknext").onclick = () => goPage(bk.page + 1);
+$("bookprev").onclick = () => goPage(book().page - 1);
+$("booknext").onclick = () => goPage(book().page + 1);
 $("bookin").onclick = () => { bk.zoom = Math.min(3, bk.zoom * 1.25); renderBook(); };
 $("bookout").onclick = () => { bk.zoom = Math.max(.5, bk.zoom / 1.25); renderBook(); };
 $("bookpage").onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") goPage(parseInt($("bookpage").value, 10) || 1); };
+/* Open PDF reads a pdf into the book being shown, keeping its topics */
 $("bookfile").onchange = async () => {
-  const f = $("bookfile").files[0];
-  if (!f) return;
-  try { await openBookData(new Uint8Array(await f.arrayBuffer()), f.name); bookFollow(true); }
+  const f = $("bookfile").files[0], b = book();
+  if (!f || !b) return;
+  try { await openBookData(b, new Uint8Array(await f.arrayBuffer()), f.name); if (b.file === "a pdf") { b.name = f.name; } bookFollow(true); }
   catch (e) { bookNote(`Could not open ${f.name}: ${e.message}`); }
 };
 addEventListener("resize", () => { if (!$("book").hidden) renderBook(); });
+
+/* ================================================================ VHDL */
+/* The example's VHDL (the .vhd next to the .wire file). Selecting a chip,
+ * or opening one, lights up the entity of the same name; at the top, the
+ * entity named like the file. */
+const vhdlLines = VHDL ? VHDL.text.replace(/\r/g, "").split("\n") : [];
+let vhdlOpen = false;
+/* entity name -> [first line, last line] (to the next library/entity/use at the top) */
+const vhdlBlocks = (() => {
+  const m = new Map(), starts = [];
+  vhdlLines.forEach((l, i) => { const e = /^\s*entity\s+(\w+)\s+is\b/i.exec(l); if (e) starts.push([e[1].toLowerCase(), i]); });
+  starts.forEach(([name, at], k) => {
+    /* back up over the comments and library lines just before it */
+    let first = at;
+    while (first > 0 && /^\s*(--|library\b|use\b|$)/i.test(vhdlLines[first - 1]) && !(k && first - 1 <= starts[k - 1][1])) first--;
+    while (first < at && /^\s*$/.test(vhdlLines[first])) first++;
+    let last = k + 1 < starts.length ? starts[k + 1][1] - 1 : vhdlLines.length - 1;
+    while (last > at && /^\s*(--|library\b|use\b|$)/i.test(vhdlLines[last])) last--;
+    m.set(name, [first, last]);
+  });
+  return m;
+})();
+const VHDL_KW = new Set(("abs access after alias all and architecture array assert attribute begin block body buffer bus case component configuration constant disconnect downto else elsif end entity exit file for function generate generic group guarded if impure in inertial inout is label library linkage literal loop map mod nand new next nor not null of on open or others out package port postponed procedure process pure range record register reject rem report return rol ror select severity signal shared sla sll sra srl subtype then to transport type unaffected units until use variable wait when while with xnor xor rising_edge falling_edge std_logic std_logic_vector unsigned signed integer natural boolean").split(" "));
+function buildVhdl() {
+  const box = $("vhdl");
+  box.textContent = "";
+  vhdlLines.forEach((line, i) => {
+    const row = document.createElement("div"); row.className = "ln"; row.dataset.n = i;
+    const no = document.createElement("span"); no.className = "no"; no.textContent = i + 1;
+    const tx = document.createElement("span"); tx.className = "tx";
+    /* comments, strings and keywords */
+    const c = line.indexOf("--");
+    const code = c >= 0 ? line.slice(0, c) : line;
+    code.split(/(\b\w+\b|"[^"]*"|'[^']')/).forEach(part => {
+      if (!part) return;
+      if (VHDL_KW.has(part.toLowerCase())) { const k = document.createElement("b"); k.textContent = part; tx.append(k); }
+      else if (/^["']/.test(part)) { const k = document.createElement("i"); k.textContent = part; tx.append(k); }
+      else tx.append(part);
+    });
+    if (c >= 0) { const k = document.createElement("span"); k.className = "cm"; k.textContent = line.slice(c); tx.append(k); }
+    row.append(no, tx);
+    box.append(row);
+  });
+  $("vhdltitle").textContent = VHDL.name;
+  markVhdl();
+}
+function markVhdl() {
+  if (!vhdlOpen) return;
+  /* the selected chip, else the chip on screen, else the circuit; reg_n4
+   * (Wire has no generics) is entity reg_n */
+  const sel = selected, names = [];
+  if (sel && sel.kind === "chip") names.push(sel.comp);
+  if (V && V.id !== 0) names.push(D.insts[V.id].comp);
+  names.push(baseName(D.file).replace(/\.wire$/, ""));
+  let name, r;
+  for (const n of names) {
+    for (const k of [n, n.replace(/_?\d+$/, "")]) if (!r && vhdlBlocks.has(k.toLowerCase())) { name = k; r = vhdlBlocks.get(k.toLowerCase()); }
+    if (r) break;
+  }
+  const rows = $("vhdl").children;
+  for (let i = 0; i < rows.length; i++) rows[i].classList.toggle("sel", !!r && i >= r[0] && i <= r[1]);
+  $("vhdlwhat").textContent = r ? `entity ${name}, lines ${r[0] + 1}–${r[1] + 1}` : "";
+  if (r && rows[r[0]]) rows[r[0]].scrollIntoView({ block: "start" });
+}
+if (VHDL) {
+  $("vhdlbtn").hidden = false;
+  $("vhdlbtn").onclick = () => { if (vhdlOpen) return openDrawer(null); openDrawer("vhdldrawer"); };
+  $("vhdlcopy").onclick = () => {
+    const done = () => { $("vhdlcopy").textContent = "Copied"; setTimeout(() => { $("vhdlcopy").textContent = "Copy"; }, 1200); };
+    if (navigator.clipboard) navigator.clipboard.writeText(VHDL.text).then(done, () => {});
+  };
+}
 
 /* ================================================================ start */
 document.title = D.title || D.file;

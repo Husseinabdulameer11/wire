@@ -1,0 +1,16 @@
+circuit "4-bit ALU"
+
+# A small ALU: op picks the result, 0 = x + y, 1 = x AND y, 2 = x OR y,
+# 3 = x XOR y. A mux chooses between the four, the way an ALU does. carry
+# is the adder's carry out (only for op 0) and zero is 1 when the result
+# is 0, the two flags a computer branches on.
+
+input  x[4], y[4], op[2]
+output result[4], carry, zero
+hex    show
+
+s      = add(x, y)
+result = mux(s, x & y, x | y, x ^ y, sel = op)
+carry  = s.cout & ~op[1] & ~op[0]
+zero   = ~(result[3] | result[2] | result[1] | result[0])
+show   = result

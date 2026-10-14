@@ -1,0 +1,14 @@
+circuit "Single-port RAM, asynchronous read"
+
+# Chu, Listing 11.1: the RAM template that the Xilinx tools turn into
+# distributed RAM (logic cells used as memory). Writing is synchronous:
+# at a rising edge, if we is 1, din goes into the word at addr. Reading
+# is not: dout is the word at addr, at once. Same address for both.
+# Open Memory to watch the words. (Here 16 words of 8 bits; Chu's
+# defaults are 256 words of 1 bit.)
+
+clock  clk (hz = 1)
+input  we, addr[4], din[8]
+output dout[8]
+
+dout = ram(addr, din, we, clk)

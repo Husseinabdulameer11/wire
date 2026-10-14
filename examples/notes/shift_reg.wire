@@ -1,0 +1,17 @@
+circuit "4-bit shift register"
+
+# Four D flip-flops in a row: at every rising edge each takes the bit of
+# the one before, so din moves one place along per clock. After four
+# clocks the four bits that went in serially are there in parallel in q
+# (serial in, parallel out).
+
+clock  clk (hz = 1)
+button clr
+input  din
+output q[4]
+
+q0 = dff(din, clk, rst = clr)
+q1 = dff(q0, clk, rst = clr)
+q2 = dff(q1, clk, rst = clr)
+q3 = dff(q2, clk, rst = clr)
+q  = {q3, q2, q1, q0}

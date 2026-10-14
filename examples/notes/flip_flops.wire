@@ -1,0 +1,15 @@
+circuit "D, T and JK flip-flops"
+
+# Three edge-triggered flip-flops on one clock. They change only at the
+# rising edge: D takes d; T toggles when t is 1; JK sets (j), resets (k),
+# toggles (both) or holds (neither). clr clears them all at once, without
+# waiting for the clock (an asynchronous reset).
+
+clock  clk (hz = 1)
+button clr
+input  d, t, j, k
+led    q_d, q_t, q_jk
+
+q_d  = dff(d, clk, rst = clr)
+q_t  = tff(t, clk, rst = clr)
+q_jk = jkff(j, k, clk, rst = clr)

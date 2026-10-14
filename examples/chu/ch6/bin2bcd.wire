@@ -1,0 +1,49 @@
+circuit "Binary to BCD"
+
+# Chu, Listing 6.6: turns a 13-bit binary number into four decimal
+# digits (0 to 8191), with the shift-and-add-3 method. bin is shifted,
+# top bit first, into a shift register of four BCD digits; before each
+# shift, any digit above 4 gets 3 added, so that the shift (a doubling)
+# carries into the next digit at 10 instead of 16. 13 shifts and done.
+#
+# States: idle 00, op 01, done 10.
+
+clock  clk (hz = 4)
+button reset
+input  start, bin[13]
+output bcd3[4], bcd2[4], bcd1[4], bcd0[4]
+led    ready, done_tick
+hex    h3, h2, h1, h0
+
+# the adjustment: + 3 when above 4
+component adj(d[4]) -> (q[4]) {
+    q = mux(d, add(d, 3), sel = compare(d, 4).gt)
+}
+
+wire   st[2], p2s[13], n[4], b3[4], b2[4], b1[4], b0[4]
+t0 = adj(b0)
+t1 = adj(b1)
+t2 = adj(b2)
+t3 = adj(b3)
+n_dec = add(n, 15)
+
+#               idle                          op                                       done
+st  = dff(mux(mux(0b00, 0b01, sel = start), mux(0b01, 0b10, sel = compare(n_dec, 0).eq), 0b00, 0b00, sel = st), clk, rst = reset)
+p2s = dff(mux(mux(p2s, bin, sel = start),   {p2s[11:0], 0b0},                          p2s, p2s, sel = st), clk, rst = reset)
+n   = dff(mux(mux(n, 13, sel = start),      n_dec,                                     n, n, sel = st), clk, rst = reset)
+b0  = dff(mux(mux(b0, 0, sel = start),      {t0[2:0], p2s[12]},                        b0, b0, sel = st), clk, rst = reset)
+b1  = dff(mux(mux(b1, 0, sel = start),      {t1[2:0], t0[3]},                          b1, b1, sel = st), clk, rst = reset)
+b2  = dff(mux(mux(b2, 0, sel = start),      {t2[2:0], t1[3]},                          b2, b2, sel = st), clk, rst = reset)
+b3  = dff(mux(mux(b3, 0, sel = start),      {t3[2:0], t2[3]},                          b3, b3, sel = st), clk, rst = reset)
+
+s         = decoder(st)
+ready     = s[0]
+done_tick = s[2]
+bcd3 = b3
+bcd2 = b2
+bcd1 = b1
+bcd0 = b0
+h3 = b3
+h2 = b2
+h1 = b1
+h0 = b0

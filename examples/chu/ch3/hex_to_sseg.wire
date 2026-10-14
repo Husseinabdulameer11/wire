@@ -1,0 +1,22 @@
+circuit "Hex digit to 7-segment pattern"
+
+# Chu, Listing 3.12: a 4-bit hex digit in, the pattern for a seven-segment
+# LED out. The VHDL is one with-select listing all 16 patterns, which is a
+# truth table, so here it is a ROM (open Memory to see it). The board's
+# LEDs are active low: sseg(6) is segment a ... sseg(0) is g, 0 = lit,
+# and sseg(7) is the decimal point, straight from dp. disp shows it the
+# way the board would.
+
+# (hex is a word of Wire, so the input is hex_in here)
+# vhdl ports: hex_in=hex
+
+input  hex_in[4], dp
+output sseg[8]
+seg7   disp
+
+# a..g for 0 1 2 3 4 5 6 7 8 9 A b C d E F, active low, a = bit 6
+pat  = rom(hex_in, bits = 7, data = "01 4F 12 06 4C 24 20 0F 00 04 08 60 31 42 30 38")
+sseg = {dp, pat}
+
+# the board lights a segment with a 0: flip, and put a..g in Wire's order
+disp = ~{sseg[7], sseg[0], sseg[1], sseg[2], sseg[3], sseg[4], sseg[5], sseg[6]}

@@ -1,0 +1,19 @@
+circuit "UART transmitter"
+
+# Chu, Listing 7.3: the other half. tx_start loads din; then tx sends the
+# start bit (0), the 8 data bits LSB first and the stop bit (1), each for
+# 16 ticks of s_tick, and tx_done_tick marks the end. tx comes straight
+# from a flip-flop so it never glitches. Open the chip for the FSMD.
+
+import "lib/uart_parts.wire"
+
+clock  clk (hz = 20)
+button reset
+input  tx_start, s_tick, din[8]
+led    tx, tx_done_tick
+
+# test: steps=1500 s_tick=0.5 tx_start=0.05
+
+u            = uart_tx(clk, reset, tx_start, s_tick, din)
+tx           = u.tx
+tx_done_tick = u.tx_done_tick

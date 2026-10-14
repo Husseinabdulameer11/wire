@@ -1,0 +1,24 @@
+circuit "Time-multiplexed hex display"
+
+# Chu, Listing 4.15: like disp_mux, but the inputs are four hex digits and
+# their decimal points; the digit whose turn it is goes through one
+# hex-to-7-segment decoder (Listing 3.12), so one decoder serves all four
+# displays. Counter: 4 bits here, 18 in the book.
+
+clock  clk (hz = 8)
+button reset
+input  hex3[4], hex2[4], hex1[4], hex0[4], dp_in[4]
+output an[4], sseg[8]
+
+# Listing 3.12, active low, a = bit 6
+component hex_to_sseg(h[4], dp) -> (sseg[8]) {
+    sseg = {dp, rom(h, bits = 7, data = "01 4F 12 06 4C 24 20 0F 00 04 08 60 31 42 30 38")}
+}
+
+wire   q[4]
+q    = dff(add(q, 1), clk, rst = reset)
+sel  = q[3:2]
+an   = mux(0b1110, 0b1101, 0b1011, 0b0111, sel = sel)
+h    = mux(hex0, hex1, hex2, hex3, sel = sel)
+dp   = mux(dp_in[0], dp_in[1], dp_in[2], dp_in[3], sel = sel)
+sseg = hex_to_sseg(h, dp)

@@ -1,0 +1,11 @@
+circuit "A register fed by its own bits"
+
+# q = dff({x, q[3:1]}, clk) once crashed the compiler (the width of q[3:1]
+# looked at the dff, which looked at q[3:1], ...).
+
+clock  clk
+input  x
+output q[4], r[4]
+
+q = dff({x, q[3:1]}, clk)
+r = dff(mux(r, {r[2:0], x}, sel = x), clk)

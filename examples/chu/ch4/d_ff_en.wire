@@ -1,0 +1,14 @@
+circuit "D flip-flop with reset and enable"
+
+# Chu, Listings 4.1 to 4.4: the D flip-flop, then with an asynchronous
+# reset, then with a synchronous enable. At a rising edge of clk, q takes d
+# if en is 1 and keeps its value if not; reset clears it at once, clock or
+# no clock. 4.4 draws the enable as a mux in front of a plain D flip-flop,
+# feeding q back: that mux is what en does here.
+
+clock  clk (hz = 1)
+button reset
+input  en, d
+led    q
+
+q = dff(d, clk, en = en, rst = reset)

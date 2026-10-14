@@ -1,0 +1,16 @@
+circuit "Mod-10 counter"
+
+# Chu, Listing 4.11 (N = 4, M = 10): counts 0 to M-1 and goes back to 0.
+# A comparator spots M-1 and a mux puts 0 into the register instead of
+# q + 1. max_tick marks the last count, once every 10 clocks: Chu uses
+# this counter to divide the 50 MHz clock into slower ticks.
+
+clock  clk (hz = 4)
+button reset
+output q[4]
+led    max_tick
+hex    show
+
+max_tick = compare(q, 9).eq
+q        = dff(mux(add(q, 1), 0, sel = max_tick), clk, rst = reset)
+show     = q

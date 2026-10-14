@@ -1,0 +1,14 @@
+circuit "8-bit register with reset"
+
+# Chu, Listing 4.5: eight D flip-flops sharing the clock and the reset; at
+# every rising edge q takes d. Drawn as one dff 8 bits wide.
+
+clock  clk (hz = 1)
+button reset
+input  d[8]
+output q[8]
+hex    q_hi, q_lo
+
+q    = dff(d, clk, rst = reset)
+q_hi = q[7:4]
+q_lo = q[3:0]

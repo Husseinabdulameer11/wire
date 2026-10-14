@@ -1,0 +1,19 @@
+circuit "Universal binary counter"
+
+# Chu, Listing 4.10 (N = 8): a counter with every option, in order of
+# priority: syn_clr clears it at the next clock, load takes d, and en
+# counts up (up = 1) or down (up = 0). Nothing on: it holds. max_tick and
+# min_tick say when it is at 255 or 0. The chain of muxes is the
+# conditional signal assignment of the VHDL, the first one the strongest.
+
+clock  clk (hz = 2)
+button reset
+input  syn_clr, load, en, up, d[8]
+output q[8]
+led    max_tick, min_tick
+
+step     = mux(add(q, 255), add(q, 1), sel = up)      # q - 1 or q + 1
+nxt      = mux(mux(mux(q, step, sel = en), d, sel = load), 0, sel = syn_clr)
+q        = dff(nxt, clk, rst = reset)
+max_tick = compare(q, 255).eq
+min_tick = compare(q, 0).eq

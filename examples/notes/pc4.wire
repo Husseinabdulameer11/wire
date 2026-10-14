@@ -1,0 +1,17 @@
+circuit "Program counter from T flip-flops"
+
+# pc4.vhd: a 4-bit synchronous binary counter. Bit i toggles when cp is 1
+# and every lower bit is 1, so the T inputs are an AND chain:
+# t(i) = cp and q(0) and ... and q(i-1). en is the clock enable (HLT
+# turns it off).
+
+import "lib/sap1_parts.wire"
+
+clock  clk (hz = 2)
+button clr
+input  en, cp
+output q[4]
+hex    show
+
+q    = pc4(clk, clr, en, cp)
+show = q

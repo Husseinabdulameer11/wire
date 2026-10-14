@@ -1,0 +1,14 @@
+circuit "2-to-4 decoder with enable"
+
+# Chu, Listings 3.2, 3.4, 3.6 and 3.8: the same decoder written four ways
+# (when-else, with-select, if, case). Whatever the VHDL, the circuit is
+# this: one AND gate per output line, y(i) is 1 when en is 1 and a = i.
+# Wire's own decoder part is the same circuit in one box.
+
+input  en, a[2]
+output y[4]
+
+y[0] = en & ~a[1] & ~a[0]
+y[1] = en & ~a[1] & a[0]
+y[2] = en & a[1] & ~a[0]
+y[3] = en & a[1] & a[0]

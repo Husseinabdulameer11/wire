@@ -1,0 +1,36 @@
+circuit "Division by long division"
+
+# Chu, Listing 6.5 (W = 8): divides dvnd by dvsr the way it is done on
+# paper, one quotient bit per clock. rh holds the partial remainder and rl
+# the dividend, shifting left together; each clock, if rh >= the divisor,
+# it is subtracted and a 1 goes into the quotient (shifted into rl), else
+# a 0. After W + 1 steps quo = rl and rmd = rh.
+#
+# States: idle 00, op 01, last 10, done 11. Every register is a mux on
+# the state, one input per state.
+
+clock  clk (hz = 4)
+button reset
+input  start, dvsr[8], dvnd[8]
+output quo[8], rmd[8]
+led    ready, done_tick
+
+wire   st[2], rh[8], rl[8], d[8], n[4]
+
+# compare and subtract
+q_bit  = ~compare(rh, d).lt                        # rh >= d
+rh_tmp = mux(rh, add(rh, ~d, cin = 1), sel = q_bit)
+
+n_dec = add(n, 15)                                  # n - 1
+#              idle                          op                                last                  done
+st = dff(mux(mux(0b00, 0b01, sel = start), mux(0b01, 0b10, sel = compare(n_dec, 1).eq), 0b11, 0b00, sel = st), clk, rst = reset)
+rh = dff(mux(mux(rh, 0, sel = start),      {rh_tmp[6:0], rl[7]},           rh_tmp,               rh, sel = st), clk, rst = reset)
+rl = dff(mux(mux(rl, dvnd, sel = start),   {rl[6:0], q_bit},               {rl[6:0], q_bit},     rl, sel = st), clk, rst = reset)
+d  = dff(mux(mux(d, dvsr, sel = start),    d,                              d,                    d, sel = st), clk, rst = reset)
+n  = dff(mux(mux(n, 9, sel = start),       n_dec,                          n,                    n, sel = st), clk, rst = reset)
+
+s         = decoder(st)
+ready     = s[0]
+done_tick = s[3]
+quo       = rl
+rmd       = rh

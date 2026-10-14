@@ -5,11 +5,16 @@ A Wire page can show a pdf beside the circuit (the **Book** button). With
 the pages about it.
 
 ```
-wire --book books/fpga_summary.pdf --topics books/fpga_summary.topics examples/sap3.wire
-wire --book-url fpga_summary.pdf --topics books/fpga_summary.topics examples/sap3.wire
-make site                      # every example, linked to books/fpga_summary.pdf
-make site BOOK=books/other.pdf TOPICS=books/other.topics
+wire --book books/fpga_summary.pdf --topics books/fpga_summary.topics examples/notes/sap1.wire
+wire --book-url fpga_summary.pdf --topics books/fpga_summary.topics examples/notes/sap1.wire
+wire --book-url fpga_summary.pdf --book-name "My notes" --topics books/fpga_summary.topics \
+     --book-url chu.pdf --book-name Chu --topics books/chu.topics examples/chu/ch6/fib.wire
+make site                      # every example, with both books
 ```
+
+Each `--book` or `--book-url` starts a book; `--book-name` and `--topics`
+after it belong to it. With two or more, the panel has a menu to switch,
+and the list of sections shows the pages of every book.
 
 - `--book file.pdf` puts the pdf inside the page (one file, works anywhere,
   about 1.3 times the pdf's size).
@@ -47,9 +52,16 @@ One line per section of the pdf, in the order you want them listed:
   `registers`, `reg4` and `flagreg`. Case does not matter.
 - What is matched: the selected part; with nothing selected, the chip you are
   in; at the top, the circuit.
-- The first matching line is the page opened; the others are listed to click.
+- A line naming the thing exactly comes before one that matches only with
+  `*`; among those, the first in the file is the page opened. The others are
+  listed to click.
+
+`chu.topics` maps Pong P. Chu, *FPGA Prototyping by VHDL Examples* (Xilinx
+Spartan-3 version): each example of `examples/chu` to its listing, and the
+parts to the sections about them. The book itself is not here; open your
+copy in the panel.
 
 `fpga_summary.topics` maps the FPGA exam summary (`fpga_summary.pdf`): gates
 to Part 0 ch. B, multiplexers, decoders, adders and the ALU to ch. C,
 flip-flops, registers and counters to ch. D and Chu ch. 4, RAM and ROM to ch.
-E, the SAP computers and their control units to ch. F and G, and so on.
+E, the SAP-1 and its control unit to ch. F and G, and so on.

@@ -1,0 +1,25 @@
+circuit "UART receiver"
+
+# Chu, Listing 7.1. A serial line idles at 1; a word is a start bit (0),
+# 8 data bits (LSB first) and a stop bit (1). The receiver gets 16 ticks
+# per bit (s_tick, from a baud-rate counter): when rx falls it counts 7
+# ticks to the middle of the start bit, then samples rx every 16 ticks,
+# shifting the bits into dout; after the stop bit rx_done_tick is 1 for
+# one clock. Open the chip for the FSMD.
+#
+# To try it here: hold s_tick at 1 (a tick every clock), drop rx for the
+# start bit, then set rx to each data bit for 16 clocks.
+
+import "lib/uart_parts.wire"
+
+clock  clk (hz = 20)
+button reset
+input  rx, s_tick
+output dout[8]
+led    rx_done_tick
+
+# test: steps=1500 s_tick=0.5 hold rx=20
+
+u            = uart_rx(clk, reset, rx, s_tick)
+rx_done_tick = u.rx_done_tick
+dout         = u.dout

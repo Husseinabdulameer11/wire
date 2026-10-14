@@ -1,0 +1,37 @@
+circuit "Debouncer, FSM with a data path (FSMD)"
+
+# Chu, Listings 6.1 and 6.2: the debouncer again, now as an FSMD. Instead
+# of three wait states counting ticks (db_fsm), one wait state and a
+# down-counter q: when sw changes, q is filled with ones; while sw stays
+# changed it counts down, and at 0 the new level is believed. db_level is
+# the clean level; db_tick is 1 for the one clock where it turns 1.
+#
+# States: zero 00, wait1 01, one 10, wait0 11 (bit 1 is the level).
+# Chu's q has 21 bits (40 ms at 50 MHz); here 3.
+
+clock  clk (hz = 10)
+button reset
+input  sw
+led    db_level, db_tick
+
+# test: hold sw=10
+
+wire    st[2], q[3]
+lvl     = st[1]
+waiting = st[0]
+changed = sw ^ lvl
+q_dec   = add(q, 7)                     # q - 1
+q_done  = compare(q_dec, 0).eq          # it will reach 0
+
+# a stable state: a change starts waiting with q full
+st_s = mux(st, {lvl, 0b1}, sel = changed)
+q_s  = mux(q, 7, sel = changed)
+# a wait state: count while sw stays changed, else back
+st_w = mux({lvl, 0b0}, mux(st, {~lvl, 0b0}, sel = q_done), sel = changed)
+q_w  = mux(q, q_dec, sel = changed)
+
+st = dff(mux(st_s, st_w, sel = waiting), clk, rst = reset)
+q  = dff(mux(q_s, q_w, sel = waiting), clk, rst = reset)
+
+db_level = lvl
+db_tick  = waiting & changed & q_done & ~lvl

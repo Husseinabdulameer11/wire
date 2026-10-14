@@ -2,7 +2,8 @@
  *
  *   node tests/sim/simtest.js build/wire [file.wire ...]
  *
- * With no files it runs examples/*.wire and tests/sim/*.wire. Each circuit
+ * With no files it runs every example (all of examples/ but lib folders) and
+ * tests/sim/*.wire. Each circuit
  * goes through `wire --json`, then both simulators get the same random
  * clicks, clock ticks and resets, and after every action every net (value
  * and known mask), every flip-flop and input state, and the "unstable" flag
@@ -19,7 +20,8 @@ const wire = process.argv[2];
 if (!wire) { console.error("usage: node simtest.js path/to/wire [file.wire ...]"); process.exit(2); }
 let files = process.argv.slice(3);
 if (!files.length) {
-  const dir = d => fs.existsSync(d) ? fs.readdirSync(d).filter(f => f.endsWith(".wire")).sort().map(f => path.join(d, f)) : [];
+  const dir = d => fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).flatMap(e =>
+    e.isDirectory() ? (e.name === "lib" || d === "tests/sim" ? [] : dir(path.join(d, e.name))) : e.name.endsWith(".wire") ? [path.join(d, e.name)] : []) : [];
   files = [...dir("examples"), ...dir("tests/sim")];
 }
 const STEPS = +(process.env.SIMTEST_STEPS || 400);

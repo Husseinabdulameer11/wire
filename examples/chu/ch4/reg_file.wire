@@ -1,0 +1,17 @@
+circuit "Register file, 4 words of 8 bits"
+
+# Chu, Listing 4.6 (with W = 2, B = 8): an array of registers with one
+# write port and one read port. A decoder turns w_addr into the enable of
+# one register, which takes w_data at the clock edge if wr_en is 1; a mux
+# picks the register r_addr names, at once, without a clock.
+
+clock  clk (hz = 1)
+input  wr_en, w_addr[2], r_addr[2], w_data[8]
+output r_data[8]
+
+we = decoder(w_addr, en = wr_en)
+r0 = dff(w_data, clk, en = we[0])
+r1 = dff(w_data, clk, en = we[1])
+r2 = dff(w_data, clk, en = we[2])
+r3 = dff(w_data, clk, en = we[3])
+r_data = mux(r0, r1, r2, r3, sel = r_addr)

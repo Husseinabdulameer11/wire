@@ -1,0 +1,26 @@
+circuit "UART: receiver, transmitter, FIFOs"
+
+# Chu, Listing 7.4: the whole UART core. A mod-M counter makes the baud
+# tick (16 per bit); received words go into a 4-word FIFO, where rd_uart
+# takes them out (r_data shows the oldest, rx_empty says there is none);
+# wr_uart puts w_data into the transmit FIFO, and the transmitter sends
+# while that FIFO is not empty (tx_full says it cannot take more).
+# Open the chips: mod_m_counter, uart_rx, uart_tx, two fifos.
+#
+# To see it work, try uart_loopback, where tx is wired back to rx.
+
+import "lib/uart_parts.wire"
+
+clock  clk (hz = 50)
+button reset
+input  rd_uart, wr_uart, rx, w_data[8]
+output r_data[8]
+led    tx, tx_full, rx_empty
+
+# test: steps=3000 rd_uart=0.02 wr_uart=0.02 hold rx=40
+
+u        = uart(clk, reset, rd_uart, wr_uart, rx, w_data)
+tx       = u.tx
+tx_full  = u.tx_full
+rx_empty = u.rx_empty
+r_data   = u.r_data

@@ -1,0 +1,35 @@
+circuit "Period counter"
+
+# Chu, Listing 6.7: measures the period of a slow signal si in
+# milliseconds. After start it waits for a rising edge of si (an edge
+# detector, Listing 5.5), then counts milliseconds until the next rising
+# edge; prd is the count. A ms is CLK_MS_COUNT clocks: 50,000 at 50 MHz in
+# the book, 4 here, so one "ms" is 4 clocks.
+#
+# States: idle 00, waite 01 (wait for the first edge), count 10, done 11.
+
+clock  clk (hz = 8)
+button reset
+input  start, si
+output prd[10]
+led    ready, done_tick
+
+# test: hold si=6
+
+wire   st[2], t[2], p[10]
+delay = dff(si, clk, rst = reset)
+edge  = ~delay & si
+
+ms_up = compare(t, 3).eq                              # t = CLK_MS_COUNT - 1
+t_cnt = mux(add(t, 1), 0, sel = ms_up)
+p_cnt = mux(p, add(p, 1), sel = ms_up)
+
+#             idle                          waite                         count                              done
+st = dff(mux(mux(0b00, 0b01, sel = start), mux(0b01, 0b10, sel = edge), mux(0b10, 0b11, sel = edge),     0b00, sel = st), clk, rst = reset)
+t  = dff(mux(t,                            mux(t, 0, sel = edge),        mux(t_cnt, t, sel = edge),        t, sel = st), clk, rst = reset)
+p  = dff(mux(p,                            mux(p, 0, sel = edge),        mux(p_cnt, p, sel = edge),        p, sel = st), clk, rst = reset)
+
+s         = decoder(st)
+ready     = s[0]
+done_tick = s[3]
+prd       = p

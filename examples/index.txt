@@ -1,0 +1,71 @@
+# The order of the examples, and the headings they go under, on the index
+# page of `make site`. One path per line (under examples/, without .wire);
+# "== Heading | a line about it" starts a section. Examples not listed here
+# go at the end.
+
+== Foundations, from my notes | Gates, adders, flip-flops and registers, up to the SAP-1 of my exam summary, each with the VHDL of the notes.
+notes/gates
+notes/full_adder
+notes/addsub8
+notes/alu4
+notes/bcd7
+notes/sr_latch
+notes/flip_flops
+notes/shift_reg
+notes/reg_n
+notes/pc4
+notes/ring6
+notes/ram16x8
+notes/control
+notes/sap1
+
+== Chu, chapter 1: gate-level combinational circuits | The first VHDL programs: comparators from gates, then from other comparators.
+chu/ch1/eq1
+chu/ch1/eq2
+
+== Chu, chapter 3: RT-level combinational circuits | Decoders, encoders, adders, the 7-segment decoder, a barrel shifter, a floating-point adder.
+chu/ch3/decoder_2_4
+chu/ch3/prio_encoder
+chu/ch3/add_w_carry
+chu/ch3/hex_to_sseg
+chu/ch3/sign_mag_add
+chu/ch3/barrel_shifter
+chu/ch3/fp_adder
+
+== Chu, chapter 4: regular sequential circuits | Flip-flops, registers, shift registers, counters, display multiplexing, a stopwatch and a FIFO.
+chu/ch4/d_ff_en
+chu/ch4/reg_reset
+chu/ch4/reg_file
+chu/ch4/free_run_shift_reg
+chu/ch4/univ_shift_reg
+chu/ch4/free_run_bin_counter
+chu/ch4/univ_bin_counter
+chu/ch4/mod_m_counter
+chu/ch4/disp_mux
+chu/ch4/disp_hex_mux
+chu/ch4/stop_watch
+chu/ch4/fifo
+
+== Chu, chapter 5: finite state machines | Moore and Mealy outputs, edge detectors, a debouncer.
+chu/ch5/fsm_eg
+chu/ch5/edge_detect
+chu/ch5/edge_detect_mealy
+chu/ch5/db_fsm
+
+== Chu, chapter 6: FSM with data path (FSMD) | A state machine steering registers: debouncing, Fibonacci, division, binary to BCD, measuring a period.
+chu/ch6/debounce
+chu/ch6/fib
+chu/ch6/div
+chu/ch6/bin2bcd
+chu/ch6/period_counter
+
+== Chu, chapter 7: UART | A serial port: receiver, transmitter, FIFOs, and one wired to itself.
+chu/ch7/uart_rx
+chu/ch7/uart_tx
+chu/ch7/uart
+chu/ch7/uart_loopback
+
+== Chu, chapter 11: memory | The RAM and ROM templates the Xilinx tools turn into memory.
+chu/ch11/xilinx_one_port_ram_async
+chu/ch11/rom_template
+chu/ch11/xilinx_rom_sync_template

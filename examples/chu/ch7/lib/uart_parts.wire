@@ -1,0 +1,90 @@
+# The UART of Chu's chapter 7, one component per VHDL entity (same names,
+# same ports): the baud-rate tick, the receiver, the transmitter and the
+# FIFO buffers. Widths are fixed at the book's defaults (8 data bits,
+# 16 ticks a bit, 1 stop bit), except the baud divisor and the FIFOs,
+# which are small here.
+
+# ---- mod_m_counter (Listing 4.11), M = 4: the baud-rate tick ---------------
+# Chu: M = 163, 16 ticks per bit at 19200 baud from 50 MHz. Here a tick
+# every 4 clocks, so a bit is 64 clocks.
+component mod_m_counter(clk, reset) -> (max_tick, q[2]) {
+    max_tick = compare(q, 3).eq
+    q        = dff(mux(add(q, 1), 0, sel = max_tick), clk, rst = reset)
+}
+
+# ---- uart_rx (Listing 7.1) -------------------------------------------------
+# Oversampling: 16 ticks per bit. In idle, rx going 0 is a start bit;
+# wait 7 ticks to the middle of it, then every 16 ticks sample a data bit
+# (LSB first) into b, 8 of them, then wait out the stop bit.
+# States: idle 00, start 01, data 10, stop 11.
+component uart_rx(clk, reset, rx, s_tick) -> (rx_done_tick, dout[8]) {
+    wire st[2], s[4], n[3], b[8]
+    s7    = compare(s, 7).eq
+    s15   = compare(s, 15).eq
+    n7    = compare(n, 7).eq
+    s_inc = add(s, 1)
+    #              idle                          start                                       data                                  stop
+    st = dff(mux(mux(0b00, 0b01, sel = ~rx),    mux(0b01, 0b10, sel = s_tick & s7),       mux(0b10, 0b11, sel = s_tick & s15 & n7), mux(0b11, 0b00, sel = s_tick & s15), sel = st), clk, rst = reset)
+    s  = dff(mux(mux(s, 0, sel = ~rx),          mux(s, mux(s_inc, 0, sel = s7), sel = s_tick), mux(s, s_inc, sel = s_tick),        mux(s, mux(s_inc, s, sel = s15), sel = s_tick), sel = st), clk, rst = reset)
+    n  = dff(mux(n,                             mux(n, 0, sel = s_tick & s7),             mux(n, add(n, 1), sel = s_tick & s15 & ~n7), n, sel = st), clk, rst = reset)
+    b  = dff(mux(b,                             b,                                        mux(b, {rx, b[7:1]}, sel = s_tick & s15),  b, sel = st), clk, rst = reset)
+    rx_done_tick = st[1] & st[0] & s_tick & s15
+    dout = b
+}
+
+# ---- uart_tx (Listing 7.3) -------------------------------------------------
+# tx_start loads din; then a start bit (0), the 8 data bits LSB first and
+# a stop bit (1), each 16 ticks long. tx comes from a register (tx_reg),
+# so it has no glitches; it idles at 1 (stored inverted, so reset gives 1).
+component uart_tx(clk, reset, tx_start, s_tick, din[8]) -> (tx_done_tick, tx) {
+    wire st[2], s[4], n[3], b[8]
+    s15   = compare(s, 15).eq
+    n7    = compare(n, 7).eq
+    s_inc = add(s, 1)
+    #              idle                               start                                     data                                    stop
+    st = dff(mux(mux(0b00, 0b01, sel = tx_start),    mux(0b01, 0b10, sel = s_tick & s15),    mux(0b10, 0b11, sel = s_tick & s15 & n7), mux(0b11, 0b00, sel = s_tick & s15), sel = st), clk, rst = reset)
+    s  = dff(mux(mux(s, 0, sel = tx_start),          mux(s, s_inc, sel = s_tick),            mux(s, s_inc, sel = s_tick),             mux(s, mux(s_inc, s, sel = s15), sel = s_tick), sel = st), clk, rst = reset)
+    n  = dff(mux(n,                                  mux(n, 0, sel = s_tick & s15),          mux(n, add(n, 1), sel = s_tick & s15 & ~n7), n, sel = st), clk, rst = reset)
+    b  = dff(mux(mux(b, din, sel = tx_start),        b,                                      mux(b, {0b0, b[7:1]}, sel = s_tick & s15),  b, sel = st), clk, rst = reset)
+    ntx = dff(~mux(1, 0, b[0], 1, sel = st), clk, rst = reset)
+    tx  = ~ntx
+    tx_done_tick = st[1] & st[0] & s_tick & s15
+}
+
+# ---- fifo (Listing 4.20), W = 2: four words of 8 bits ------------------------
+component fifo(clk, reset, rd, wr, w_data[8]) -> (empty, full, r_data[8]) {
+    wire w_ptr[2], r_ptr[2]
+    wr_en  = wr & ~full
+    we     = decoder(w_ptr, en = wr_en)
+    r0     = dff(w_data, clk, en = we[0], rst = reset)
+    r1     = dff(w_data, clk, en = we[1], rst = reset)
+    r2     = dff(w_data, clk, en = we[2], rst = reset)
+    r3     = dff(w_data, clk, en = we[3], rst = reset)
+    r_data = mux(r0, r1, r2, r3, sel = r_ptr)
+    w_succ = add(w_ptr, 1)
+    r_succ = add(r_ptr, 1)
+    do_rd  = rd & ~wr & ~empty
+    do_wr  = wr & ~rd & ~full
+    both   = rd & wr
+    w_ptr  = dff(mux(w_ptr, w_succ, sel = do_wr | both), clk, rst = reset)
+    r_ptr  = dff(mux(r_ptr, r_succ, sel = do_rd | both), clk, rst = reset)
+    full   = dff(mux(mux(full, compare(w_succ, r_ptr).eq, sel = do_wr), 0, sel = do_rd), clk, rst = reset)
+    ne     = dff(mux(mux(ne, ~compare(r_succ, w_ptr).eq, sel = do_rd), 1, sel = do_wr), clk, rst = reset)
+    empty  = ~ne
+}
+
+# ---- uart (Listing 7.4): the whole UART -------------------------------------
+# Received words go into one FIFO (rd_uart takes one out), words to send
+# into another (wr_uart puts one in); the transmitter sends while its FIFO
+# is not empty.
+component uart(clk, reset, rd_uart, wr_uart, rx, w_data[8]) -> (tx_full, rx_empty, r_data[8], tx) {
+    baud = mod_m_counter(clk, reset)
+    urx  = uart_rx(clk, reset, rx, baud.max_tick)
+    frx  = fifo(clk, reset, rd_uart, urx.rx_done_tick, urx.dout)
+    ftx  = fifo(clk, reset, utx.tx_done_tick, wr_uart, w_data)
+    utx  = uart_tx(clk, reset, ~ftx.empty, baud.max_tick, ftx.r_data)
+    tx_full  = ftx.full
+    rx_empty = frx.empty
+    r_data   = frx.r_data
+    tx       = utx.tx
+}

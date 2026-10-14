@@ -1,0 +1,52 @@
+circuit "SAP-1, as in my notes"
+
+# Malvino's SAP-1 exactly as the VHDL of my notes (sap1.vhd and the files
+# it uses): program counter, MAR, 16-byte memory, instruction register,
+# A and B, the adder-subtractor, the output register, the ring counter
+# T1..T6 and the control matrix, all on one 8-bit W bus.
+#
+# The W bus is an AND-OR multiplexer: each source is ANDed with its enable
+# and the results are ORed (it replaces the tri-state bus of the chips).
+# HLT stops the computer with a clock ENABLE (run), never by gating the
+# clock.
+#
+# The program in the memory computes 16 + 20 + 24 - 32 = 28 (1C hex),
+# shows it on OUT and halts. Press clr, then Run.
+
+import "lib/sap1_parts.wire"
+
+clock  clk (hz = 4)
+button clr
+output outp[8]
+led    halted (color = red)
+hex    out_hi, out_lo
+
+# HLT: halt_reg is set at T4 of a HLT, and run is 0 from then on
+halt_reg = dff(1, clk, en = t[2] & ctl.hlt, rst = clr)
+run      = ~(halt_reg | (t[2] & ctl.hlt))
+halted   = halt_reg
+
+component x8(e) -> (y[8]) {
+    y = {e, e, e, e, e, e, e, e}
+}
+
+# the W bus: AND-OR mux of every bus source
+w = (x8(ctl.ep) & {0b0000, pc})
+  | (x8(~ctl.ce_n) & ram_q)
+  | (x8(~ctl.ei_n) & {0b0000, ir[3:0]})
+  | (x8(ctl.ea) & a)
+  | (x8(ctl.eu) & alu)
+
+pc    = pc4(clk, clr, run, ctl.cp)
+mar   = reg_n4(clk, clr, run, ctl.lm_n, w[3:0])
+ram_q = ram16x8(mar)
+ir    = reg_n(clk, clr, run, ctl.li_n, w)
+a     = reg_n(clk, clr, run, ctl.la_n, w)
+b     = reg_n(clk, clr, run, ctl.lb_n, w)
+alu   = addsub8(a, b, ctl.su)
+outp  = reg_n(clk, clr, run, ctl.lo_n, w)
+t     = ring6(clk, clr, run)
+ctl   = control(ir[7:4], t)
+
+out_hi = outp[7:4]
+out_lo = outp[3:0]

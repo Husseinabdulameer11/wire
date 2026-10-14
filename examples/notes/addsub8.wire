@@ -1,0 +1,17 @@
+circuit "8-bit adder-subtractor"
+
+# The ALU of the SAP-1 (addsub8.vhd): su = 0 gives a + b, su = 1 gives
+# a - b. Eight XOR gates invert b when su is 1, and su is also the carry
+# into the first full adder, so a + not(b) + 1 = a - b in two's complement.
+# Open the chip to see the eight full adders; open one of those for its
+# gates.
+
+import "lib/sap1_parts.wire"
+
+input  a[8], b[8], su
+output s[8]
+hex    s_hi, s_lo
+
+s    = addsub8(a, b, su)
+s_hi = s[7:4]
+s_lo = s[3:0]

@@ -1,0 +1,6 @@
+# expect: the width of n depends only on itself; declare it
+circuit "t"
+clock clk
+output o[3]
+n = dff(add(n, 1), clk)
+o = n

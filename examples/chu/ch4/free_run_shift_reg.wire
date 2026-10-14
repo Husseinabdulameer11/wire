@@ -1,0 +1,14 @@
+circuit "Free-running shift register"
+
+# Chu, Listing 4.7 (N = 8): every clock the register shifts one place to
+# the right, s_in going in at the top and the bottom bit coming out as
+# s_out. A bit takes 8 clocks to get through: a delay line.
+
+clock  clk (hz = 2)
+button reset
+input  s_in
+output s_out
+output r[8]
+
+r     = dff({s_in, r[7:1]}, clk, rst = reset)
+s_out = r[0]

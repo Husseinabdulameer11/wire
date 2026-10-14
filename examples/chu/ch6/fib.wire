@@ -1,0 +1,30 @@
+circuit "Fibonacci numbers"
+
+# Chu, Listing 6.4: an FSMD that computes fib(i). Press start with i set:
+# it loads t0 = 0, t1 = 1, n = i, then each clock does t1 = t1 + t0,
+# t0 = old t1, n = n - 1, until n is 1 (or was 0, giving 0). f is the
+# answer, done_tick marks the clock it is ready, ready says it is idle.
+#
+# States: idle 00, op 01, done 10. Each register's next value is a mux
+# chosen by the state: a column of the ASMD chart per state.
+
+clock  clk (hz = 4)
+button reset
+input  start, i[5]
+output f[20]
+led    ready, done_tick
+
+wire   st[2], t0[20], t1[20], n[5]
+n0  = compare(n, 0).eq
+fin = n0 | compare(n, 1).eq
+
+#              idle                        op                                   done
+st = dff(mux(mux(0b00, 0b01, sel = start), mux(0b01, 0b10, sel = fin),         0b00, 0b00, sel = st), clk, rst = reset)
+t0 = dff(mux(mux(t0, 0, sel = start),      mux(t1, t0, sel = fin),             t0, t0, sel = st), clk, rst = reset)
+t1 = dff(mux(mux(t1, 1, sel = start),      mux(add(t1, t0), mux(t1, 0, sel = n0), sel = fin), t1, t1, sel = st), clk, rst = reset)
+n  = dff(mux(mux(n, i, sel = start),       mux(add(n, 31), n, sel = fin),      n, n, sel = st), clk, rst = reset)
+
+s         = decoder(st)
+ready     = s[0]
+done_tick = s[2]
+f         = t1

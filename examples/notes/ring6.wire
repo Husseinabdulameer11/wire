@@ -1,0 +1,15 @@
+circuit "Ring counter T1..T6"
+
+# ring6.vhd: the six T-states of the SAP-1. Six D flip-flops in a loop,
+# exactly one of them 1; each clock passes the 1 to the next. clr starts
+# it at T1. t[5] is T1 and t[0] is T6, as VHDL's t(1 to 6) reads left to
+# right.
+
+import "lib/sap1_parts.wire"
+
+clock  clk (hz = 2)
+button clr
+input  en
+output t[6]
+
+t = ring6(clk, clr, en)

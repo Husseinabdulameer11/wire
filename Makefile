@@ -95,26 +95,30 @@ $(WIRE): $(SRC) build/wire_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram
 	    $(SRC) $(GRAM_LIB) $(LDFLAGS) -o $@
 
 test: $(WIRE)
-	@for f in examples/*.wire; do $(WIRE) -o build/$$(basename $$f .wire).html $$f || exit 1; done
+	@find examples -name '*.wire' -not -path '*/lib/*' | while read f; do $(WIRE) -o build/example.html $$f >/dev/null 2>build/err.txt || { cat build/err.txt; exit 1; }; done
 	@for f in tests/errors/*.wire; do \
 	    if $(WIRE) --check $$f 2> build/err.txt; then echo "$$f: expected an error"; exit 1; fi; \
 	    grep -qF "$$(sed -n 's/^# expect: //p' $$f)" build/err.txt || { echo "$$f: wrong error:"; cat build/err.txt; exit 1; }; \
 	done
 	@if command -v node >/dev/null 2>&1; then node tests/sim/simtest.js $(WIRE) || exit 1; \
-	   node tests/sim/run.js $(WIRE) examples/sap1.wire 2000 out | grep -q "out = 87" \
-	     || { echo "examples/sap1.wire: the SAP-1 did not compute 3 x 29 = 87"; exit 1; }; \
-	   node examples/sap/microcode.js --check || exit 1; \
-	   node tests/sap/saptest.js $(WIRE) --random 100 || exit 1; \
-	 else echo "wire: node not found, skipping the simulator tests (tests/sim)"; fi
+	   node tests/sim/run.js $(WIRE) examples/notes/sap1.wire 200 outp | grep -q "outp = 28" \
+	     || { echo "examples/notes/sap1.wire: the SAP-1 did not compute 16 + 20 + 24 - 32 = 28"; exit 1; }; \
+	   node tests/vhdl/cosim.js $(WIRE) || exit 1; \
+	 else echo "wire: node not found, skipping the simulator tests (tests/sim, tests/vhdl)"; fi
 	@echo "wire: all tests passed"
 
 # every example as a page, plus an index, in build/site: drag that folder
-# onto Netlify Drop (app.netlify.com/drop), or serve it from any static host
-# with a book to read beside the circuits: BOOK=books/x.pdf TOPICS=books/x.topics
-BOOK   ?= $(wildcard books/fpga_summary.pdf)
-TOPICS ?= $(wildcard books/fpga_summary.topics)
+# onto Netlify Drop (app.netlify.com/drop), or serve it from any static host.
+# The pages read two books beside the circuits: my notes (copied into the
+# site) and Chu's book, which is NOT copied (it is not ours to publish):
+# the page asks for your own copy with Open PDF, or loads it if you put it
+# beside the pages as $(CHU_PDF). Change BOOKS to use others.
+CHU_PDF ?= chu_fpga_prototyping_vhdl.pdf
+BOOKS   ?= $(if $(wildcard books/fpga_summary.pdf),--book books/fpga_summary.pdf --book-name "My notes" --topics books/fpga_summary.topics) \
+           --book-url $(CHU_PDF) --book-name "Chu" --topics books/chu.topics --book-dir chu
 site: $(WIRE)
-	node tools/site.js $(WIRE) build/site $(if $(BOOK),--book $(BOOK)) $(if $(TOPICS),--topics $(TOPICS))
+	rm -rf build/site
+	node tools/site.js $(WIRE) build/site $(BOOKS)
 
 # Linux/macOS: installs build/wire as $(PREFIX)/bin/wire
 install: $(WIRE)

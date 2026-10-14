@@ -1,0 +1,13 @@
+circuit "8-bit barrel shifter (rotate right)"
+
+# Chu, Listings 3.16 and 3.17: rotate a to the right by amt places (0 to
+# 7). 3.16 lists all eight results for a big mux; 3.17, drawn here, does it
+# in three stages: rotate by 1 if amt(0), then by 2 if amt(1), then by 4 if
+# amt(2). Three small muxes instead of one wide one.
+
+input  a[8], amt[3]
+output y[8]
+
+s0 = mux(a,  {a[0], a[7:1]},     sel = amt[0])   # rotate by 1
+s1 = mux(s0, {s0[1:0], s0[7:2]}, sel = amt[1])   # by 2
+y  = mux(s1, {s1[3:0], s1[7:4]}, sel = amt[2])   # by 4

@@ -1,0 +1,24 @@
+circuit "Sign-magnitude adder"
+
+# Chu, Listing 3.14: 4-bit numbers in sign-magnitude form, the top bit the
+# sign and the other three the size (1101 is -5). Two stages: sort the two
+# by magnitude, then add the magnitudes if the signs agree or subtract
+# the smaller from the larger if not; the result takes the sign of the
+# larger. (Overflow past 7 is not caught, as in the book.)
+
+input  a[4], b[4]
+output sum[4]
+
+mag_a = a[2:0]
+mag_b = b[2:0]
+
+# sort: is a's magnitude the larger?
+gt   = compare(mag_a, mag_b).gt
+max  = mux(mag_b, mag_a, sel = gt)
+min  = mux(mag_a, mag_b, sel = gt)
+sign = mux(b[3], a[3], sel = gt)
+
+# add or subtract the magnitudes (subtract = add the inverse, plus 1)
+sub     = a[3] ^ b[3]
+mag_sum = add(max, min ^ {sub, sub, sub}, cin = sub)
+sum     = {sign, mag_sum}

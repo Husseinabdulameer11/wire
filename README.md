@@ -39,8 +39,11 @@ wire full_adder.wire          # writes full_adder.html
   with the word being read lit up. Click a word to change it; Reset puts the
   contents written in the circuit back. Clicking a rom or ram opens it too.
 - If two parts drive a bus at once, the page says **Bus conflict**.
+- **VHDL** shows the VHDL of the example (the `.vhd` file next to the
+  `.wire` file), with the entity of the chip you select or open lit up.
 - **Book** shows a pdf beside the circuit, and turns to the pages about the
-  part you select or the chip you open (see `books/README.md`). Build with
+  part you select or the chip you open (see `books/README.md`). A page can
+  carry several books (pick one at the top of the panel). Build with
   `wire --book notes.pdf --topics notes.topics`, or use **Open PDF**.
 - **Truth table** lists every input combination for circuits without
   memory (up to 12 input bits); click a row to set the inputs to it.
@@ -186,74 +189,43 @@ F0   # HLT
 05 03
 ```
 
-### A whole computer
+## The examples
 
-`examples/sap1.wire` is Ben Eater's 8-bit breadboard computer (the SAP-1 of
-Malvino's *Digital Computer Electronics*, with STA, LDI, JMP, JC and JZ
-added): program counter, MAR, 16 bytes of RAM, instruction register, A and B
-registers, an ALU with carry and zero flags, and an output register, all on
-one 8-bit bus. The control lines come from a microcode ROM
-(`examples/sap1/microcode.hex`), addressed by the instruction and its step.
-The program in `examples/sap1/multiply.hex` multiplies 3 by 29, shows 87 and
-halts; `examples/sap1/count.hex` counts up and down forever.
+`examples/` follows two books, each example a `.wire` file with the same
+circuit in VHDL beside it (`.vhd`). `examples/index.txt` gives the order.
 
-### SAP-2 and SAP-3: 8080 programs
+- **`examples/notes/`**: from my FPGA exam summary (`books/fpga_summary.pdf`),
+  gates, the full adder, the adder-subtractor, an ALU, the BCD decoder, the
+  SR latch, flip-flops, registers and counters, up to the **SAP-1**
+  (`notes/sap1.wire`), built block for block like the VHDL of the notes: the
+  W bus as an AND-OR multiplexer, the ring counter T1..T6, the control
+  matrix in gates, and HLT as a clock enable. Its program computes
+  16 + 20 + 24 - 32 = 28 and halts. The blocks are in `notes/lib/`, one
+  component per VHDL entity.
+- **`examples/chu/`**: the examples of Pong P. Chu, *FPGA Prototyping by
+  VHDL Examples* (Xilinx Spartan-3 version), chapter by chapter: gate-level
+  comparators (ch. 1); decoder, priority encoder, adder, hex-to-7-segment,
+  sign-magnitude adder, barrel shifter, floating-point adder (ch. 3);
+  flip-flops, registers, register file, shift registers, counters, display
+  multiplexing, stopwatch, FIFO (ch. 4); FSMs, edge detectors, a debouncer
+  (ch. 5); FSMDs: debouncer, Fibonacci, division, binary to BCD, period
+  counter (ch. 6); the UART, and one wired to itself (ch. 7); RAM and ROM
+  templates (ch. 11). Each file names the listings it follows. The chapters
+  on the board's devices (PS/2, VGA, SRAM, PicoBlaze) are left out.
 
-`examples/sap2.wire` and `examples/sap3.wire` are the next two computers of
-Malvino's book, and they run real 8080/8085 machine code:
+The VHDL is written for this project, in the book's style and with the
+book's entity and port names, so each example matches its listing; it is
+not copied from the book. Where the book counts to millions (a 50 MHz
+clock divided down to milliseconds), both versions count to a few, so the
+circuits can be watched; the comments say so.
 
-- **SAP-3** is the whole 8080 instruction set except interrupts (EI, DI,
-  RIM and SIM do nothing): registers A, B, C, D, E, H, L, flags S Z AC P CY,
-  a stack pointer, and 64 KB of ram. Flags follow the 8085.
-- **SAP-2** is Malvino's 42 instructions (the same opcodes): registers A, B
-  and C, flags S and Z, no stack (CALL keeps the return address at FFFE and
-  FFFF, so a subroutine cannot call another), and RAL/RAR rotate without a
-  carry.
-
-Both read `IN 1` from the switches `in1`, `IN 2` from `in2` and `IN 3` from
-the keypad (the last key, plus 10H while held); `OUT 3` and `OUT 4` show A
-on the two display ports. They are drawn as a block diagram: control unit,
-registers, counters (PC, SP), the 16-bit adder, ALU and flags, memory and
-ports, all on one 16-bit bus. Click a block to see inside it.
-
-Inside, every step of every instruction is one word of a microcode ROM
-that says who talks on the bus and who listens.
-`examples/sap/microcode.js` writes both ROMs from a readable table, like
-`"HL>MAR", "MEM>A end"` for `MOV A,M`; run it with Node after changing it.
-
-**Running your own program:**
-
-```
-; add.asm
-        IN   1
-        MOV  B, A
-        IN   2
-        ADD  B
-        OUT  3
-        HLT
-```
-
-```
-node tools/asm8080.js add.asm          # writes add.hex (-l prints a listing)
-```
-
-Then point the ram in the `memory` block of `sap3.wire` (or `sap2.wire`) at
-it, `file = "add.hex"`, run `wire examples/sap3.wire`, and open the page:
-set `in1` and `in2`, press the circuit's `reset` button, and Run.
-
-The assembler takes Intel's syntax: labels, `ORG`, `DB` (numbers and
-text), `DW`, `DS`, `EQU`; numbers like `42`, `2AH`, `0x2A`, `101010B`,
-`'A'`; and expressions with `+ - * / ( )`, `$`, `HIGH()` and `LOW()`.
-
-`examples/sap/` has `square.asm` ((in1 + in2) squared) and `keypad.asm`
-(adds up the keys you press); `tests/sap/progs/` has a 16-bit multiply, a
-bubble sort, decimal counting with DAA, and every kind of jump, call and
-return.
-
-**How it is tested:** `tests/sap/saptest.js` runs those programs, and a few
-hundred random ones, on the Wire computers and on a plain 8080 emulator
-(`tests/sap/emu8080.js`, written separately from the microcode) and checks
-that every register, flag, port and all 64 KB of memory end up the same.
+**How the VHDL is checked:** `tests/vhdl/cosim.js` runs every example in
+Wire and its VHDL in [GHDL](https://github.com/ghdl/ghdl) on the same random
+inputs, clock edges and resets, and checks that every output agrees before
+and after every rising edge (`make test` does this when GHDL is installed).
+Ports are matched by name; `# test:` lines in a `.wire` file tune the
+stimulus, and `# vhdl ports: a=b` renames a port Wire cannot use (`hex` is a
+word of Wire).
 
 ## Components and imports
 
@@ -336,9 +308,8 @@ and (if Node is installed) runs `tests/sim/simtest.js`, which checks the
 WebAssembly simulator against the original JavaScript one on every example
 and on the circuits in `tests/sim`: both get the same random clicks, clock
 ticks and resets, and every wire must agree after every step. It also checks
-that the SAP-1 computes 3 x 29, that the SAP microcode files are up to
-date, and runs `tests/sap/saptest.js` (SAP-2 and SAP-3 against the 8080
-emulator).
+that the SAP-1 computes 28, and (if GHDL is installed) runs
+`tests/vhdl/cosim.js`, which checks every example against its VHDL.
 
 ## Building
 
@@ -348,8 +319,14 @@ Wire needs gram, like Crib does. With a gram checkout next to this folder
 ```
 make            # build/wire
 make test
+make site       # every example as a page, plus an index: build/site
 make install    # PREFIX=/usr/local
 ```
+
+`make site` makes a folder to drop onto Netlify Drop (or any static host).
+It copies my notes into it, but not Chu's book, which is not ours to
+publish: the Book panel asks for your own copy with **Open PDF** (or loads
+it if you put it beside the pages as `chu_fpga_prototyping_vhdl.pdf`).
 
 Otherwise `make GRAM=path/to/gram`. On Windows use the MSYS2 UCRT64 shell as
 for gram.
@@ -357,7 +334,7 @@ for gram.
 `wire --json file.wire` prints the netlist, if you want to feed it to
 something else.
 
-`node tests/sim/run.js build/wire examples/sap3.wire 5000 in1=3 in2=4`
+`node tests/sim/run.js build/wire examples/notes/sap1.wire 200 outp`
 runs a circuit's clock without a browser, with inputs set, until it halts,
 and prints its outputs.
 

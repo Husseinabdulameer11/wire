@@ -1,0 +1,18 @@
+circuit "Register with an active-low load"
+
+# reg_n.vhd with N = 8: eight D flip-flops, each fed by a 2-to-1 mux
+# written as an AND-OR, so the register loads d when load_n is 0 (and en
+# is 1) and keeps its value otherwise. This is how A, B, IR, MAR and OUT
+# of the SAP-1 hold a byte from the W bus. clr clears it at once.
+
+import "lib/sap1_parts.wire"
+
+clock  clk (hz = 1)
+button clr
+input  en, load_n, d[8]
+output q[8]
+hex    q_hi, q_lo
+
+q    = reg_n(clk, clr, en, load_n, d)
+q_hi = q[7:4]
+q_lo = q[3:0]

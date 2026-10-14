@@ -1,0 +1,49 @@
+circuit "Simplified floating-point adder"
+
+# Chu, Listing 3.19: a 13-bit floating-point format, a sign, a 4-bit
+# exponent and an 8-bit fraction whose top bit is 1 (the value is
+# 0.frac x 2^exp). No rounding, no special values. Four stages, as in the
+# book; the chips are labelled with them:
+#
+#   1 sort       the bigger number (by exponent, then fraction) is b
+#   2 align      shift the smaller fraction right by the exponent difference
+#   3 add/sub    add the fractions if the signs agree, else subtract
+#   4 normalize  shift left past the leading zeros (or right on a carry)
+#                and fix the exponent to match
+
+input  sign1, sign2, exp1[4], exp2[4], frac1[8], frac2[8]
+output sign_out, exp_out[4], frac_out[8]
+
+# 1: sort
+big   = compare({exp1, frac1}, {exp2, frac2}).gt
+signb = mux(sign2, sign1, sel = big)
+signs = mux(sign1, sign2, sel = big)
+expb  = mux(exp2, exp1, sel = big)
+exps  = mux(exp1, exp2, sel = big)
+fracb = mux(frac2, frac1, sel = big)
+fracs = mux(frac1, frac2, sel = big)
+
+# 2: align (shifting by 8 or more leaves nothing)
+diff  = add(expb, ~exps, cin = 1)
+fraca = mux(fracs, {0b0, fracs[7:1]}, {0b00, fracs[7:2]}, {0b000, fracs[7:3]},
+            {0b0000, fracs[7:4]}, {0b00000, fracs[7:5]}, {0b000000, fracs[7:6]},
+            {0b0000000, fracs[7]}, 0, 0, 0, 0, 0, 0, 0, 0, sel = diff)
+
+# 3: add or subtract, with one more bit for the carry
+sub = signb ^ signs
+sum = add({0b0, fracb}, {0b0, fraca} ^ {sub, sub, sub, sub, sub, sub, sub, sub, sub}, cin = sub)
+
+# 4: normalize. lead0 = how many zeros before the first 1 of sum(7..0)
+first = encoder(sum[7:0])
+lead0 = mux(7, ~first, sel = first.valid)
+norm  = mux(sum[7:0], {sum[6:0], 0b0}, {sum[5:0], 0b00}, {sum[4:0], 0b000},
+            {sum[3:0], 0b0000}, {sum[2:0], 0b00000}, {sum[1:0], 0b000000},
+            {sum[0], 0b0000000}, sel = lead0)
+carry = sum[8]
+small = compare({0b0, lead0}, expb).gt          # too small to normalize: 0
+exp_up   = add(expb, 1)
+exp_down = add(expb, ~{0b0, lead0}, cin = 1)
+
+sign_out = signb
+exp_out  = mux(mux(exp_down, 0, sel = small), exp_up, sel = carry)
+frac_out = mux(mux(norm, 0, sel = small), sum[8:1], sel = carry)

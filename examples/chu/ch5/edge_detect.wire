@@ -1,0 +1,18 @@
+circuit "Rising-edge detector, Moore machine"
+
+# Chu, Listing 5.3: tick is 1 for one clock when level goes from 0 to 1.
+# Three states: zero, edge (where tick is 1) and one. From zero, level = 1
+# goes to edge; from edge, on to one if level stays 1 (back to zero if
+# not); from one, back to zero when level drops. Coded zero = 00,
+# edge = 01, one = 10. Being Moore, tick comes a clock after the edge and
+# lasts a whole clock; compare edge_detect_mealy.
+
+clock  clk (hz = 1)
+button reset
+input  level
+led    tick
+
+wire    st[2]
+is_zero = ~st[1] & ~st[0]
+st      = dff(mux(0b00, mux(0b10, 0b01, sel = is_zero), sel = level), clk, rst = reset)
+tick    = st[0]          # in edge

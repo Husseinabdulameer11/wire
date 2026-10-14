@@ -1,0 +1,13 @@
+circuit "Universal shift register"
+
+# Chu, Listing 4.8 (N = 8): ctrl picks what the register does at the next
+# clock. 00 keeps q, 01 shifts left taking d(0) in at the bottom, 10 shifts
+# right taking d(7) in at the top, 11 loads all of d. The next-state logic
+# is one 4-to-1 mux in front of the register.
+
+clock  clk (hz = 1)
+button reset
+input  ctrl[2], d[8]
+output q[8]
+
+q = dff(mux(q, {q[6:0], d[0]}, {d[7], q[7:1]}, d, sel = ctrl), clk, rst = reset)

@@ -1,0 +1,24 @@
+circuit "FSM example: Moore and Mealy outputs"
+
+# Chu, Listings 5.1 and 5.2: a three-state machine (s0, s1, s2) with a
+# Moore output y1 (from the state alone: 1 in s1) and a Mealy output y0
+# (from the state and the inputs: 1 in s0 while a and b are both 1).
+#   s0: a and b go to s2, a alone goes to s1, else stay
+#   s1: a goes back to s0, else stay
+#   s2: always back to s0
+# The states are coded s0 = 00, s1 = 01, s2 = 10 in a 2-bit register;
+# VHDL leaves the coding to the synthesis tool.
+
+clock  clk (hz = 1)
+button reset
+input  a, b
+led    y1, y0
+
+wire   st[2]
+n0 = mux(0b00, mux(0b01, 0b10, sel = b), sel = a)   # from s0
+n1 = mux(0b01, 0b00, sel = a)                       # from s1
+st = dff(mux(n0, n1, 0b00, 0b00, sel = st), clk, rst = reset)
+
+s  = decoder(st)        # s[0] is s0, s[1] is s1, s[2] is s2
+y1 = s[1]               # Moore
+y0 = s[0] & a & b       # Mealy

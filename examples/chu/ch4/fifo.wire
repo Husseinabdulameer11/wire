@@ -1,0 +1,40 @@
+circuit "FIFO buffer, 4 words of 8 bits"
+
+# Chu, Listing 4.20 (with W = 2): a queue. wr puts w_data at the back,
+# rd takes the word at the front (r_data shows it all the time). Inside,
+# a register file (4.6) used as a circular buffer, a write pointer and a
+# read pointer that chase each other around it, and two flags:
+#   read  (rd only): if not empty, the read pointer moves on; it is empty
+#                    when it catches the write pointer
+#   write (wr only): if not full, write and move the write pointer; it is
+#                    full when that catches the read pointer
+#   both:            both pointers move on (the write still needs not-full)
+# empty is kept inverted (ne) so that reset, which clears every flip-flop,
+# starts it empty. Book: W = 4 (16 words).
+
+clock  clk (hz = 2)
+button reset
+input  rd, wr, w_data[8]
+output empty, full, r_data[8]
+
+# the register file
+wr_en  = wr & ~full
+we     = decoder(w_ptr, en = wr_en)
+r0     = dff(w_data, clk, en = we[0], rst = reset)
+r1     = dff(w_data, clk, en = we[1], rst = reset)
+r2     = dff(w_data, clk, en = we[2], rst = reset)
+r3     = dff(w_data, clk, en = we[3], rst = reset)
+r_data = mux(r0, r1, r2, r3, sel = r_ptr)
+
+# the control: pointers and flags
+wire   w_ptr[2], r_ptr[2]
+w_succ = add(w_ptr, 1)
+r_succ = add(r_ptr, 1)
+do_rd  = rd & ~wr & ~empty
+do_wr  = wr & ~rd & ~full
+both   = rd & wr
+w_ptr  = dff(mux(w_ptr, w_succ, sel = do_wr | both), clk, rst = reset)
+r_ptr  = dff(mux(r_ptr, r_succ, sel = do_rd | both), clk, rst = reset)
+full   = dff(mux(mux(full, compare(w_succ, r_ptr).eq, sel = do_wr), 0, sel = do_rd), clk, rst = reset)
+ne     = dff(mux(mux(ne, ~compare(r_succ, w_ptr).eq, sel = do_rd), 1, sel = do_wr), clk, rst = reset)
+empty  = ~ne

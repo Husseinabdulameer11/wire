@@ -1,7 +1,0 @@
-circuit "SR latch from NOR gates"
-
-button s, r
-led q, nq
-
-q  = nor(r, nq)
-nq = nor(s, q)

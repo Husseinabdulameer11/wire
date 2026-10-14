@@ -1,0 +1,14 @@
+circuit "SR latch from NOR gates"
+
+# Two NOR gates feeding each other: the first circuit with memory. s sets
+# q to 1, r resets it to 0, and with both at 0 the loop keeps whatever it
+# had. s = r = 1 is not allowed (both outputs go to 0, and letting go of
+# both at once leaves it to chance).
+
+button s, r
+led    q, nq
+
+# test: apart s r
+
+q  = nor(r, nq)
+nq = nor(s, q)

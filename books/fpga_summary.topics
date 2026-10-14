@@ -9,8 +9,8 @@
 # that matches is the page opened.
 
 # ---- gates
-9      The basic gates and their truth tables           : and or nand nor xor xnor not buf
-9      Universal gates: everything from NAND or NOR     : nand nor
+9      The basic gates and their truth tables           : gates and or nand nor xor xnor not buf
+9      Universal gates: everything from NAND or NOR     : gates nand nor
 7      Boolean algebra (De Morgan, SOP and POS)         : and or nand nor xor xnor not
 8      Karnaugh maps                                    : and or nand nor not
 10     Timing of real gates: propagation delay          : and or nand nor xor xnor not buf
@@ -18,7 +18,7 @@
 9-10   Logic families: TTL and CMOS                     : not buf
 
 # ---- buses and tri-state
-26     The W bus: tri-state wires or an AND-OR mux      : tri bus *bus*
+26     The W bus: tri-state wires or an AND-OR mux      : tri bus *bus* x8 sap1
 10     Tri-state outputs on 74xx chips                  : tri bus
 
 # ---- combinational blocks
@@ -30,21 +30,21 @@
 12     Adders: half adder, full adder, ripple carry     : add *add* half_adder full_adder
 13     Subtractors and the adder-subtractor             : add *add* *sub* full_adder
 28     The adder-subtractor in gates (SAP-1)            : add *add* *sub* full_adder half_adder
-13-14  The ALU: in parts and as a whole                 : *alu* arith
+13-14  The ALU: in parts and as a whole                 : *alu* addsub8
 28     The SAP-1 ALU: XOR gates and full adders         : *alu*
-14     Flags: carry, zero, sign, overflow               : *flag* arith
+14     Flags: carry, zero, sign, overflow               : *flag* alu4
 
 # ---- memory elements
 15     The SR latch: from feedback to memory            : *latch* sr_latch gate_latches
-15     Edge-triggered D flip-flop                       : dff *reg*
-15     JK and T flip-flops                              : jkff tff
+15     Edge-triggered D flip-flop                       : dff *reg* flip_flops
+15     JK and T flip-flops                              : jkff tff flip_flops
 16     Timing and metastability                         : dff jkff tff
 47     VHDL templates for flip-flops and registers      : dff *reg*
 16     Registers and shift registers                    : dff *reg* *shift*
-26     The register: one bit cell, eight times          : *reg* register registers
-48     Simple regular circuits: shift register, register file : *shift* *reg* registers
-16     Counters                                         : counter *count*
-27     The program counter from T flip-flops            : counter *count* tff
+26     The register: one bit cell, eight times          : reg_n reg_n4 *reg*
+48     Simple regular circuits: shift register, register file : *shift* *reg*
+16     Counters                                         : counter *count* pc4 ring6
+27     The program counter from T flip-flops            : pc4 counter *count* tff
 49     Binary and mod-m counters in VHDL                : counter *count*
 
 # ---- memory
@@ -53,29 +53,26 @@
 29     The memory in gates: decoder, cells, OR columns  : ram memory
 18     SRAM and DRAM cells                              : ram
 66     Block and distributed RAM on the FPGA            : ram rom
-19     ROM: memory that is really a truth table         : rom
+19     ROM: memory that is really a truth table         : rom ram16x8
 19     Programmable logic: from ROM to FPGA             : rom
 
 # ---- displays and inputs
-10     7-segment decoders (7447) and displays           : seg7 hex bcd7 seg7_counter
+10     7-segment decoders (7447) and displays           : seg7 hex bcd7
 49     LED time-multiplexing                            : seg7 hex
 54     Debouncing a button                              : button keypad
 62     PS2 keyboard: scan codes                         : keypad
 16     Timing, clocks and metastability                 : clock
 
 # ---- computers
-21     SAP-1: what it is, its blocks and signals        : sap1 sap2 sap3 control temps ports
-21     SAP-1 instruction set                            : sap1 sap2 sap3 temps
-22     T-states, control words and the controller-sequencer : control sap1 sap2 sap3
+21     SAP-1: what it is, its blocks and signals        : sap1 control ring6
+21     SAP-1 instruction set                            : sap1 control ram16x8
+22     T-states, control words and the controller-sequencer : control ring6 sap1
 30     The control unit in gates                        : control
-26     Microcode and the W bus                          : control
-22     Tracing a program through SAP-1                  : sap1
-25     From logic gates to a computer: the ladder       : sap1 sap2 sap3
-32     One bit of the whole data path                   : sap1 registers arith
+22     Tracing a program through SAP-1                  : sap1 ram16x8
+25     From logic gates to a computer: the ladder       : sap1
+32     One bit of the whole data path                   : sap1 reg_n addsub8
 33     The top level as VHDL                            : sap1
-27     The program counter                              : counters
-75     From FSMD to microcontroller (PicoBlaze)         : sap2 sap3 control
-76     A real instruction set (PicoBlaze, 57)           : sap2 sap3
-78     Subroutines and the stack                        : sap2 sap3 counters
-80     I/O: ports and the 7-segment display             : ports
+27     The program counter                              : pc4
+28     The adder-subtractor in gates                    : addsub8 full_adder
+26     The registers on the W bus                       : reg_n reg_n4
 55     FSMD: a control path with a data path            : control sap1

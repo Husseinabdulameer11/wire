@@ -1,0 +1,12 @@
+circuit "1-bit comparator (eq1)"
+
+# Chu, Listing 1.1: eq is 1 when the two bits are equal. Written as a sum
+# of two products: both 0, or both 1. The first circuit of the book, and
+# the way it introduces entity, architecture and signals.
+
+input  i0, i1
+output eq
+
+p0 = ~i0 & ~i1      # both 0
+p1 = i0 & i1        # both 1
+eq = p0 | p1

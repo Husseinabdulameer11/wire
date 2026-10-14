@@ -1,0 +1,18 @@
+circuit "SAP-1 memory with its program"
+
+# ram16x8.vhd: 16 bytes holding the program (on the real SAP-1 you set
+# them with switches). Reading is combinational, like the 74189: an
+# address in, its byte out. Open Memory to see all of it.
+#
+#   0: LDA 9H   1: ADD AH   2: ADD BH   3: SUB CH   4: OUT   5: HLT
+#   9: 16       A: 20       B: 24       C: 32
+
+import "lib/sap1_parts.wire"
+
+input  addr[4]
+output dout[8]
+hex    d_hi, d_lo
+
+dout = ram16x8(addr)
+d_hi = dout[7:4]
+d_lo = dout[3:0]

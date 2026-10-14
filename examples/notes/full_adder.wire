@@ -1,0 +1,14 @@
+circuit "Full adder"
+
+# Adds three bits: a, b and a carry in. Written as its gates, like
+# full_adder.vhd in my notes: two half adders (an XOR and an AND each) and
+# an OR for the two carries. Click the inputs, or open Table.
+
+input  a, b, cin
+output s, cout
+
+p    = a ^ b          # half adder 1: sum
+g1   = a & b          # half adder 1: carry
+s    = p ^ cin        # half adder 2: sum
+g2   = p & cin        # half adder 2: carry
+cout = g1 | g2        # OR of the two carries
