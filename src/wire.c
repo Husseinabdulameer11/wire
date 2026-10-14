@@ -2004,6 +2004,63 @@ static char exedir[1024];
 #define PATHSEP ':'
 #endif
 
+/* Where the wire executable is, so the standard library (../lib or
+ * ../share/wire/lib next to it) is found. argv[0] is not enough: run from
+ * PATH it is just "wire", so ask the system first. */
+#if defined(_WIN32)
+__declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void *, char *, unsigned long);
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <limits.h>
+#else
+#include <unistd.h>
+#include <limits.h>
+#endif
+
+static int dir_len(const char *path);
+
+static void find_exedir(const char *argv0)
+{
+    char p[4096];
+    int d;
+    p[0] = 0;
+#if defined(_WIN32)
+    {
+        unsigned long n = GetModuleFileNameA(NULL, p, sizeof p);
+        if (n == 0 || n >= sizeof p) p[0] = 0;
+    }
+#elif defined(__APPLE__)
+    {
+        char raw[4096];
+        uint32_t n = sizeof raw;
+        if (_NSGetExecutablePath(raw, &n) != 0 || !realpath(raw, p)) p[0] = 0;
+    }
+#else
+    {
+        ssize_t n = readlink("/proc/self/exe", p, sizeof p - 1);
+        p[n > 0 ? n : 0] = 0;
+    }
+#endif
+    if (!p[0] && argv0) {
+        if (dir_len(argv0)) snprintf(p, sizeof p, "%s", argv0);
+#ifndef _WIN32
+        else {                       /* "wire" from PATH: look along PATH */
+            const char *e = getenv("PATH");
+            while (e && *e) {
+                const char *c = strchr(e, ':');
+                int l = c ? (int)(c - e) : (int)strlen(e);
+                snprintf(p, sizeof p, "%.*s/%s", l, e, argv0);
+                if (l && access(p, X_OK) == 0) break;
+                p[0] = 0;
+                e = c ? c + 1 : NULL;
+            }
+        }
+#endif
+    }
+    d = dir_len(p);
+    if (d && d < (int)sizeof exedir) { memcpy(exedir, p, (size_t)d); exedir[d] = 0; }
+}
+
 static int is_abs(const char *p)
 {
     return p[0] == '/' || p[0] == '\\' || (p[0] && p[1] == ':');
@@ -2199,10 +2256,7 @@ int main(int argc, char **argv)
     src_name = argv[i];
     text = read_file(src_name, &len);
     if (!text) { perror(src_name); return 1; }
-    {
-        int d = dir_len(argv[0]);
-        if (d && d < (int)sizeof exedir) { memcpy(exedir, argv[0], (size_t)d); exedir[d] = 0; }
-    }
+    find_exedir(argv[0]);
 
     gram_arena_init(&arena, mem, sizeof mem);
     g = gram_compile(&arena, WIRE_GRAMMAR, &err);

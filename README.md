@@ -1,5 +1,11 @@
 # Wire
 
+[![ci](https://github.com/Husseinabdulameer11/wire/actions/workflows/ci.yml/badge.svg)](https://github.com/Husseinabdulameer11/wire/actions/workflows/ci.yml)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Husseinabdulameer11/wire)
+
+**Try it without installing anything:** every example runs in the browser at
+[husseinlogicgatesimulator.netlify.app](https://husseinlogicgatesimulator.netlify.app).
+
 Wire is a small language for digital circuits, built with
 [gram](https://github.com/Husseinabdulameer11/gram). You write which parts
 there are and what is connected to what; `wire` checks the circuit (names,
@@ -22,6 +28,42 @@ cout = or(and(a, b), and(x1, cin))
 ```
 wire full_adder.wire          # writes full_adder.html
 ```
+
+## Install
+
+**Windows:** download **wire-windows-setup.exe** from the
+[latest release](https://github.com/Husseinabdulameer11/wire/releases/latest) and run it.
+It installs for your user only (no admin needed) and adds `wire` to your
+PATH. Open a *new* terminal afterwards. The Start menu also gets a "Wire
+command prompt" and the examples folder.
+
+**macOS and Linux:**
+
+```
+curl -fsSL https://raw.githubusercontent.com/Husseinabdulameer11/wire/main/install.sh | sh
+```
+
+This puts `wire` in `~/.local/bin`, its standard library in
+`~/.local/share/wire/lib` and the examples in `~/.local/share/wire/examples`,
+after checking the download's checksum. `WIRE_VERSION=0.1.0` picks a release,
+`WIRE_PREFIX=/usr/local` installs somewhere else, and `sh -s -- --uninstall`
+removes it again. Prefer doing it by hand? Every release also has plain
+`.tar.gz` archives (`bin/wire` and `lib/` side by side).
+
+**Docker**, on any OS. Run it in the folder with your `.wire` files:
+
+```
+docker run --rm -v "${PWD}:/work" ghcr.io/husseinabdulameer11/wire adder.wire
+docker run --rm -v "${PWD}:/work" ghcr.io/husseinabdulameer11/wire -o page.html adder.wire
+```
+
+Then open the `.html` it wrote in your browser. Works the same in
+PowerShell, bash and zsh. On Linux, add `-u "$(id -u):$(id -g)"` so the
+files Wire writes belong to you, not root.
+
+**GitHub Codespaces:** click the badge above. You get VS Code in the browser
+with Wire, gram, Node, GHDL and a C compiler ready, so you can use Wire *and*
+change it, and `make test` runs every check.
 
 ## On the page
 
@@ -311,7 +353,7 @@ ticks and resets, and every wire must agree after every step. It also checks
 that the SAP-1 computes 28, and (if GHDL is installed) runs
 `tests/vhdl/cosim.js`, which checks every example against its VHDL.
 
-## Building
+## Building from source
 
 Wire needs gram, like Crib does. With a gram checkout next to this folder
 (`../gram`), or gram installed (`make install` in gram), just run:
@@ -330,6 +372,11 @@ it if you put it beside the pages as `chu_fpga_prototyping_vhdl.pdf`).
 
 Otherwise `make GRAM=path/to/gram`. On Windows use the MSYS2 UCRT64 shell as
 for gram.
+
+Or build the Docker image: `docker build --build-context gram=../gram -t wire .`
+
+Releases (installer, archives, Docker image) are made by pushing a version
+tag; see [RELEASING.md](RELEASING.md).
 
 `wire --json file.wire` prints the netlist, if you want to feed it to
 something else.

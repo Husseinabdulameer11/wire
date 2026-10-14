@@ -1,0 +1,76 @@
+name: ci
+
+# Wire builds with gram, which lives in its own repository (assumed to be
+# <same owner>/gram). CI checks it out into ./gram-src and passes GRAM=, and
+# one job tests the `make install` route instead.
+#
+# On Linux `make test` runs everything: the examples, the error messages, the
+# WebAssembly simulator against the JavaScript one (Node), the SAP-1, every
+# example against its VHDL (GHDL), and the installed wire finding its library.
+env:
+  GRAM_REPO: ${{ github.repository_owner }}/gram
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ghdl
+      - run: make test CC=${{ matrix.cc }} GRAM=gram-src
+
+  linux-installed-gram:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
+      - run: make -C gram-src install PREFIX="$HOME/.local"
+      - run: PATH=$HOME/.local/bin:$PATH make test
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: make test GRAM=gram-src
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: make diffutils mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-nodejs
+      - run: make test GRAM=gram-src
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
+      - run: docker build --build-context gram=gram-src -t wire .
+      - name: The image runs, and finds its standard library
+        run: |
+          docker run --rm wire --version
+          docker run --rm -v "$PWD/tests/install:/work" wire --check uses_stdlib.wire

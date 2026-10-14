@@ -105,6 +105,12 @@ test: $(WIRE)
 	     || { echo "examples/notes/sap1.wire: the SAP-1 did not compute 16 + 20 + 24 - 32 = 28"; exit 1; }; \
 	   node tests/vhdl/cosim.js $(WIRE) || exit 1; \
 	 else echo "wire: node not found, skipping the simulator tests (tests/sim, tests/vhdl)"; fi
+	@# installed and run from PATH (argv[0] is then just "wire"), it must still
+	@# find its standard library in ../share/wire/lib
+	@rm -rf build/prefix
+	@$(MAKE) --no-print-directory install DESTDIR= PREFIX="$(CURDIR)/build/prefix" >/dev/null
+	@cd tests/install && PATH="$(CURDIR)/build/prefix/bin:$$PATH" wire$(EXE) --check uses_stdlib.wire >../../build/err.txt 2>&1 \
+	    || { cat ../../build/err.txt; echo "wire: installed wire, run from PATH, did not find its standard library"; exit 1; }
 	@echo "wire: all tests passed"
 
 # every example as a page, plus an index, in build/site: drag that folder

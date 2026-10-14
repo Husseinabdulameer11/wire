@@ -1,0 +1,35 @@
+// Codespaces / VS Code dev container for Wire.
+//
+// Opens with gram cloned next to Wire (../gram, or ~/gram), gram installed in
+// ~/.local, and Wire built and installed, so `wire` works in the terminal
+// right away. Node and GHDL are installed too, so `make test` runs every
+// check. After editing src/wire.gram, the C or the viewer:  make install
+//
+// To look at a page: `make site` (or wire some.wire), then
+// `python3 -m http.server 8000` and open the forwarded port.
+{
+  "name": "Wire",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "remoteEnv": {
+    "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin"
+  },
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": { "label": "Wire pages", "onAutoForward": "openBrowser" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.makefile-tools"
+      ]
+    },
+    "codespaces": {
+      "openFiles": ["examples/notes/full_adder.wire", "README.md"]
+    }
+  }
+}
