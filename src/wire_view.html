@@ -170,6 +170,9 @@ body.book-open #titleblock { display: none; }
 #booknav { display: flex; gap: 4px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--panel-line); font-size: 13px; }
 #booknav button, #booknav .open { border: 1px solid var(--panel-line); border-radius: 4px; min-height: 30px; padding: 2px 10px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; }
 #booknav .open { margin-left: auto; }
+#booktocrow { padding: 0 14px; }
+#booktoc { width: 100%; margin: 6px 0; font: 13px inherit; padding: 4px 6px; border: 1px solid var(--panel-line); border-radius: 4px; background: var(--paper); color: var(--ink); }
+#booktoc[hidden] { display: none; }
 #booknav .open:hover { background: var(--hi-soft); }
 #bookpage { width: 3.5em; font: 13px "IBM Plex Mono", ui-monospace, monospace; padding: 4px; text-align: center; border: 1px solid var(--panel-line); border-radius: 4px; background: var(--paper); color: var(--ink); }
 #bookbody { flex: 1; overflow: auto; background: var(--grid); padding: 10px; }
@@ -315,6 +318,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
     <button id="bookin" aria-label="Larger">+</button>
     <label class="open" title="Read another pdf">Open PDF<input type="file" id="bookfile" accept="application/pdf" hidden></label>
   </div>
+  <div id="booktocrow"><select id="booktoc" aria-label="Contents" hidden></select></div>
   <div id="bookbody"><p id="booknote"></p><canvas id="bookcanvas"></canvas></div>
 </aside>
 
@@ -1790,9 +1794,9 @@ function parseTopics(text) {
   const out = [];
   for (const line of text.split(/\r?\n/)) {
     /* the patterns follow the last " : " (a colon with space before it; titles may have colons) */
-    const m = /^\s*(\d+)(?:\s*-\s*(\d+))?\s+(.*)\s+:\s+(.+?)\s*$/.exec(line.replace(/#.*$/, ""));
+    const m = /^\s*(\d+)(?:\s*-\s*(\d+))?\s+(.*)\s+:(?:\s+(.*?))?\s*$/.exec(line.replace(/#.*$/, ""));
     if (!m) continue;
-    out.push({ first: +m[1], last: +(m[2] || m[1]), title: m[3].trim(), pats: m[4].split(/[\s,]+/).filter(Boolean).map(glob) });
+    out.push({ first: +m[1], last: +(m[2] || m[1]), title: m[3].trim(), pats: (m[4] || "").split(/[\s,]+/).filter(Boolean).map(glob) });
   }
   return out;
 }
@@ -1863,6 +1867,46 @@ async function openBookData(b, data, file) {
   b.text = null;
   b.failed = null;
   if (file) b.picked = file;
+  b.toc = await bookContents(b);
+}
+/* the book's contents: the pdf's own bookmarks if it has them, else the
+ * numbered sections of its topics file ("3.7.4 ...", "Chapter 3: ...") */
+async function bookContents(b) {
+  const out = [];
+  try {
+    const walk = async (items, depth) => {
+      for (const it of items || []) {
+        let dest = it.dest;
+        if (typeof dest === "string") dest = await b.doc.getDestination(dest);
+        if (Array.isArray(dest) && dest[0]) {
+          const page = typeof dest[0] === "number" ? dest[0] + 1 : (await b.doc.getPageIndex(dest[0])) + 1;
+          out.push({ title: it.title.replace(/\s+/g, " ").trim(), page, depth });
+        }
+        if (depth < 2) await walk(it.items, depth + 1);
+      }
+    };
+    await walk(await b.doc.getOutline(), 0);
+  } catch (e) { out.length = 0; }
+  if (out.length) return out;
+  return (b.topics || []).filter(t => /^(Chapter \d+|Appendix|[\dA-Z]{1,2}(\.\d+)+ )/.test(t.title))
+    .map(t => ({ title: t.title, page: t.first, depth: /^(Chapter|Appendix)/.test(t.title) ? 0 : t.title.split(" ")[0].split(".").length - 1 }));
+}
+function fillContents() {
+  const b = book(), sel = $("booktoc");
+  const toc = b && b.doc && b.toc || [];
+  sel.hidden = !toc.length;
+  if (sel.dataset.for !== String(bk.cur) || sel.options.length !== toc.length + 1) {
+    sel.dataset.for = bk.cur;
+    sel.textContent = "";
+    sel.append(new Option("Contents", ""));
+    toc.forEach((t, i) => sel.append(new Option("\u2002".repeat(t.depth * 2) + t.title + "  \u00b7 p." + t.page, i)));
+  }
+  /* show the section the page is in */
+  let at = -1;
+  toc.forEach((t, i) => { if (t.page <= b.page) at = i; });
+  /* several sections can start on one page: keep the one picked */
+  if (b.tocPick !== undefined && toc[b.tocPick] && toc[b.tocPick].page === b.page) at = b.tocPick;
+  sel.value = at >= 0 ? at : "";
 }
 /* load book b (once); on failure, b.failed says why */
 async function loadBook(b) {
@@ -1894,6 +1938,7 @@ async function renderBook() {
   if (!b) return;
   if (!b.doc) {
     $("bookof").textContent = "";
+    $("booktoc").hidden = true;
     $("bookcanvas").style.display = "none";
     bookNote(b.failed || (b.loading ? `Loading ${b.name}...` : ""));
     return;
@@ -1903,6 +1948,7 @@ async function renderBook() {
   b.page = Math.max(1, Math.min(b.doc.numPages, b.page));
   $("bookpage").value = b.page;
   $("bookof").textContent = `of ${b.doc.numPages}`;
+  fillContents();
   [...$("booktopics").children].forEach(x => x.setAttribute("aria-current", +x.dataset.book === bk.cur && b.page >= +x.dataset.first && b.page <= +x.dataset.last));
   const want = b.page, job = Symbol();
   bk.rendering = job;
@@ -1990,6 +2036,10 @@ $("booksel").onchange = () => goBook(+$("booksel").value);
 $("bookbtn").onclick = () => showBook($("book").hidden);
 $("bookclose").onclick = () => showBook(false);
 $("bookfollow").onchange = () => { if ($("bookfollow").checked) bookFollow(); };
+$("booktoc").onchange = () => {
+  const t = (book().toc || [])[+$("booktoc").value];
+  if (t) { book().tocPick = +$("booktoc").value; goBook(bk.cur, t.page); }
+};
 $("bookprev").onclick = () => goPage(book().page - 1);
 $("booknext").onclick = () => goPage(book().page + 1);
 $("bookin").onclick = () => { bk.zoom = Math.min(3, bk.zoom * 1.25); renderBook(); };

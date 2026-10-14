@@ -30,6 +30,15 @@ and the list of sections shows the pages of every book.
 The pdf is drawn with PDF.js, loaded from cdnjs the first time the book is
 opened, so reading needs an internet connection; the circuit does not.
 
+## Contents
+
+The panel's **Contents** menu lists the book's sections and turns to the
+one you pick. It comes from the pdf's own bookmarks when it has them (my
+notes do), otherwise from the numbered sections of the topics file
+(`3.7.4 Simplified floating-point adder`, `Chapter 3: ...`), which is how
+Chu's book, which has no bookmarks, gets one: `chu.topics` holds its whole
+table of contents.
+
 ## Topics files
 
 One line per section of the pdf, in the order you want them listed:
@@ -42,6 +51,8 @@ One line per section of the pdf, in the order you want them listed:
 ```
 
 - Pages are the pdf's own page numbers (1 is the first page of the file).
+- A line with nothing after the colon is a section no part leads to; it
+  still shows in the book's **Contents** menu.
 - The patterns come after the last ` : ` (a colon with a space before it), so
   titles may contain colons.
 - A pattern matches a part's kind (`and`, `nand`, `mux`, `decoder`, `add`,
@@ -57,8 +68,9 @@ One line per section of the pdf, in the order you want them listed:
   listed to click.
 
 `chu.topics` maps Pong P. Chu, *FPGA Prototyping by VHDL Examples* (Xilinx
-Spartan-3 version): each example of `examples/chu` to its listing, and the
-parts to the sections about them. The book itself is not here; open your
+Spartan-3 version): first every listing an example follows, then every
+section of the book from its table of contents (printed page + 31 = pdf
+page), with the parts and examples each one is about. The book itself is not here; open your
 copy in the panel.
 
 `fpga_summary.topics` maps the FPGA exam summary (`fpga_summary.pdf`): gates

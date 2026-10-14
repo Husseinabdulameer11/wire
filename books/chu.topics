@@ -10,16 +10,16 @@
 # matches is the page opened; the others are listed under the book.
 #
 # The book is not part of Wire: open your own copy with Open PDF.
+#
+# Two parts: first the listings (each example's own code), then every
+# section of the book from its table of contents. A section with nothing
+# after the colon is in the book's Contents but no part leads to it.
 
-# ---- chapter 1: gate-level combinational circuits
+# ---- the listings
 33     Listing 1.1: 1-bit comparator (eq1)                     : eq1
 36     Listing 1.2: 2-bit comparator, gate level               : eq2
 37     Listing 1.3: 2-bit comparator from two eq1 (structural) : eq2 eq1
 39     Listing 1.5: a testbench for eq2                        : eq2
-33     Gate-level circuits and the parts of a VHDL program        : eq1 eq2 and or not xor nand nor xnor
-64     Gate-level greater-than circuit and decoder (exercises) : eq2 decoder
-
-# ---- chapter 3: RT-level combinational circuits
 72     Listing 3.1: priority encoder, when-else                : prio_encoder encoder
 76     Listing 3.3: priority encoder, with-select              : prio_encoder encoder
 79     Listing 3.5: priority encoder, if                       : prio_encoder
@@ -37,12 +37,6 @@
 93     Listing 3.16: barrel shifter, with-select               : barrel_shifter
 94     Listing 3.17: barrel shifter in three stages            : barrel_shifter
 96-97  Listing 3.19: floating-point adder                      : fp_adder
-68     RT-level components: relational and arithmetic operators : add compare mux
-72-73  Conditional signal assignment: a chain of muxes         : mux
-75     Selected signal assignment: one wide mux                : mux
-94-95  Simplified floating-point adder: the format and stages  : fp_adder
-
-# ---- chapter 4: regular sequential circuits
 105    Listing 4.1: D flip-flop                                : d_ff_en dff
 106    Listing 4.2: D flip-flop with asynchronous reset        : d_ff_en dff
 107    Listings 4.3, 4.4: D flip-flop with enable              : d_ff_en dff
@@ -61,10 +55,6 @@
 130    Listing 4.19: testing the stopwatch                     : stop_watch
 131-133 Listing 4.20: FIFO buffer                              : fifo
 135    Listing 4.21: testing the FIFO                          : fifo
-103-104 D flip-flop, register, synchronous design              : dff reg* d_ff_en reg_reset
-119-121 LED time-multiplexing                                  : disp_mux disp_hex_mux
-
-# ---- chapter 5: finite state machines
 142    Listing 5.1: FSM example                                : fsm_eg
 144    Listing 5.2: FSM with merged combinational logic        : fsm_eg
 145    Listing 5.3: Moore edge detector                        : edge_detect
@@ -72,10 +62,6 @@
 149    Listing 5.5: edge detector, gate level                  : edge_detect_mealy edge_detect
 151    Listing 5.6: debouncing FSM                             : db_fsm
 154    Listing 5.7: testing the debouncer                      : db_fsm
-139-140 Mealy and Moore outputs, FSM representation           : fsm_eg edge_detect* db_fsm
-150    Debouncing: a switch bounces                            : db_fsm debounce button
-
-# ---- chapter 6: FSM with data path (FSMD)
 165    Listing 6.1: debouncer, explicit data path              : debounce
 167    Listing 6.2: debouncer, implicit data path              : debounce
 173    Listing 6.4: Fibonacci numbers                          : fib
@@ -83,21 +69,434 @@
 178-180 Listing 6.6: binary to BCD                             : bin2bcd adj
 183-184 Listing 6.7: period counter                            : period_counter
 185    Listing 6.8: low-frequency counter (uses all three)     : period_counter div bin2bcd
-159-161 RT operations and the ASMD chart                       : debounce fib div bin2bcd period_counter
-163-164 Debouncing with the RT methodology                     : debounce
-
-# ---- chapter 7: UART
 198-199 Listing 7.1: UART receiver                             : uart_rx uart uart_loopback
 200    Listing 7.2: a flag and buffer interface                : uart_rx
 203-204 Listing 7.3: UART transmitter                          : uart_tx uart uart_loopback
 205    Listing 7.4: the complete UART                          : uart uart_loopback fifo
 207    Listing 7.5: the loop-back test                         : uart_loopback
-195-196 Serial transmission, oversampling, the baud tick       : uart* mod_m_counter
-
-# ---- chapter 11: memory
 278    Listing 11.1: single-port RAM, asynchronous read        : xilinx_one_port_ram_async ram
 279    Listing 11.2: single-port RAM, synchronous read         : ram
 281    Listing 11.3: dual-port RAM                             : reg_file ram
 283    Listing 11.5: ROM, asynchronous read                    : rom_template rom ram16x8
 284    Listing 11.6: ROM, synchronous read                     : xilinx_rom_sync_template rom
-276    Memory modules: by HDL inference or the Core Generator  : ram rom
+
+# ---- the whole book, from its table of contents (printed page + 31)
+32      Chapter 1: Gate-level combinational circuit                        :
+32      1.1 Introduction                                                   :
+33      1.2 General description                                            : eq1 and or not xor
+33      1.2.1 Basic lexical rules                                          :
+34      1.2.2 Library and package                                          :
+34      1.2.3 Entity declaration                                           :
+34      1.2.4 Data type and operators                                      : and or not xor nand nor xnor
+35      1.2.5 Architecture body                                            :
+36      1.2.6 Code of a 2-bit comparator                                   : eq2 eq1
+37-38   1.3 Structural description                                         : eq2 eq1
+39      1.4 Testbench                                                      : eq2
+40      1.5 Bibliographic notes                                            :
+41      1.6 Suggested experiments                                          :
+41      1.6.1 Code for gate-level greater-than circuit                     :
+41      1.6.2 Code for gate-level binary decoder                           : decoder decoder_2_4
+42      Chapter 2: Overview of FPGA and EDA software                       :
+42-43   2.1 Introduction                                                   :
+42-43   2.2 FPGA                                                           :
+42-43   2.2.1 Overview of a general FPGA device                            :
+44-45   2.2.2 Overview of the Xilinx Spartan-3 devices                     :
+44-45   2.3 Overview of the Digilent S3 board                              :
+46-47   2.4 Development flow                                               :
+48-49   2.5 Overview of the Xilinx ISE project navigator                   :
+50-51   2.6 Short tutorial on ISE project navigator                        :
+52      2.6.1 Create the design project and HDL codes                      :
+53-54   2.6.2 Create a testbench and perform the RTL simulation            :
+53-54   2.6.3 Add a constraint file and synthesize and implement the code  :
+55-57   2.6.4 Generate and download the configuration file to an FPGA devi :
+58-62   2.7 Short tutorial on the ModelSim HDL simulator                   :
+63      2.8 Bibliographic notes                                            :
+64-65   2.9 Suggested experiments                                          :
+64-65   2.9.1 Gate-level greater-than circuit                              : compare
+64-65   2.9.2 Gate-level binary decoder                                    : decoder decoder_2_4
+66      Chapter 3: RT-level combinational circuit                          :
+66-67   3.1 Introduction                                                   :
+66-67   3.2 RT-level components                                            :
+68      3.2.1 Relational operators                                         : compare
+68      3.2.2 Arithmetic operators                                         : add add_w_carry alu4 addsub8
+69-70   3.2.3 Other synthesis-related VHDL constructs                      :
+71      3.2.4 Summary                                                      :
+72-74   3.3 Routing circuit with concurrent assignment statements          : mux decoder encoder
+72-74   3.3.1 Conditional signal assignment statement                      : mux encoder prio_encoder decoder_2_4
+75-76   3.3.2 Selected signal assignment statement                         : mux decoder decoder_2_4 prio_encoder
+77      3.4 Modeling with a process                                        :
+77      3.4.1 Process                                                      :
+77      3.4.2 Sequential signal assignment statement                       :
+78-79   3.5 Routing circuit with if and case statements                    : mux decoder encoder
+78-79   3.5.1 If statement                                                 : mux prio_encoder decoder_2_4
+80      3.5.2 Case statement                                               : mux prio_encoder decoder_2_4
+81-82   3.5.3 Comparison to concurrent statements                          :
+83      3.5.4 Unintended memory                                            : *latch*
+84      3.6 Constants and generics                                         : add_w_carry
+84      3.6.1 Constants                                                    : add_w_carry
+85-86   3.6.2 Generics                                                     : add_w_carry
+87-89   3.7 Design examples                                                :
+87-89   3.7.1 Hexadecimal digit to seven-segment LED decoder               : hex_to_sseg seg7 hex rom bcd7
+90-92   3.7.2 Sign-magnitude adder                                         : sign_mag_add
+93      3.7.3 Barrel shifter                                               : barrel_shifter
+94-99   3.7.4 Simplified floating-point adder                              : fp_adder
+100     3.8 Bibliographic notes                                            :
+100     3.9 Suggested experiments                                          :
+100     3.9.1 Multi-function barrel shifter                                : barrel_shifter
+100     3.9.2 Dual-priority encoder                                        : prio_encoder encoder
+100     3.9.3 BCD incrementor                                              : bcd_digit
+101     3.9.4 Floating-point greater-than circuit                          :
+101     3.9.5 Floating-point and signed integer conversion circuit         :
+101     3.9.6 Enhanced floating-point adder                                :
+102     Chapter 4: Regular Sequential Circuit                              :
+102     4.1 Introduction                                                   :
+102     4.1.1 D FF and register                                            :
+103     4.1.2 Synchronous system                                           : clock dff
+104     4.1.3 Code development                                             : dff
+105-107 4.2 HDL code of the FF and register                                : dff reg*
+105-107 4.2.1 D FF                                                         : dff tff jkff d_ff_en flip_flops
+108     4.2.2 Register                                                     : reg_reset reg_n reg_n4 dff
+109     4.2.3 Register file                                                : reg_file
+110-111 4.2.4 Storage components in a Spartan-3 device                     :
+110-111 4.3 Simple design examples                                         :
+110-111 4.3.1 Shift register                                               : *shift* free_run_shift_reg univ_shift_reg shift_reg
+112-114 4.3.2 Binary counter and variant                                   : counter *count* free_run_bin_counter univ_bin_counter mod_m_counter pc4
+115-118 4.4 Testbench for sequential circuits                              : univ_bin_counter
+119-124 4.5 Case study                                                     :
+119-124 4.5.1 LED time-multiplexing circuit                                : disp_mux disp_hex_mux seg7 hex
+127-130 4.5.2 Stopwatch                                                    : stop_watch bcd_digit
+131-134 4.5.3 FIFO buffer                                                  : fifo
+135     4.6 Bibliographic notes                                            :
+136     4.7 Suggested experiments                                          :
+136     4.7.1 Programmable square wave generator                           :
+136     4.7.2 PWM and LED dimmer                                           :
+136     4.7.3 Rotating square circuit                                      :
+137     4.7.4 Heartbeat circuit                                            :
+137     4.7.5 Rotating LED banner circuit                                  :
+137     4.7.6 Enhanced stopwatch                                           :
+137     4.7.7 Stack                                                        : fifo
+138     Chapter 5: FSM                                                     :
+138     5.1 Introduction                                                   :
+138     5.1.1 Mealy and Moore outputs                                      :
+139-141 5.1.2 FSM representation                                           : fsm_eg
+142-144 5.2 FSM code development                                           : fsm_eg
+145-148 5.3 Design examples                                                :
+145-148 5.3.1 Rising-edge detector                                         : edge_detect edge_detect_mealy
+149-152 5.3.2 Debouncing circuit                                           : db_fsm button
+153-154 5.3.3 Testing circuit                                              : db_fsm
+155     5.4 Bibliographic notes                                            :
+155     5.5 Suggested experiments                                          :
+155     5.5.1 Dual-edge detector                                           : edge_detect*
+155     5.5.2 Alternative debouncing circuit                               : db_fsm debounce
+156-157 5.5.3 Parking lot occupancy counter                                :
+158     Chapter 6: FSMD                                                    :
+158     6.1 Introduction                                                   :
+158     6.1.1 Single RT operation                                          :
+159     6.1.2 ASMD chart                                                   : fib div bin2bcd debounce period_counter
+160-161 6.1.3 Decision box with a register                                 :
+162     6.2 Code development of an FSMD                                    : debounce
+163-164 6.2.1 Debouncing circuit based on RT methodology                   : debounce button
+165-166 6.2.2 Code with explicit data path components                      : debounce
+167     6.2.3 Code with implicit data path components                      : debounce
+168     6.2.4 Comparison                                                   :
+169-170 6.2.5 Testing circuit                                              : debounce
+171-173 6.3 Design examples                                                :
+171-173 6.3.1 Fibonacci number circuit                                     : fib
+174-177 6.3.2 Division circuit                                             : div
+178-180 6.3.3 Binary-to-BCD conversion circuit                             : bin2bcd adj
+181-183 6.3.4 Period counter                                               : period_counter
+184-186 6.3.5 Accurate low-frequency counter                               : period_counter div bin2bcd
+187     6.4 Bibliographic notes                                            :
+188     6.5 Suggested experiments                                          :
+188     6.5.1 Alternative debouncing circuit                               : debounce db_fsm
+188     6.5.2 BCD-to-binary conversion circuit                             : bin2bcd
+188     6.5.3 Fibonacci circuit with BCD I/O: design approach 1            :
+188     6.5.4 Fibonacci circuit with BCD I/O: design approach 2            :
+189     6.5.5 Auto-scaled low-frequency counter                            :
+189     6.5.6 Reaction timer                                               :
+190-193 6.5.7 Babbage difference engine emulation circuit                  :
+194     Chapter 7: UART                                                    :
+194     7.1 Introduction                                                   :
+195     7.2 UART receiving subsystem                                       : uart_rx uart
+195     7.2.1 Oversampling procedure                                       : uart_rx
+196-198 7.2.2 Baud rate generator                                          : mod_m_counter
+196-198 7.2.3 UART receiver                                                : uart_rx
+199-201 7.2.4 Interface circuit                                            : uart_rx
+202-204 7.3 UART transmitting subsystem                                    : uart_tx uart
+205-206 7.4 Overall UART system                                            : uart uart_loopback
+205-206 7.4.1 Complete UART core                                           : uart fifo
+207-208 7.4.2 UART verification configuration                              : uart_loopback
+209-210 7.5 Customizing a UART                                             :
+211     7.6 Bibliographic notes                                            :
+211     7.7 Suggested experiments                                          :
+211     7.7.1 Full-featured UART                                           :
+212     7.7.2 UART with an automatic baud rate detection circuit           :
+212     7.7.3 UART with an automatic baud rate and parity detection circui :
+212     7.7.4 UART-controlled stopwatch                                    :
+213     7.7.5 UART-controlled rotating LED banner                          :
+214     Chapter 8: PS2 Keyboard                                            :
+214     8.1 Introduction                                                   :
+215-218 8.2 PS2 receiving subsystem                                        : keypad
+215-218 8.2.1 Physical interface of a PS2 port                             :
+215-218 8.2.2 Device-to-host communication protocol                        :
+215-218 8.2.3 Design and code                                              :
+219     8.3 PS2 keyboard scan code                                         : keypad
+219     8.3.1 Overview of the scan code                                    :
+220-221 8.3.2 Scan code monitor circuit                                    :
+222     8.4 PS2 keyboard interface circuit                                 : keypad
+223-224 8.4.1 Basic design and HDL code                                    :
+225-226 8.4.2 Verification circuit                                         :
+227     8.5 Bibliographic notes                                            :
+227     8.6 Suggested experiments                                          :
+227     8.6.1 Alternative keyboard interface I                             :
+227     8.6.2 Alternative keyboard interface II                            :
+228-229 8.6.3 PS2 receiving subsystem with watchdog timer                  :
+228-229 8.6.4 Keyboard-controlled stopwatch                                :
+228-229 8.6.5 Keyboard-controlled rotating LED banner                      :
+230     Chapter 9: PS2 Mouse                                               :
+230     9.1 Introduction                                                   :
+231     9.2 PS2 mouse protocol                                             :
+231     9.2.1 Basic operation                                              :
+231     9.2.2 Basic initialization procedure                               :
+232     9.3 PS2 transmitting subsystem                                     :
+232     9.3.1 Host-to-PS2-device communication protocol                    :
+233-236 9.3.2 Design and code                                              :
+237-238 9.4 Bidirectional PS2 interface                                    :
+237-238 9.4.1 Basic design and code                                        :
+239-240 9.4.2 Verification circuit                                         :
+241-242 9.5 PS2 mouse interface                                            :
+241-242 9.5.1 Basic design                                                 :
+243-244 9.5.2 Testing circuit                                              :
+245     9.6 Bibliographic notes                                            :
+245     9.7 Suggested experiments                                          :
+245     9.7.1 Keyboard control circuit                                     :
+245     9.7.2 Enhanced mouse interface                                     :
+245     9.7.3 Mouse-controlled seven-segment LED display                   :
+246     Chapter 10: External SRAM                                          :
+246     10.1 Introduction                                                  :
+247-250 10.2 Specification of the IS61LV25616AL SRAM                       : ram
+247-250 10.2.1 Block diagram and I/O signals                               :
+247-250 10.2.2 Timing parameters                                           :
+251     10.3 Basic memory controller                                       :
+251     10.3.1 Block diagram                                               :
+252     10.3.2 Timing requirement                                          :
+253     10.3.3 Register file versus SRAM                                   : ram reg_file
+253     10.4 A safe design                                                 :
+253     10.4.1 ASMD chart                                                  :
+254     10.4.2 Timing analysis                                             :
+255-256 10.4.3 HDL implementation                                          :
+257-258 10.4.4 Basic testing circuit                                       :
+259-263 10.4.5 Comprehensive SRAM testing circuit                          :
+264     10.5 More aggressive design                                        :
+264     10.5.1 Timing issues                                               :
+265-266 10.5.2 Alternative design I                                        :
+267     10.5.3 Alternative design II                                       :
+268-270 10.5.4 Alternative design III                                      :
+268-270 10.5.5 Advanced FPGA features                                      :
+271     10.6 Bibliographic notes                                           :
+271     10.7 Suggested experiments                                         :
+271     10.7.1 Memory with a 512K-by-16 configuration                      :
+271     10.7.2 Memory with a 1M-by-8 configuration                         :
+271     10.7.3 Memory with an 8M-by-1 configuration                        :
+272-273 10.7.4 Expanded memory testing circuit                             :
+272-273 10.7.5 Memory controller and testing circuit for alternative desig :
+272-273 10.7.6 Memory controller and testing circuit for alternative desig :
+272-273 10.7.7 Memory controller and testing circuit for alternative desig :
+272-273 10.7.8 Memory controller with DCM                                  :
+272-273 10.7.9 High-performance memory controller                          :
+274     Chapter 11: Xilinx Spartan-3 Specific Memory                       :
+274     11.1 Introduction                                                  :
+274     11.2 Embedded memory of Spartan-3 device                           :
+274     11.2.1 Overview                                                    :
+275     11.2.2 Comparison                                                  : ram rom
+275     11.3 Method to incorporate memory modules                          :
+276     11.3.1 Memory module via HDL component instantiation               :
+276     11.3.2 Memory module via Core Generator                            :
+277-279 11.3.3 Memory module via HDL inference                             : ram rom
+277-279 11.4 HDL templates for memory inference                            : ram rom
+277-279 11.4.1 Single-port RAM                                             : ram xilinx_one_port_ram_async
+280-281 11.4.2 Dual-port RAM                                               : reg_file ram
+282-284 11.4.3 ROM                                                         : rom rom_template xilinx_rom_sync_template ram16x8
+285     11.5 Bibliographic notes                                           :
+285     11.6 Suggested experiments                                         :
+285     11.6.1 Block-RAM-based FIFO                                        : fifo
+285     11.6.2 Block-RAM-based stack                                       :
+286-287 11.6.3 ROM-based sign-magnitude adder                              : sign_mag_add rom
+286-287 11.6.4 ROM-based sin(x) function                                   :
+286-287 11.6.5 ROM-based sin(x) and cos(x) functions                       :
+288     Chapter 12: VGA controller I: graphic                              :
+288-289 12.1 Introduction                                                  :
+288-289 12.1.1 Basic operation of a CRT                                    :
+290     12.1.2 VGA port of the S3 board                                    :
+290     12.1.3 Video controller                                            :
+291-292 12.2 VGA synchronization                                           :
+291-292 12.2.1 Horizontal synchronization                                  :
+293     12.2.2 Vertical synchronization                                    :
+294-296 12.2.3 Timing calculation of VGA synchronization signals           :
+294-296 12.2.4 HDL implementation                                          :
+297     12.2.5 Testing circuit                                             :
+298     12.3 Overview of the pixel generation circuit                      :
+299     12.4 Graphic generation with an object-mapped scheme               :
+300-303 12.4.1 Rectangular objects                                         :
+304-305 12.4.2 Non-rectangular object                                      :
+306-311 12.4.3 Animated object                                             :
+313-317 12.5 Graphic generation with a bit-mapped scheme                   :
+313-317 12.5.1 Dual-port RAM implementation                                :
+318     12.5.2 Single-port RAM implementation                              :
+318     12.6 Bibliographic notes                                           :
+318     12.7 Suggested experiments                                         :
+318     12.7.1 VGA test pattern generator                                  :
+319     12.7.2 SVGA mode synchronization circuit                           :
+319     12.7.3 Visible screen adjustment circuit                           :
+319     12.7.4 Ball-in-a-box circuit                                       :
+320     12.7.5 Two-balls-in-a-box circuit                                  :
+320     12.7.6 Two-player pong game                                        :
+320     12.7.7 Breakout game                                               :
+320     12.7.8 Full-screen dot trace                                       :
+321     12.7.9 Mouse pointer circuit                                       :
+321     12.7.10 Small-screen mouse scribble circuit                        :
+321     12.7.11 Full-screen mouse scribble circuit                         :
+322     Chapter 13: VGA controller II: text                                :
+322     13.1 Introduction                                                  :
+322     13.2 Text generation                                               :
+322     13.2.1 Character as a tile                                         :
+323-324 13.2.2 Font ROM                                                    : rom
+325     13.2.3 Basic text generation circuit                               :
+326-327 13.2.4 Font display circuit                                        :
+328     13.2.5 Font scaling                                                :
+329-332 13.3 Full-screen text display                                      :
+333-338 13.4 The complete pong game                                        :
+333-338 13.4.1 Text subsystem                                              :
+340     13.4.2 Modified graphic subsystem                                  :
+341-342 13.4.3 Auxiliary counters                                          :
+343-347 13.4.4 Top-level system                                            :
+348     13.5 Bibliographic notes                                           :
+348     13.6 Suggested experiments                                         :
+348     13.6.1 Rotating banner                                             :
+348     13.6.2 Underline for the cursor                                    :
+348     13.6.3 Dual-mode text display                                      :
+348     13.6.4 Keyboard text entry                                         :
+348     13.6.5 UART terminal                                               :
+349     13.6.6 Square wave display                                         :
+349     13.6.7 Simple four-trace logic analyzer                            :
+350-353 13.6.8 Complete two-player pong game                               :
+350-353 13.6.9 Complete breakout game                                      :
+354     Chapter 14: PicoBlaze Overview                                     :
+354     14.1 Introduction                                                  :
+355-356 14.2 Customized hardware and customized software                   :
+355-356 14.2.1 From special-purpose FSMD to general-purpose microcontrolle : sap1 control
+357-358 14.2.2 Application of microcontroller                              :
+357-358 14.3 Overview of PicoBlaze                                         :
+357-358 14.3.1 Basic organization                                          : sap1 control
+359     14.3.2 Top-level HDL modules                                       :
+360-361 14.4 Development flow                                              :
+360-361 14.5 Instruction set                                               : sap1 control ram16x8
+362     14.5.1 Programming model                                           : sap1
+363     14.5.2 Instruction format                                          :
+363     14.5.3 Logical instructions                                        :
+364     14.5.4 Arithmetic instructions                                     :
+365     14.5.5 Compare and test instructions                               :
+366     14.5.6 Shift and rotate instructions                               :
+367-368 14.5.7 Data movement instructions                                  :
+369-371 14.5.8 Program flow control instructions                           : sap1 pc4
+372     14.5.9 Interrupt related instructions                              :
+373     14.6 Assembler directives                                          :
+373     14.6.1 The KCPSM3 directives                                       :
+373     14.6.2 The PBlazeIDE directives                                    :
+374-375 14.7 Bibliographic notes                                           :
+376     Chapter 15: PicoBlaze Assembly Code Development                    :
+376     15.1 Introduction                                                  :
+376     15.2 Useful code segments                                          :
+376     15.2.1 KCPSM3 conventions                                          :
+377     15.2.2 Bit manipulation                                            :
+378     15.2.3 Multiple-byte manipulation                                  :
+379-380 15.2.4 Control structure                                           :
+381     15.3 Subroutine development                                        :
+382     15.4 Program development                                           :
+383-386 15.4.1 Demonstration example                                       :
+387-388 15.4.2 Program documentation                                       :
+389     15.5 Processing of the assembly code                               :
+389     15.5.1 Compiling with KCSPM3                                       :
+390-392 15.5.2 Simulation by PBlazeIDE                                     :
+393     15.5.3 Reloading code via the JTAG port                            :
+393     15.5.4 Compiling by PBlazeIDE                                      :
+394     15.6 Syntheses with PicoBlaze                                      :
+395     15.7 Bibliographic notes                                           :
+396     15.8 Suggested experiments                                         :
+396     15.8.1 Signed multiplication                                       :
+396     15.8.2 Multi-byte multiplication                                   :
+396     15.8.3 Barrel shift function                                       :
+396     15.8.4 Reverse function                                            :
+396     15.8.5 Binary-to-BCD conversion                                    :
+396     15.8.6 BCD-to-binary conversion                                    :
+396     15.8.7 Heartbeat circuit                                           :
+397     15.8.8 Rotating LED circuit                                        :
+397     15.8.9 Discrete LED dimmer                                         :
+398     Chapter 16: PicoBlaze I/O Interface                                :
+398     16.1 Introduction                                                  :
+399     16.2 Output port                                                   : sap1
+399     16.2.1 Output instruction and timing                               :
+400-401 16.2.2 Output interface                                            :
+402-403 16.3 Input port                                                    :
+402-403 16.3.1 Input instruction and timing                                :
+402-403 16.3.2 Input interface                                             :
+404     16.4 Square program with a switch and seven-segment LED display in : seg7 hex
+405     16.4.1 Output interface                                            :
+406     16.4.2 Input interface                                             :
+407-412 16.4.3 Assembly code development                                   :
+415-416 16.4.4 VHDL code development                                       :
+417     16.5 Square program with a combinational multiplier and UART conso :
+418-419 16.5.1 Multiplier interface                                        :
+418-419 16.5.2 UART interface                                              :
+420-425 16.5.3 Assembly code development                                   :
+429-432 16.5.4 VHDL code development                                       :
+433     16.6 Bibliographic notes                                           :
+433     16.7 Suggested experiments                                         :
+433     16.7.1 Low-frequency counter I                                     :
+433     16.7.2 Low-frequency counter II                                    :
+433     16.7.3 Auto-scaled low-frequency counter                           :
+434     16.7.4 Basic reaction timer with a software timer                  :
+434     16.7.5 Basic reaction timer with a hardware timer                  :
+434     16.7.6 Enhanced reaction timer                                     :
+434     16.7.7 Small-screen mouse scribble circuit                         :
+434     16.7.8 Full-screen mouse scribble circuit                          :
+434     16.7.9 Enhanced rotating banner                                    :
+435     16.7.10 Pong game                                                  :
+435     16.7.11 Text editor                                                :
+436     Chapter 17: PicoBlaze Interrupt Interface                          :
+436     17.1 Introduction                                                  :
+436     17.2 Interrupt handling in PicoBlaze                               :
+437     17.2.1 Software processing                                         :
+438     17.2.2 Timing                                                      :
+439     17.3 External interface                                            :
+439     17.3.1 Single interrupt request                                    :
+439     17.3.2 Multiple interrupt requests                                 :
+440     17.4 Software development considerations                           :
+440     17.4.1 Interrupt as an alternative scheduling scheme               :
+441     17.4.2 Development of an interrupt service routine                 :
+441     17.5 Design example                                                :
+441     17.5.1 Interrupt interface                                         :
+442-443 17.5.2 Interrupt service routine development                       :
+442-443 17.5.3 Assembly code development                                   :
+444-447 17.5.4 VHDL code development                                       :
+448     17.6 Bibliographic notes                                           :
+448     17.7 Suggested experiments                                         :
+448     17.7.1 Alternative timer interrupt service routine                 :
+448     17.7.2 Programmable timer                                          :
+448     17.7.3 Set-button interrupt service routine                        :
+448     17.7.4 Interrupt interface with two requests                       :
+449     17.7.5 Four-request interrupt controller                           :
+450     Appendix A: Sample VHDL templates                                  :
+452     A.2 Combinational circuits                                         : mux add compare
+452     A.2.1 Arithmetic operations                                        : add compare
+453     A.2.2 Fixed-amount shift operations                                : *shift* barrel_shifter
+453     A.2.3 Routing with concurrent statements                           : mux decoder encoder
+454     A.2.4 Routing with if and case statements                          : mux decoder encoder
+455     A.2.5 Combinational circuit using process                          :
+456     A.3 Memory Components                                              : dff reg*
+456     A.3.1 Register template                                            : dff reg* reg_reset
+457     A.3.2 Register file                                                : reg_file
+458     A.4 Regular sequential circuits                                    : counter *count* *shift*
+459-460 A.5 FSM                                                            : fsm_eg edge_detect* db_fsm
+461-463 A.6 FSMD                                                           : fib div bin2bcd debounce period_counter
+464     A.7 S3 board constraint file (s3.ucf)                              :

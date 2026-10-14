@@ -27,7 +27,7 @@
 12     Decoder, encoder, comparator                     : decoder encoder compare
 46     Design examples: decoder, priority encoder       : decoder encoder
 29     The memory: a decoder and a grid of cells        : decoder
-12     Adders: half adder, full adder, ripple carry     : add *add* half_adder full_adder
+13     Adders: half adder, full adder, ripple carry     : add *add* half_adder full_adder
 13     Subtractors and the adder-subtractor             : add *add* *sub* full_adder
 28     The adder-subtractor in gates (SAP-1)            : add *add* *sub* full_adder half_adder
 13-14  The ALU: in parts and as a whole                 : *alu* addsub8

@@ -22,7 +22,7 @@ const n = pages.length - (pages[pages.length - 1].trim() ? 0 : 1);
 const flat = s => s.replace(/\s+/g, " ").replace(/(\b\w) (?=\w\b)/g, "$1");   /* "L i s t i n g" in some scans */
 let bad = 0, lines = 0;
 fs.readFileSync(topics, "utf8").split(/\r?\n/).forEach((line, i) => {
-  const m = /^\s*(\d+)(?:\s*-\s*(\d+))?\s+(.*)\s+:\s+(.+?)\s*$/.exec(line.replace(/#.*$/, ""));
+  const m = /^\s*(\d+)(?:\s*-\s*(\d+))?\s+(.*)\s+:(?:\s+(.*?))?\s*$/.exec(line.replace(/#.*$/, ""));
   if (!m) return;
   lines++;
   const first = +m[1], last = +(m[2] || m[1]), title = m[3].trim();
@@ -31,7 +31,8 @@ fs.readFileSync(topics, "utf8").split(/\r?\n/).forEach((line, i) => {
   if (last > n) return say(`the pdf has ${n} pages`);
   const text = pages[first - 1], words = text.split(/\s+/).filter(Boolean).length;
   if (/intentionally left blank/i.test(text) || words < 8) return say(`page ${first} is blank`);
-  if (/^\s*CHAPTER\s+\d+\b/.test(text) && !/^Chapter|chapter \d/.test(title)) say(`page ${first} is a chapter's title page; is the section later?`);
+  /* a part only leads to a section with patterns; those should not open on a title page */
+  if (m[4] && /^\s*CHAPTER\s+\d+\b/.test(text) && !/^Chapter|chapter \d/.test(title)) say(`page ${first} is a chapter's title page; is the section later?`);
   const range = pages.slice(first - 1, last).map(flat).join(" ").toLowerCase();
   const words4 = title.replace(/Listings? [\d.,\s]+:?/g, "").toLowerCase().match(/[a-z][a-z-]{3,}/g) || [];
   const found = words4.filter(w => range.includes(w.replace(/s$/, ""))).length;
