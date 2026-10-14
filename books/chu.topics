@@ -16,7 +16,7 @@
 36     Listing 1.2: 2-bit comparator, gate level               : eq2
 37     Listing 1.3: 2-bit comparator from two eq1 (structural) : eq2 eq1
 39     Listing 1.5: a testbench for eq2                        : eq2
-31-33  Gate-level circuits and the parts of a VHDL program     : eq1 eq2 and or not xor nand nor xnor
+33     Gate-level circuits and the parts of a VHDL program        : eq1 eq2 and or not xor nand nor xnor
 64     Gate-level greater-than circuit and decoder (exercises) : eq2 decoder
 
 # ---- chapter 3: RT-level combinational circuits
@@ -36,11 +36,11 @@
 92     Listing 3.15: testing the sign-magnitude adder          : sign_mag_add
 93     Listing 3.16: barrel shifter, with-select               : barrel_shifter
 94     Listing 3.17: barrel shifter in three stages            : barrel_shifter
-96-98  Listing 3.19: floating-point adder                      : fp_adder
-66-68  RT-level components and operators                       : add compare mux
+96-97  Listing 3.19: floating-point adder                      : fp_adder
+68     RT-level components: relational and arithmetic operators : add compare mux
 72-73  Conditional signal assignment: a chain of muxes         : mux
 75     Selected signal assignment: one wide mux                : mux
-94-96  Simplified floating-point adder: the format and stages  : fp_adder
+94-95  Simplified floating-point adder: the format and stages  : fp_adder
 
 # ---- chapter 4: regular sequential circuits
 105    Listing 4.1: D flip-flop                                : d_ff_en dff
@@ -59,9 +59,9 @@
 127    Listing 4.17: stopwatch, cascading counters             : stop_watch bcd_digit
 129    Listing 4.18: stopwatch, nested ifs                     : stop_watch bcd_digit
 130    Listing 4.19: testing the stopwatch                     : stop_watch
-131-134 Listing 4.20: FIFO buffer                              : fifo
+131-133 Listing 4.20: FIFO buffer                              : fifo
 135    Listing 4.21: testing the FIFO                          : fifo
-102-104 D flip-flop, register, synchronous design              : dff reg* d_ff_en reg_reset
+103-104 D flip-flop, register, synchronous design              : dff reg* d_ff_en reg_reset
 119-121 LED time-multiplexing                                  : disp_mux disp_hex_mux
 
 # ---- chapter 5: finite state machines
@@ -72,27 +72,27 @@
 149    Listing 5.5: edge detector, gate level                  : edge_detect_mealy edge_detect
 151    Listing 5.6: debouncing FSM                             : db_fsm
 154    Listing 5.7: testing the debouncer                      : db_fsm
-138-139 Mealy and Moore outputs, FSM representation           : fsm_eg edge_detect* db_fsm
-149-150 Debouncing: why a button needs it                      : db_fsm debounce button
+139-140 Mealy and Moore outputs, FSM representation           : fsm_eg edge_detect* db_fsm
+150    Debouncing: a switch bounces                            : db_fsm debounce button
 
 # ---- chapter 6: FSM with data path (FSMD)
 165    Listing 6.1: debouncer, explicit data path              : debounce
 167    Listing 6.2: debouncer, implicit data path              : debounce
-171-173 Listing 6.4: Fibonacci numbers                         : fib
-174-176 Listing 6.5: division                                  : div
+173    Listing 6.4: Fibonacci numbers                          : fib
+176-177 Listing 6.5: division                                 : div
 178-180 Listing 6.6: binary to BCD                             : bin2bcd adj
-181-183 Listing 6.7: period counter                            : period_counter
+183-184 Listing 6.7: period counter                            : period_counter
 185    Listing 6.8: low-frequency counter (uses all three)     : period_counter div bin2bcd
-158-161 RT operations and the ASMD chart                       : debounce fib div bin2bcd period_counter
-163    Debouncing with the RT methodology                      : debounce
+159-161 RT operations and the ASMD chart                       : debounce fib div bin2bcd period_counter
+163-164 Debouncing with the RT methodology                     : debounce
 
 # ---- chapter 7: UART
-196-198 Listing 7.1: UART receiver                             : uart_rx uart uart_loopback
+198-199 Listing 7.1: UART receiver                             : uart_rx uart uart_loopback
 200    Listing 7.2: a flag and buffer interface                : uart_rx
-202-203 Listing 7.3: UART transmitter                          : uart_tx uart uart_loopback
+203-204 Listing 7.3: UART transmitter                          : uart_tx uart uart_loopback
 205    Listing 7.4: the complete UART                          : uart uart_loopback fifo
 207    Listing 7.5: the loop-back test                         : uart_loopback
-194-196 Serial transmission, oversampling, the baud tick       : uart* mod_m_counter
+195-196 Serial transmission, oversampling, the baud tick       : uart* mod_m_counter
 
 # ---- chapter 11: memory
 278    Listing 11.1: single-port RAM, asynchronous read        : xilinx_one_port_ram_async ram
@@ -100,4 +100,4 @@
 281    Listing 11.3: dual-port RAM                             : reg_file ram
 283    Listing 11.5: ROM, asynchronous read                    : rom_template rom ram16x8
 284    Listing 11.6: ROM, synchronous read                     : xilinx_rom_sync_template rom
-274-276 Embedded memory of the Spartan-3                       : ram rom
+276    Memory modules: by HDL inference or the Core Generator  : ram rom

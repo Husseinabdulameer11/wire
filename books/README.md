@@ -65,3 +65,16 @@ copy in the panel.
 to Part 0 ch. B, multiplexers, decoders, adders and the ALU to ch. C,
 flip-flops, registers and counters to ch. D and Chu ch. 4, RAM and ROM to ch.
 E, the SAP-1 and its control unit to ch. F and G, and so on.
+
+## Checking a topics file
+
+```
+node tools/check-topics.js book.pdf book.topics
+make check-books CHU=path/to/your/chu.pdf
+```
+
+reads the pdf's text (with `pdftotext`) and complains about a section
+whose first page is blank, is a chapter's title page, is past the end,
+doesn't hold the listing its title names, or holds few of its title's
+words. Page numbers in a topics file are the pdf's, which in a printed
+book are not the numbers on the pages.

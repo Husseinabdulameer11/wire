@@ -120,6 +120,12 @@ site: $(WIRE)
 	rm -rf build/site
 	node tools/site.js $(WIRE) build/site $(BOOKS)
 
+# check that every section of the topics files points at real pages:
+#   make check-books CHU=path/to/your/chu.pdf     (needs pdftotext)
+check-books:
+	node tools/check-topics.js books/fpga_summary.pdf books/fpga_summary.topics
+	$(if $(CHU),node tools/check-topics.js $(CHU) books/chu.topics,@echo "(give CHU=path/to/chu.pdf to check books/chu.topics too)")
+
 # Linux/macOS: installs build/wire as $(PREFIX)/bin/wire
 install: $(WIRE)
 	mkdir -p $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/wire/lib
@@ -133,4 +139,4 @@ uninstall:
 clean:
 	rm -rf build
 
-.PHONY: all test install uninstall clean need-gram site
+.PHONY: all test install uninstall clean need-gram site check-books
