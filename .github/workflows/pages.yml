@@ -29,15 +29,20 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - uses: emscripten-core/setup-emsdk@v14
-        with: { version: 3.1.74 }
+      # Emscripten 3.1.6 from Ubuntu 24.04: the version Wire's WebAssembly
+      # build is checked with (tests/web/webtest.js)
+      - name: Install Emscripten
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q emscripten
+          emcc --version | head -1
       - name: Build Wire for the web and check it against the native wire
         run: make web-test GRAM=gram-src VERSION=${GITHUB_SHA::7}
       - name: Make the site
