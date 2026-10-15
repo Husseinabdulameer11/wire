@@ -140,9 +140,9 @@ web-test: $(WIRE) build/web/wire.js
 # site) and Chu's book, which is NOT copied (it is not ours to publish):
 # the page asks for your own copy with Open PDF, or loads it if you put it
 # beside the pages as $(CHU_PDF). Change BOOKS to use others.
-CHU_PDF ?= chu_fpga_prototyping_vhdl.pdf
 BOOKS   ?= $(if $(wildcard books/fpga_summary.pdf),--book books/fpga_summary.pdf --book-name "My notes" --topics books/fpga_summary.topics) \
-           --book-url $(CHU_PDF) --book-name "Chu" --topics books/chu.topics --book-dir chu
+           $(if $(wildcard books/chu_fpga_prototyping_vhdl.pdf),--book books/chu_fpga_prototyping_vhdl.pdf --book-name "chu_fpga_prototyping_vhdl" $(if $(wildcard books/chu.topics),--topics books/chu.topics))
+# With Wire built for the web (make web, needs Emscripten), the site gets the
 # With Wire built for the web (make web, needs Emscripten), the site gets the
 # playground too: write a circuit in the browser and see it.
 site: $(WIRE)
