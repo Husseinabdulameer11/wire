@@ -66,15 +66,20 @@ jobs:
   # Wire in WebAssembly (the playground): it must do byte for byte what the
   # native wire does, on every circuit and every error message
   web:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - uses: emscripten-core/setup-emsdk@v14
-        with: { version: 3.1.74 }
+      # Emscripten 3.1.6 from Ubuntu 24.04: the version Wire's WebAssembly
+      # build is checked with (tests/web/webtest.js)
+      - name: Install Emscripten
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q emscripten
+          emcc --version | head -1
       - run: make web-test GRAM=gram-src
       - run: make site GRAM=gram-src
       - run: test -f build/site/playground.html && test -f build/site/wire.wasm

@@ -176,15 +176,20 @@ jobs:
   # against the native wire first
   site:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with: { repository: "${{ env.GRAM_REPO }}", ref: "${{ env.GRAM_REF }}", path: gram-src }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - uses: emscripten-core/setup-emsdk@v14
-        with: { version: 3.1.74 }
+      # Emscripten 3.1.6 from Ubuntu 24.04: the version Wire's WebAssembly
+      # build is checked with (tests/web/webtest.js)
+      - name: Install Emscripten
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q emscripten
+          emcc --version | head -1
       - name: Build and check Wire for the web, then the site
         env:
           VERSION: ${{ needs.version.outputs.version }}
