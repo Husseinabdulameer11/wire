@@ -254,6 +254,8 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
  * standard library: put in by tools/playground.js. */
 const FILES = /*PLAYGROUND_FILES*/{};
 const EXAMPLES = /*PLAYGROUND_EXAMPLES*/[];
+/* the books of the Book panel, as on the example pages: { name, url, topics, dir } */
+const BOOKS = /*PLAYGROUND_BOOKS*/[];
 
 const $ = id => document.getElementById(id);
 const src = $("src"), hl = $("hl"), gutter = $("gutter"), msg = $("msg"), signal = $("signal");
@@ -437,6 +439,15 @@ const STORE = "wire-playground-2";
 const fileName = () => ($("name").value.replace(/[^A-Za-z0-9_]/g, "") || "my_circuit");
 const mainPath = () => (mode === "write" && dir ? dir + "/" : "") + fileName() + ".wire";
 const sourceNow = () => mode === "draw" ? genCode(model) : src.value;
+/* the Book panel: the pdfs by their full address (the circuit is shown from a
+ * blob: page, where a name next to this page would not resolve), and a book
+ * whose examples you opened first (Chu for examples/chu/...) */
+function bookArgs() {
+  const here = mode === "write" ? dir + "/" : "";
+  const first = BOOKS.filter(b => b.dir && here.startsWith("examples/" + b.dir + "/"));
+  return [...first, ...BOOKS.filter(b => !first.includes(b))].flatMap(b => [
+    "--book-url", new URL(b.url, location.href).href, "--book-name", b.name, ...(b.topics ? ["--topics", "/r/" + b.topics] : [])]);
+}
 function persist() {
   try { localStorage.setItem(STORE, JSON.stringify({ mode, name: $("name").value, draw: model, write: { dir, text: src.value } })); } catch (e) {}
 }
@@ -449,7 +460,7 @@ function schedule(ms = 350) { clearTimeout(timer); timer = setTimeout(() => comp
 async function compile(revertTo) {
   const seq = ++runSeq, path = mainPath(), text = sourceNow();
   let r;
-  try { r = await wire(["-o", "/out.html", path], path, text); }
+  try { r = await wire([...bookArgs(), "-o", "/out.html", path], path, text); }
   catch (e) { return fatal(e); }
   if (seq !== runSeq) return;
   if (r.code === 0) {

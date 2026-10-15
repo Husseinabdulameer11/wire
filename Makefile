@@ -147,7 +147,7 @@ BOOKS   ?= $(if $(wildcard books/fpga_summary.pdf),--book books/fpga_summary.pdf
 # playground too: write a circuit in the browser and see it.
 site: $(WIRE)
 	rm -rf build/site
-	@if [ -f build/web/wire.wasm ]; then node tools/playground.js build/web build/site; \
+	@if [ -f build/web/wire.wasm ]; then node tools/playground.js build/web build/site $(BOOKS); \
 	 else echo "wire: no build/web/wire.wasm, so the site has no playground (make web needs Emscripten)"; fi
 	node tools/site.js $(WIRE) build/site $(BOOKS)
 

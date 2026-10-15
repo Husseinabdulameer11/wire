@@ -2,15 +2,18 @@
 /* playground.js - makes the playground: Wire itself, compiled to
  * WebAssembly (make web), in a page where you write a circuit and see it.
  *
- *   node tools/playground.js build/web build/site      (make site does this)
+ *   node tools/playground.js build/web build/site [books]   (make site does this)
  *
  * Writes playground.html (src/playground.html with every example, the files
- * they import and the standard library put in), wire.js and wire.wasm. */
+ * they import, the standard library and the books' topics put in), wire.js
+ * and wire.wasm. The books are given as to tools/site.js (--book f.pdf,
+ * --book-url u, --book-name n, --topics f, --book-dir d), so the circuits in
+ * the playground get the same Book panel as the example pages. */
 "use strict";
 const fs = require("fs");
 const path = require("path");
 
-function build(web, out) {
+function build(web, out, books = []) {
   const root = path.join(__dirname, "..");
   const ex = path.join(root, "examples");
   const walk = (d, keep) => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
@@ -22,6 +25,15 @@ function build(web, out) {
   const files = {};
   for (const f of walk(ex, n => /\.(wire|hex)$/.test(n))) files[path.relative(root, f).split(path.sep).join("/")] = fs.readFileSync(f, "utf8");
   for (const f of walk(path.join(root, "lib"), n => n.endsWith(".wire"))) files["wire/lib/" + path.basename(f)] = fs.readFileSync(f, "utf8");
+
+  /* the books: a pdf next to the page (copied, for --book) and its topics,
+   * which the page needs inside wire's file system */
+  const bookList = books.map(b => {
+    const r = { name: b.name || path.basename(b.book || b.url), url: b.book ? path.basename(b.book) : b.url, dir: b.dir || "" };
+    if (b.book) { fs.mkdirSync(out, { recursive: true }); fs.copyFileSync(b.book, path.join(out, r.url)); }
+    if (b.topics) { r.topics = "books/" + path.basename(b.topics); files[r.topics] = fs.readFileSync(b.topics, "utf8"); }
+    return r;
+  });
 
   /* the example menu, in the order and under the headings of examples/index.txt */
   const sections = [];
@@ -44,7 +56,7 @@ function build(web, out) {
   /* JSON in a script: keep "</script>" and line separators from ending it */
   const js = v => JSON.stringify(v).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
   let page = fs.readFileSync(path.join(root, "src", "playground.html"), "utf8");
-  for (const [mark, v] of [["/*PLAYGROUND_FILES*/{}", files], ["/*PLAYGROUND_EXAMPLES*/[]", sections]]) {
+  for (const [mark, v] of [["/*PLAYGROUND_FILES*/{}", files], ["/*PLAYGROUND_EXAMPLES*/[]", sections], ["/*PLAYGROUND_BOOKS*/[]", bookList]]) {
     if (!page.includes(mark)) throw new Error(`src/playground.html has no ${mark}`);
     page = page.replace(mark, () => js(v));
   }
@@ -55,9 +67,16 @@ function build(web, out) {
 }
 
 if (require.main === module) {
-  const [web = "build/web", out = "build/site"] = process.argv.slice(2);
+  const args = process.argv.slice(2), pos = [], books = [];
+  for (let i = 0; i < args.length; i++) {
+    const key = { "--book": "book", "--book-url": "url", "--book-name": "name", "--topics": "topics", "--book-dir": "dir" }[args[i]];
+    if (key === "book" || key === "url") books.push({ [key]: args[++i] });
+    else if (key) { if (!books.length) { console.error(`playground.js: ${args[i]} before any --book`); process.exit(2); } books[books.length - 1][key] = args[++i]; }
+    else pos.push(args[i]);
+  }
+  const [web = "build/web", out = "build/site"] = pos;
   if (!fs.existsSync(path.join(web, "wire.wasm"))) { console.error(`playground.js: no ${web}/wire.wasm; run make web first (it needs Emscripten)`); process.exit(1); }
-  const n = build(web, out);
+  const n = build(web, out, books);
   console.log(`wrote playground.html, wire.js and wire.wasm to ${out} (${n} example and library files inside)`);
 }
 module.exports = { build };
