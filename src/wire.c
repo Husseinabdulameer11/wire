@@ -1394,6 +1394,25 @@ static void write_json(void)
     fputs("]}", jf);
 }
 
+/* ---- VHDL for any circuit ------------------------------------------------ */
+
+#include "wire_vhdl.c"
+
+/* the file's name without its folder and .wire: the circuit's entity */
+static char *base_name(const char *path, int keep_ext)
+{
+    const char *b = path, *p;
+    char *r;
+    size_t n;
+    for (p = path; *p; p++) if (*p == '/' || *p == '\\') b = p + 1;
+    n = strlen(b);
+    if (!keep_ext && n > 5 && !strcmp(b + n - 5, ".wire")) n -= 5;
+    r = (char *)malloc(n + 1);
+    memcpy(r, b, n);
+    r[n] = 0;
+    return r;
+}
+
 /* ---- the book: a pdf to read beside the circuit --------------------------- */
 
 /* books: pdfs to read beside the circuit; --book or --book-url starts one,
@@ -1474,8 +1493,19 @@ static void write_vhdl(void)
     }
     data = read_file(path, &n);
     if (!data) {
+        /* no .vhd next to it: the VHDL Wire makes from the circuit */
+        char *top, *fname, *label;
         if (vhdl_file) { perror(vhdl_file); exit(1); }
-        fputs("null", jf);
+        top = base_name(src_name, 0);
+        fname = base_name(src_name, 1);
+        data = vhdl_generate(top, fname);
+        label = (char *)malloc(strlen(top) + 32);
+        sprintf(label, "%s.vhd (made by Wire)", top);
+        fputs("{\"name\":", jf);
+        jcstr(label);
+        fputs(",\"generated\":true,\"text\":", jf);
+        jcstr(data);
+        fputc('}', jf);
         return;
     }
     for (name = path; *path; path++) if (*path == '/' || *path == '\\') name = path + 1;
@@ -2213,7 +2243,7 @@ int main(int argc, char **argv)
     gram_grammar *g;
     gram_node *prog;
     const char *out = NULL;
-    int i, json = 0, tree = 0, check = 0;
+    int i, json = 0, tree = 0, check = 0, to_vhdl = 0;
     char *text, *def = NULL;
     size_t len;
 
@@ -2227,6 +2257,7 @@ int main(int argc, char **argv)
                    "  file.wire        writes file.html next to it\n"
                    "  -o out.html      write the page somewhere else\n"
                    "  --json           print the netlist as JSON instead\n"
+                   "  --to-vhdl        print the circuit as VHDL instead (with -o: write it there)\n"
                    "  --check          only check the circuit\n"
                    "  -I dir           also look for imports in dir (and in $WIRE_PATH)\n"
                    "  --book f.pdf     put a pdf in the page, to read beside the circuit\n"
@@ -2240,6 +2271,7 @@ int main(int argc, char **argv)
             return 0;
         } else if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--json")) json = 1;
+        else if (!strcmp(argv[i], "--to-vhdl")) to_vhdl = 1;
         else if (!strcmp(argv[i], "--check")) check = 1;
         else if (!strcmp(argv[i], "-t")) tree = 1;
         else if (!strcmp(argv[i], "-I") && i + 1 < argc && nincdirs < 16) incdirs[nincdirs++] = argv[++i];
@@ -2282,6 +2314,14 @@ int main(int argc, char **argv)
     finish();
     if (check) return 0;
     if (json) { jf = stdout; write_json(); putchar('\n'); return 0; }
+    if (to_vhdl) {
+        char *top = base_name(src_name, 0), *text = vhdl_generate(top, base_name(src_name, 1));
+        FILE *f = out ? fopen(out, "wb") : stdout;
+        if (!f) { perror(out); return 1; }
+        fputs(text, f);
+        if (out) { if (fclose(f) != 0) { perror(out); return 1; } fprintf(stderr, "wrote %s\n", out); }
+        return 0;
+    }
     if (!out) {
         size_t n = strlen(src_name);
         def = (char *)malloc(n + 6);

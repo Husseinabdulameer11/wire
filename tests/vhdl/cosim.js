@@ -1,6 +1,13 @@
 /* cosim.js - checks that a Wire circuit and its VHDL describe the same thing.
  *
  *   node tests/vhdl/cosim.js build/wire [file.wire ...] [--steps N] [--keep]
+ *   node tests/vhdl/cosim.js build/wire --generated [file.wire ...]
+ *
+ * --generated checks the VHDL Wire writes itself (wire --to-vhdl) instead of
+ * the .vhd files, for every example and every circuit in tests/sim. It also
+ * reads it with GHDL as strict VHDL-93 (what Vivado uses by default) and,
+ * if this GHDL can, synthesizes it, so it is hardware and not only a
+ * simulation.
  *
  * With no files it takes every .wire under examples/ that has a .vhd next
  * to it. For each one it reads the ports of the VHDL entity named like the
@@ -26,11 +33,12 @@ const WireSim = require("../../src/wire_sim.js");
 const args = process.argv.slice(2);
 const wire = args[0];
 if (!wire) { console.error("usage: node tests/vhdl/cosim.js build/wire [file.wire ...] [--steps N] [--keep]"); process.exit(2); }
-let STEPS = 300, KEEP = false;
+let STEPS = 300, KEEP = false, GEN = false;
 const files = [];
 for (let i = 1; i < args.length; i++) {
   if (args[i] === "--steps") STEPS = +args[++i];
   else if (args[i] === "--keep") KEEP = true;
+  else if (args[i] === "--generated") GEN = true;
   else files.push(args[i]);
 }
 const root = path.join(__dirname, "..", "..");
@@ -38,10 +46,13 @@ if (!files.length) {
   const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
     e.isDirectory() ? (e.name === "lib" ? [] : walk(path.join(d, e.name))) : e.name.endsWith(".wire") ? [path.join(d, e.name)] : []);
   for (const f of walk(path.join(root, "examples")).sort())
-    if (fs.existsSync(f.replace(/\.wire$/, ".vhd"))) files.push(path.relative(process.cwd(), f));
+    if (GEN || fs.existsSync(f.replace(/\.wire$/, ".vhd"))) files.push(path.relative(process.cwd(), f));
+  if (GEN) for (const f of walk(path.join(root, "tests", "sim")).sort()) files.push(path.relative(process.cwd(), f));
 }
 const ghdl = spawnSync("ghdl", ["--version"]).status === 0;
 if (!ghdl) { console.log("cosim: ghdl not found, skipping the VHDL checks"); process.exit(0); }
+const canSynth = GEN && /synth/i.test(spawnSync("ghdl", ["--help"], { encoding: "utf8" }).stdout || "");
+let synthNotes = 0;
 
 const mask = w => w >= 32 ? 0xFFFFFFFF : ((1 << w) >>> 0) - 1;
 function rng(seed) {
@@ -82,16 +93,39 @@ const lit = (w, v, k) => {
 };
 
 let failed = 0;
+let skipped = 0;
 for (const file of files) {
-  const vfile = file.replace(/\.wire$/, ".vhd"), top = path.basename(file, ".wire");
-  const src = fs.readFileSync(file, "utf8"), vtext = fs.readFileSync(vfile, "utf8");
+  const top = path.basename(file, ".wire");
   const fail = msg => { failed++; console.log(`FAIL ${file}\n  ${msg}`); };
+  let vfile = file.replace(/\.wire$/, ".vhd"), gendir = null;
+  if (GEN) {
+    /* the VHDL Wire makes, in a folder of its own */
+    gendir = fs.mkdtempSync(path.join(os.tmpdir(), "wirevhd-"));
+    vfile = path.join(gendir, top + ".vhd");
+    try { execFileSync(wire, ["--to-vhdl", "-o", vfile, file], { stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (e) { fail(String(e.stderr || e.message).trim()); continue; }
+    /* strict VHDL-93, as Vivado reads a .vhd file */
+    const r93 = spawnSync("ghdl", ["-a", "--std=93", "--workdir=" + gendir, vfile], { cwd: gendir, encoding: "utf8" });
+    if (r93.status !== 0) { fail(`not valid VHDL-93:\n  ${(r93.stderr || r93.stdout).trim().split("\n").slice(0, 6).join("\n  ")}` + (KEEP ? `\n  vhdl: ${vfile}` : "")); continue; }
+    if (canSynth) {
+      const syn = spawnSync("ghdl", ["--synth", "--std=93", "--workdir=" + gendir, vfile, "-e", top], { cwd: gendir, encoding: "utf8" });
+      if (syn.status !== 0) {
+        const msg = (syn.stderr || syn.stdout).trim().split("\n")[0];
+        /* GHDL cannot synthesize a tri-state bus inside the design (several
+         * drivers on one signal); Vivado turns those into logic */
+        if (/multiple assignments/.test(msg) && /\bbus\b/.test(fs.readFileSync(file, "utf8"))) synthNotes++;
+        else { fail(`GHDL cannot synthesize it:\n  ${msg}` + (KEEP ? `\n  vhdl: ${vfile}` : "")); continue; }
+      }
+    }
+  }
+  const src = fs.readFileSync(file, "utf8"), vtext = fs.readFileSync(vfile, "utf8");
   let ports;
   try { ports = vhdlPorts(vtext, top); } catch (e) { fail(`${vfile}: ${e.message}`); continue; }
   /* options from the .wire file */
   const rename = {}, prob = {}, hold = {}, apart = [];
   let steps = STEPS;
-  for (const m of src.matchAll(/^#\s*vhdl ports:(.*)$/gm)) for (const kv of m[1].trim().split(/\s+/)) { const [a, b] = kv.split("="); rename[a] = b; }
+  if (!GEN) for (const m of src.matchAll(/^#\s*vhdl ports:(.*)$/gm)) for (const kv of m[1].trim().split(/\s+/)) { const [a, b] = kv.split("="); rename[a] = b; }
+  else for (const m of vtext.matchAll(/^--\s*renamed:(.*)$/gm)) for (const kv of m[1].trim().split(/\s+/)) { const [a, b] = kv.split("="); rename[a] = b; }
   for (const m of src.matchAll(/^#\s*test:(.*)$/gm)) {
     let h = false;
     if (/^\s*apart\s/.test(m[1])) { apart.push(m[1].trim().split(/\s+/).slice(1)); continue; }
@@ -106,7 +140,7 @@ for (const file of files) {
   catch (e) { fail(String(e.stderr || e.message).trim()); continue; }
   const vname = n => rename[n] || n;
   const top0 = D.nodes.map((n, j) => ({ n, j })).filter(x => x.n.inst === 0);
-  const wins = top0.filter(x => ["input", "button"].includes(x.n.kind)).map(x => ({ j: x.j, name: vname(x.n.name), w: D.nets[x.n.out[0]].w }));
+  const wins = top0.filter(x => ["input", "button", "keypad"].includes(x.n.kind)).map(x => ({ j: x.j, name: vname(x.n.name), w: D.nets[x.n.out[0]].w }));
   const clocks = top0.filter(x => x.n.kind === "clock").map(x => ({ j: x.j, name: vname(x.n.name) }));
   const wouts = top0.filter(x => ["output", "led", "hex", "seg7"].includes(x.n.kind)).map(x => ({ net: x.n.in[0], name: vname(x.n.name), w: D.nets[x.n.in[0]].w }));
   /* every VHDL input must be a Wire input or clock; outputs are compared where both have them */
@@ -138,6 +172,7 @@ for (const file of files) {
   ins.forEach(i => { val[i.name] = 0; held[i.name] = 0; });
   const isReset = n => /^(reset|clr|rst)$/i.test(n);
   const body = [];
+  let unstable = false;
   const check = (when, step) => {
     for (const o of outs) {
       const v = sim.v(o.net), k = sim.k(o.net);
@@ -157,17 +192,24 @@ for (const file of files) {
     }
     for (const g of apart) { let one = false; for (const n of g) if (val[n]) { if (one) val[n] = 0; one = true; } }
     for (const i of ins) sim.setState(i.j, val[i.name]);
-    sim.simulate();
+    if (!sim.simulate()) unstable = true;
     body.push(`    -- step ${step}`);
     body.push("    " + ins.map(i => `${i.name} <= ${lit(i.vw, val[i.name], mask(i.w))};`).join(" ") + " wait for 1 ns;");
     check("before the clock", step);
     if (clocks.length) {
-      clocks.forEach(c => sim.setState(c.j, 1)); sim.simulate();
+      clocks.forEach(c => sim.setState(c.j, 1)); if (!sim.simulate()) unstable = true;
       body.push(`    ${clocks.map(c => `${c.name} <= '1';`).join(" ")} wait for 1 ns;`);
       check("after the rising edge", step);
-      clocks.forEach(c => sim.setState(c.j, 0)); sim.simulate();
+      clocks.forEach(c => sim.setState(c.j, 0)); if (!sim.simulate()) unstable = true;
       body.push(`    ${clocks.map(c => `${c.name} <= '0';`).join(" ")} wait for 1 ns;`);
     }
+  }
+  if (unstable) {
+    /* a circuit that oscillates on purpose (a ring of inverters) has no
+     * settled value to compare */
+    skipped++;
+    console.log(`skip ${file}: it oscillates in Wire, nothing settled to compare`);
+    continue;
   }
   const sig = p => p.vw ? `std_logic_vector(${p.vw - 1} downto 0)` : "std_logic";
   const tb = `library ieee;
@@ -201,7 +243,11 @@ end sim;
     continue;
   }
   if (!KEEP) fs.rmSync(dir, { recursive: true, force: true });
+  if (gendir && !KEEP) fs.rmSync(gendir, { recursive: true, force: true });
   console.log(`ok   ${file}: ${steps} steps, ${outs.length} output(s) agree with ${path.basename(vfile)}${clocks.length ? "" : " (no clock)"}`);
 }
-if (failed) { console.log(`${failed} of ${files.length} examples differ from their VHDL`); process.exit(1); }
-console.log(`all ${files.length} examples agree with their VHDL`);
+if (failed) { console.log(`${failed} of ${files.length} ${GEN ? "circuits differ from the VHDL Wire made" : "examples differ from their VHDL"}`); process.exit(1); }
+const ran = files.length - skipped;
+console.log(GEN ? `all ${ran} circuits agree with the VHDL Wire made for them${skipped ? ` (${skipped} skipped)` : ""}` +
+                  (canSynth ? `; GHDL synthesizes all of it${synthNotes ? ` but ${synthNotes} with an internal tri-state bus (GHDL cannot; Vivado makes it logic)` : ""}` : "")
+                : `all ${ran} examples agree with their VHDL`);

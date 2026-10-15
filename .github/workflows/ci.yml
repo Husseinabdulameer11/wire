@@ -63,6 +63,22 @@ jobs:
           install: make diffutils mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-nodejs
       - run: make test GRAM=gram-src
 
+  # Wire in WebAssembly (the playground): it must do byte for byte what the
+  # native wire does, on every circuit and every error message
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: emscripten-core/setup-emsdk@v14
+        with: { version: 3.1.74 }
+      - run: make web-test GRAM=gram-src
+      - run: make site GRAM=gram-src
+      - run: test -f build/site/playground.html && test -f build/site/wire.wasm
+
   docker:
     runs-on: ubuntu-latest
     steps:

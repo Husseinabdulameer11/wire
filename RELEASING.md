@@ -27,6 +27,13 @@ The `ci` workflow runs on that push: Linux (gcc and clang, with Node and
 GHDL, so every check runs), Linux with gram installed, macOS, Windows, and
 the Docker image.
 
+## The site on GitHub Pages
+
+`.github/workflows/pages.yml` builds the examples site and the playground
+and publishes them at https://husseinabdulameer11.github.io/wire/ on every
+push to `main`. Turn it on once: Settings → Pages → Build and deployment →
+Source: **GitHub Actions**. Then push, or run **pages** from the Actions tab.
+
 ## One-time setup
 
 1. **Two public repositories under the same account**: `wire` and `gram`.

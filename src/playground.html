@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wire playground</title>
+<meta name="description" content="Build a digital circuit by dragging parts, or write it in Wire, simulate it in your browser, and save it as VHDL for Vivado.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+<style>
+/* the same paper, ink and signal colours as the circuit pages */
+:root {
+  --paper: #f3f6f8; --grid: #dfe6ec; --ink: #1d2b3a; --ink-soft: #5b6b7c;
+  --panel: #ffffff; --line: #c9d3dc; --hi: #e09a12; --hi-soft: rgba(224,154,18,.18);
+  --on: #1fae4b; --bad: #c8322b; --bad-soft: rgba(200,50,43,.10);
+  --kw: #6a3fb5; --part: #155c8a; --num: #a35a00; --str: #2c7a3c; --cm: #7a8896;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #121a23; --grid: #1a2430; --ink: #d4dde7; --ink-soft: #8797a8;
+    --panel: #18222d; --line: #2c3a4a; --hi: #f0b23a; --hi-soft: rgba(240,178,58,.2);
+    --on: #3ddc6f; --bad: #ef5a52; --bad-soft: rgba(239,90,82,.14);
+    --kw: #b99cf0; --part: #6fb3e6; --num: #f0a64a; --str: #7fd08b; --cm: #6f7f90;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #121a23; --grid: #1a2430; --ink: #d4dde7; --ink-soft: #8797a8;
+  --panel: #18222d; --line: #2c3a4a; --hi: #f0b23a; --hi-soft: rgba(240,178,58,.2);
+  --on: #3ddc6f; --bad: #ef5a52; --bad-soft: rgba(239,90,82,.14);
+  --kw: #b99cf0; --part: #6fb3e6; --num: #f0a64a; --str: #7fd08b; --cm: #6f7f90;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: 15px/1.4 "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  display: grid; grid-template-rows: auto 3px 1fr; overflow: hidden;
+}
+a { color: inherit; }
+
+/* ---- the top */
+header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: max(10px, env(safe-area-inset-top)) 16px 10px; background: var(--panel);
+}
+h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: -.005em; white-space: nowrap; }
+h1 span { color: var(--ink-soft); font-weight: 400; }
+.file { display: flex; align-items: center; gap: 6px; }
+.file label { color: var(--ink-soft); white-space: nowrap; }
+select, input[type=text], input[type=number] {
+  font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line);
+  border-radius: 6px; min-height: 34px; padding: 4px 8px;
+}
+select { max-width: 230px; }
+.name { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.name input { border: 0; background: transparent; width: 11ch; min-width: 4ch; max-width: 24ch; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13.5px; padding-right: 0; }
+.name span { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13.5px; color: var(--ink-soft); padding-right: 8px; }
+.group { display: flex; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; overflow: hidden; }
+.group button + button { border-left: 1px solid var(--line); }
+button {
+  font: inherit; font-weight: 500; color: var(--ink); background: transparent; border: 0;
+  padding: 6px 12px; min-height: 34px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  white-space: nowrap;
+}
+button:hover { background: var(--hi-soft); }
+button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--hi); outline-offset: -2px;
+}
+.spacer { flex: 1; }
+nav.links { display: flex; gap: 14px; font-size: 14px; }
+nav.links a { color: var(--ink-soft); }
+nav.links a:hover { color: var(--ink); }
+
+/* ---- the signal: one wire across the page, carrying the compiler's state */
+#signal { background: var(--line); transition: background-color .25s; }
+#signal.ok { background: var(--on); }
+#signal.err { background: var(--bad); }
+@media (prefers-reduced-motion: reduce) { #signal { transition: none; } }
+
+/* ---- the left side: parts (drawing) or code (writing), then the message */
+main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height: 0; }
+#side { display: grid; grid-template-rows: 1fr auto; min-height: 0; border-right: 1px solid var(--line); background: var(--panel); }
+
+/* drawing: the parts to drag, what is selected, the Wire it makes */
+#draw { overflow: auto; padding: 14px 16px 18px; }
+#draw h2 { font-size: 13.5px; font-weight: 600; color: var(--ink-soft); margin: 14px 0 6px; }
+#draw h2:first-child { margin-top: 0; }
+.parts { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+.parts button {
+  flex-direction: column; gap: 2px; padding: 6px 4px 5px; min-height: 0; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--paper); font-size: 13.5px; font-weight: 500; cursor: grab;
+}
+.parts button svg { width: 40px; height: 26px; fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linejoin: round; }
+.parts button svg .f { fill: var(--panel); }
+.parts button svg text { fill: var(--ink); stroke: none; font: 600 11px "IBM Plex Mono", monospace; }
+.parts button:hover { border-color: var(--hi); background: var(--hi-soft); }
+.parts button[aria-pressed="true"] { border-color: var(--hi); background: var(--hi-soft); color: var(--ink); box-shadow: inset 0 0 0 1px var(--hi); }
+.how { color: var(--ink-soft); font-size: 14px; margin: 10px 0 0; }
+.how b { color: var(--ink); font-weight: 600; }
+#props { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: var(--paper); }
+#props .title { font-weight: 600; margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
+#props .title span { font-weight: 400; color: var(--ink-soft); }
+#props .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+#props label { display: inline-flex; align-items: center; gap: 6px; }
+#props input[type=text] { width: 12ch; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13.5px; background: var(--panel); }
+#props input[type=number] { width: 7ch; background: var(--panel); }
+#props select { background: var(--panel); }
+#props .del { margin-left: auto; color: var(--bad); }
+.tools { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.tools .group button { min-height: 32px; }
+#gen { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
+  font: 12.5px/1.55 "IBM Plex Mono", ui-monospace, monospace; white-space: pre; overflow: auto; max-height: 260px; }
+
+/* writing: a textarea over its own highlighted copy */
+.ed { position: relative; display: grid; grid-template-columns: auto 1fr; min-height: 0; overflow: hidden;
+  font: 13.5px/1.6 "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; tab-size: 4; }
+.gutter { padding: 12px 10px 12px 14px; color: var(--ink-soft); text-align: right; user-select: none; overflow: hidden;
+  background: var(--paper); border-right: 1px solid var(--line); min-width: 3.4em; }
+.gutter div.err { color: var(--bad); font-weight: 500; }
+.area { position: relative; min-width: 0; overflow: hidden; }
+.area pre, .area textarea {
+  margin: 0; padding: 12px 16px 40px; border: 0; font: inherit; white-space: pre; overflow: auto;
+  position: absolute; inset: 0; width: 100%; height: 100%; tab-size: 4;
+}
+.area pre { pointer-events: none; color: var(--ink); overflow: hidden; }
+.area pre .errline { background: var(--bad-soft); box-shadow: inset 3px 0 var(--bad); display: inline-block; min-width: 100%; }
+.area textarea { color: transparent; background: transparent; caret-color: var(--ink); resize: none; outline: none; }
+.area textarea::selection { background: var(--hi-soft); color: transparent; }
+.t-cm { color: var(--cm); font-style: italic; }
+.t-kw { color: var(--kw); font-weight: 500; }
+.t-part { color: var(--part); }
+.t-num { color: var(--num); }
+.t-str { color: var(--str); }
+
+#msg { border-top: 1px solid var(--line); padding: 9px 16px 10px; font-size: 14px; min-height: 42px; max-height: 34vh; overflow: auto; }
+#msg.err { color: var(--bad); background: var(--bad-soft); }
+#msg pre { margin: 0; font: 12.5px/1.5 "IBM Plex Mono", ui-monospace, monospace; white-space: pre-wrap; }
+#msg button { min-height: 0; padding: 0; font-weight: 600; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+#msg button:hover { background: none; }
+#msg .hint { color: var(--ink-soft); }
+
+#view { position: relative; min-width: 0; min-height: 0; background: var(--paper);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px; }
+#view iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; }
+#view iframe.back { visibility: hidden; }
+#loading { position: absolute; left: 20px; top: 18px; color: var(--ink-soft); }
+
+/* ---- phones: one pane at a time */
+#tabs { display: none; }
+@media (max-width: 860px) {
+  body { grid-template-rows: auto 3px auto 1fr; }
+  /* three rows: title and links; Draw/Write and the examples; file and actions */
+  header { padding-left: 12px; padding-right: 12px; gap: 8px; }
+  h1 { order: 0; font-size: 18px; }
+  nav.links { order: 1; margin-left: auto; gap: 12px; font-size: 13.5px; }
+  nav.links a[href*="#the-language"] { display: none; }
+  .mode { order: 2; }
+  .file.ex { order: 3; flex: 1 1 0; min-width: 0; }
+  .file.ex select { flex: 1; min-width: 0; max-width: none; width: 100%; }
+  .file:not(.ex) { order: 4; }
+  .actions { order: 5; }
+  .spacer { display: none; }
+  header > * { flex-shrink: 1; }
+  header::after { content: ""; order: 1; flex-basis: 100%; height: 0; }
+  #tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--line); }
+  #tabs button { flex: 1; justify-content: center; border-bottom: 2px solid transparent; border-radius: 0; }
+  #tabs button[aria-selected="true"] { border-bottom-color: var(--ink); background: transparent; color: var(--ink); }
+  main { grid-template-columns: 1fr; }
+  #side, #view { grid-area: 1 / 1; }
+  #side { border-right: 0; }
+  main[data-pane="side"] #view, main[data-pane="circuit"] #side { visibility: hidden; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Wire <span>playground</span></h1>
+  <div class="group mode" role="group" aria-label="How to make the circuit">
+    <button id="mode-draw" aria-pressed="true" title="Drag parts onto the circuit and wire them">Draw</button>
+    <button id="mode-write" aria-pressed="false" title="Write the circuit in Wire">Write</button>
+  </div>
+  <div class="file ex">
+    <select id="example" aria-label="Open an example"><option value="">Open an example…</option></select>
+  </div>
+  <div class="file">
+    <div class="name"><input id="name" aria-label="File name" type="text" value="my_circuit" spellcheck="false" autocapitalize="off" autocomplete="off" title="The VHDL entity gets this name"><span>.wire</span></div>
+  </div>
+  <div class="group actions" role="group" aria-label="Your circuit">
+    <button id="new" title="Start a new circuit">New</button>
+    <button id="savewire" title="Download the Wire source">Save .wire</button>
+    <button id="savevhd" title="Download the circuit as VHDL-93, ready for Vivado">Save .vhd</button>
+    <button id="share" title="Copy a link that opens this circuit">Copy link</button>
+  </div>
+  <div class="spacer"></div>
+  <nav class="links">
+    <a href="index.html">All examples</a>
+    <a href="https://github.com/Husseinabdulameer11/wire#the-language" target="_blank" rel="noopener">Language</a>
+    <a href="https://github.com/Husseinabdulameer11/wire" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</header>
+<div id="signal" role="presentation"></div>
+<div id="tabs" role="tablist" aria-label="Show">
+  <button role="tab" id="tab-side" aria-selected="true" aria-controls="side">Parts</button>
+  <button role="tab" id="tab-circuit" aria-selected="false" aria-controls="view">Circuit</button>
+</div>
+<main id="main" data-pane="side">
+  <section id="side" aria-label="Parts and code">
+    <div id="draw">
+      <h2>In and out</h2>
+      <div class="parts" data-group="io"></div>
+      <h2>Gates</h2>
+      <div class="parts" data-group="gates"></div>
+      <h2>Building blocks</h2>
+      <div class="parts" data-group="blocks"></div>
+      <p class="how" id="how"><b>Drag a part</b> onto the circuit (or tap it, then tap the circuit). <b>Drag from pin to pin</b> to wire them; drag from an input pin to empty space to unwire it (an unwired input reads 0). Click a part to change it; <b>Delete</b> removes it.</p>
+      <h2>Selected part</h2>
+      <div id="props"><span class="how">Click a part in the circuit to rename it or change its size.</span></div>
+      <div class="tools">
+        <div class="group">
+          <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+          <button id="tidy" title="Arrange the parts in columns, inputs on the left">Tidy up</button>
+        </div>
+      </div>
+      <h2>The Wire it makes</h2>
+      <pre id="gen" aria-label="The Wire source of the drawing"></pre>
+      <div class="tools"><div class="group"><button id="tocode" title="Carry on in the code editor with this source">Edit as code</button></div></div>
+    </div>
+    <div class="ed" id="editor" hidden>
+      <div class="gutter" id="gutter" aria-hidden="true"></div>
+      <div class="area">
+        <pre id="hl" aria-hidden="true"></pre>
+        <textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="Wire source" aria-describedby="msg"></textarea>
+      </div>
+    </div>
+    <div id="msg" role="status" aria-live="polite">Loading Wire…</div>
+  </section>
+  <section id="view" aria-label="The circuit">
+    <div id="loading">The circuit appears here once Wire has loaded.</div>
+    <iframe id="f0" title="The circuit"></iframe>
+    <iframe id="f1" title="The circuit" class="back"></iframe>
+  </section>
+</main>
+
+<script src="wire.js"></script>
+<script>
+"use strict";
+/* Every example (with the files it imports and its rom contents), and the
+ * standard library: put in by tools/playground.js. */
+const FILES = /*PLAYGROUND_FILES*/{};
+const EXAMPLES = /*PLAYGROUND_EXAMPLES*/[];
+
+const $ = id => document.getElementById(id);
+const src = $("src"), hl = $("hl"), gutter = $("gutter"), msg = $("msg"), signal = $("signal");
+const frames = [$("f0"), $("f1")];
+let front = 0, frontUrl = null;
+const clone = x => JSON.parse(JSON.stringify(x));
+const narrow = () => matchMedia("(max-width: 860px)").matches;
+
+/* ======================================================= the parts to draw
+ * Each kind: its label, where it sits in the palette, its pins (inputs on
+ * the left, outputs on the right, named as Wire names them), and the Wire it
+ * becomes. */
+const GATE_NAMES = { and: "AND", or: "OR", nand: "NAND", nor: "NOR", xor: "XOR", xnor: "XNOR" };
+const KINDS = {
+  input:   { label: "Input", group: "io", prefix: "", bits: 1 },
+  button:  { label: "Button", group: "io", prefix: "btn" },
+  clock:   { label: "Clock", group: "io", prefix: "clk" },
+  output:  { label: "Output", group: "io", prefix: "", bits: 1 },
+  led:     { label: "LED", group: "io", prefix: "led" },
+  hex:     { label: "Hex digit", group: "io", prefix: "digit" },
+  and: { label: "AND", group: "gates", n: 2 }, or: { label: "OR", group: "gates", n: 2 },
+  not: { label: "NOT", group: "gates" },
+  nand: { label: "NAND", group: "gates", n: 2 }, nor: { label: "NOR", group: "gates", n: 2 },
+  xor: { label: "XOR", group: "gates", n: 2 }, xnor: { label: "XNOR", group: "gates", n: 2 },
+  mux:     { label: "Mux", group: "blocks", n: 2 },
+  add:     { label: "Adder", group: "blocks", prefix: "add" },
+  compare: { label: "Compare", group: "blocks", prefix: "cmp" },
+  dff:     { label: "D flip-flop", group: "blocks", prefix: "ff" },
+  counter: { label: "Counter", group: "blocks", prefix: "cnt", bits: 4 }
+};
+const SOURCE = new Set(["input", "button", "clock"]), SINK = new Set(["output", "led", "hex"]);
+const insOf = p => {
+  const k = p.kind;
+  if (SOURCE.has(k)) return [];
+  if (SINK.has(k) || k === "not") return ["in"];
+  if (GATE_NAMES[k]) return Array.from({ length: p.n || 2 }, (_, i) => String(i));
+  if (k === "mux") return [...Array.from({ length: p.n || 2 }, (_, i) => "d" + i), "sel"];
+  if (k === "add") return p.cin ? ["a", "b", "cin"] : ["a", "b"];
+  if (k === "compare") return ["a", "b"];
+  if (k === "dff") return ["d", "clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : [])];
+  if (k === "counter") return ["clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : [])];
+  return [];
+};
+const outsOf = p => {
+  const k = p.kind;
+  if (SINK.has(k)) return [];
+  if (k === "add") return ["sum", "cout"];
+  if (k === "compare") return ["lt", "eq", "gt"];
+  if (k === "dff") return ["q", "nq"];
+  if (k === "counter") return ["q", "carry"];
+  return ["out"];
+};
+
+/* small pictures for the palette, in the shapes the circuit uses */
+const ICONS = {
+  input: '<rect class="f" x="8" y="6" width="18" height="14" rx="3"/><text x="13" y="17">0</text><path d="M26 13H34"/>',
+  button: '<rect class="f" x="9" y="6" width="16" height="14" rx="7"/><path d="M25 13H34"/>',
+  clock: '<path d="M4 18H10V8H16V18H22V8H28V18H32"/>',
+  output: '<path d="M4 13H12"/><rect class="f" x="12" y="6" width="18" height="14" rx="7"/><text x="17" y="17">0</text>',
+  led: '<path d="M4 13H14"/><circle class="f" cx="22" cy="13" r="7"/>',
+  hex: '<rect class="f" x="12" y="2" width="16" height="22" rx="2"/><path d="M16 6H24M16 13H24M16 20H24M16 6V20M24 6V20" stroke-width="1.4"/>',
+  and: '<path d="M4 9H11M4 17H11M29 13H36"/><path class="f" d="M11 4H19A9 9 0 0 1 19 22H11Z"/>',
+  or: '<path d="M4 9H13M4 17H13M30 13H36"/><path class="f" d="M10 4Q22 4 30 13Q22 22 10 22Q15 13 10 4Z"/>',
+  not: '<path d="M4 13H11"/><path class="f" d="M11 5L25 13L11 21Z"/><circle class="f" cx="28" cy="13" r="3"/><path d="M31 13H36"/>',
+  nand: '<path d="M4 9H11M4 17H11M32 13H36"/><path class="f" d="M11 4H19A9 9 0 0 1 19 22H11Z"/><circle class="f" cx="30" cy="13" r="2.4"/>',
+  nor: '<path d="M4 9H13M4 17H13M33 13H36"/><path class="f" d="M10 4Q22 4 29 13Q22 22 10 22Q15 13 10 4Z"/><circle class="f" cx="31" cy="13" r="2.4"/>',
+  xor: '<path d="M4 9H13M4 17H13M30 13H36"/><path d="M7 4Q12 13 7 22"/><path class="f" d="M10 4Q22 4 30 13Q22 22 10 22Q15 13 10 4Z"/>',
+  xnor: '<path d="M4 9H13M4 17H13M33 13H36"/><path d="M7 4Q12 13 7 22"/><path class="f" d="M10 4Q22 4 29 13Q22 22 10 22Q15 13 10 4Z"/><circle class="f" cx="31" cy="13" r="2.4"/>',
+  mux: '<path d="M4 8H13M4 18H13M28 13H36M20 24V20"/><path class="f" d="M13 3L28 8V18L13 23Z"/>',
+  add: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M15 13H25M20 8V18"/>',
+  compare: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M15 10H25M15 16H25"/>',
+  dff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="17" y="14">D</text>',
+  counter: '<rect class="f" x="7" y="3" width="26" height="20" rx="2"/><text x="10" y="17">+1</text>'
+};
+
+/* ============================================================ the drawing
+ * parts: { id, kind, name, x, y, bits?, n?, en?, rst?, cin? }
+ * links: { from: { id, pin }, to: { id, pin } }, one per input pin */
+let model = null, undoStack = [];
+let selectedName = null, armed = null;
+const STARTER_DRAWING = () => ({
+  title: "My circuit",
+  next: 5,
+  parts: [
+    { id: 1, kind: "input", name: "a", x: 0, y: 0, bits: 1 },
+    { id: 2, kind: "input", name: "b", x: 0, y: 60, bits: 1 },
+    { id: 3, kind: "and", name: "and1", x: 110, y: 20, n: 2 },
+    { id: 4, kind: "led", name: "led1", x: 250, y: 30 }
+  ],
+  links: [
+    { from: { id: 1, pin: "out" }, to: { id: 3, pin: "0" } },
+    { from: { id: 2, pin: "out" }, to: { id: 3, pin: "1" } },
+    { from: { id: 3, pin: "out" }, to: { id: 4, pin: "in" } }
+  ]
+});
+const partByName = name => model.parts.find(p => p.name === name);
+const partById = id => model.parts.find(p => p.id === id);
+
+/* a fresh name: a, b, c... for inputs; y, z, out1... for outputs; and1,
+ * ff1... for the rest */
+const RESERVED = new Set("input output wire led seg7 hex button clock bus keypad circuit import component and or nand nor xor xnor not buf mux demux decoder encoder add compare dff reg tff jkff counter tri rom ram".split(" "));
+function freshName(kind) {
+  const used = new Set(model.parts.map(p => p.name.toLowerCase()));
+  const free = n => !used.has(n.toLowerCase()) && !RESERVED.has(n);
+  if (kind === "input") { for (const c of "abcdefghijklmnopqrstuvwx") if (free(c)) return c; }
+  if (kind === "output") { for (const c of ["y", "z"]) if (free(c)) return c; }
+  const base = KINDS[kind].prefix != null && KINDS[kind].prefix !== "" ? KINDS[kind].prefix : kind === "output" ? "out" : kind === "input" ? "in" : kind;
+  for (let i = 1; ; i++) if (free(base + i)) return base + i;
+}
+
+/* the drawing as Wire */
+function genCode(m) {
+  const byId = new Map(m.parts.map(p => [p.id, p]));
+  const into = new Map(m.links.map(l => [l.to.id + ":" + l.to.pin, l]));
+  const from = (p, pin) => {
+    const l = into.get(p.id + ":" + pin), f = l && byId.get(l.from.id);
+    if (!f) return "0";                          /* nothing wired: a 0 */
+    const outs = outsOf(f);
+    return f.kind === "compare" || l.from.pin !== outs[0] ? `${f.name}.${l.from.pin}` : f.name;
+  };
+  const w = p => (p.bits || 1) > 1 ? `[${p.bits}]` : "";
+  const lines = [`circuit "${(m.title || "My circuit").replace(/"/g, "'")}"`, "", "# drawn in the Wire playground", ""];
+  /* declarations, one line per kind, in the order the parts were added */
+  const decl = { input: "input ", button: "button", clock: "clock ", output: "output", led: "led   ", hex: "hex   " };
+  for (const k of Object.keys(decl)) {
+    const ps = m.parts.filter(p => p.kind === k);
+    if (ps.length) lines.push(`${decl[k]} ${ps.map(p => p.name + w(p)).join(", ")}`);
+  }
+  const body = [];
+  for (const p of m.parts) {
+    const k = p.kind, opt = (name, pin) => {
+      const v = from(p, pin);
+      return `, ${name} = ${v}`;
+    };
+    if (GATE_NAMES[k]) body.push(`${p.name} = ${k}(${insOf(p).map(pin => from(p, pin)).join(", ")})`);
+    else if (k === "not") body.push(`${p.name} = not(${from(p, "in")})`);
+    else if (k === "mux") body.push(`${p.name} = mux(${insOf(p).slice(0, -1).map(pin => from(p, pin)).join(", ")}, sel = ${from(p, "sel")})`);
+    else if (k === "add") body.push(`${p.name} = add(${from(p, "a")}, ${from(p, "b")}${p.cin ? opt("cin", "cin") : ""})`);
+    else if (k === "compare") body.push(`${p.name} = compare(${from(p, "a")}, ${from(p, "b")})`);
+    else if (k === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
+    else if (k === "counter") body.push(`${p.name} = counter(${from(p, "clk")}, bits = ${p.bits || 4}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
+  }
+  if (body.length) lines.push("", ...body);
+  const sinks = m.parts.filter(p => SINK.has(p.kind));
+  if (sinks.length) lines.push("", ...sinks.map(p => `${p.name} = ${from(p, "in")}`));
+  return lines.join("\n") + "\n";
+}
+
+/* ======================================== Wire, compiled to WebAssembly once */
+let wasmModule = null;
+const ready = (async () => {
+  const r = await fetch("wire.wasm");
+  if (!r.ok) throw new Error("wire.wasm did not load");
+  wasmModule = await WebAssembly.compile(await r.arrayBuffer());
+})();
+
+async function wire(args, mainPath, mainText) {
+  await ready;
+  let out = "", err = "";
+  const m = await WireCompiler({
+    instantiateWasm(imports, done) { WebAssembly.instantiate(wasmModule, imports).then(i => done(i)); return {}; },
+    print: s => { out += s + "\n"; }, printErr: s => { err += s + "\n"; },
+    quit: (status, e) => { throw e; }
+  });
+  const put = (p, text) => { m.FS.mkdirTree(p.slice(0, p.lastIndexOf("/")) || "/"); m.FS.writeFile(p, text); };
+  for (const [p, text] of Object.entries(FILES)) put(p.startsWith("wire/lib/") ? "/" + p : "/r/" + p, text);
+  put("/r/" + mainPath, mainText);
+  m.FS.chdir("/r");
+  let code;
+  try { code = m.ccall("wire_run", "number", ["string"], [args.join("\n")]); }
+  catch (e) { code = typeof e.status === "number" ? e.status : (err += String(e) + "\n", 70); }
+  const read = p => { try { return m.FS.readFile(p, { encoding: "utf8" }); } catch (e) { return null; } };
+  return { code, out, err, read };
+}
+
+/* ======================================================= the two documents */
+let mode = "draw";             /* draw: the drawing; write: the code editor */
+let dir = "";                  /* the example's folder, where its imports are */
+let dirty = false;             /* the code was edited since it was loaded */
+const STORE = "wire-playground-2";
+const fileName = () => ($("name").value.replace(/[^A-Za-z0-9_]/g, "") || "my_circuit");
+const mainPath = () => (mode === "write" && dir ? dir + "/" : "") + fileName() + ".wire";
+const sourceNow = () => mode === "draw" ? genCode(model) : src.value;
+function persist() {
+  try { localStorage.setItem(STORE, JSON.stringify({ mode, name: $("name").value, draw: model, write: { dir, text: src.value } })); } catch (e) {}
+}
+
+/* ============================================================== compiling */
+let runSeq = 0, timer = 0, errLine = 0;
+function schedule(ms = 350) { clearTimeout(timer); timer = setTimeout(() => compile(), ms); }
+
+/* revertTo: in drawing mode, a change that breaks the circuit is undone */
+async function compile(revertTo) {
+  const seq = ++runSeq, path = mainPath(), text = sourceNow();
+  let r;
+  try { r = await wire(["-o", "/out.html", path], path, text); }
+  catch (e) { return fatal(e); }
+  if (seq !== runSeq) return;
+  if (r.code === 0) {
+    errLine = 0;
+    signal.className = "ok";
+    msg.className = "";
+    const line = r.err.split("\n").find(l => /\.wire: \d+ inputs?,/.test(l)) || "";
+    const sum = line.replace(/^.*?\.wire:\s*/, "").replace(/, 0 chips/, "") || "It works";
+    msg.innerHTML = "";
+    msg.append(sum.charAt(0).toUpperCase() + sum.slice(1) + ". ");
+    const h = document.createElement("span");
+    h.className = "hint";
+    h.textContent = mode === "draw" ? (narrow() ? "Try it under Circuit." : "Click the inputs to try it.")
+                                    : (narrow() ? "Open Circuit to try it." : "Click the inputs on the right to try it.");
+    msg.append(h);
+    show(r.read("/out.html"));
+  } else if (mode === "draw" && revertTo) {
+    /* that change cannot work: put the drawing back and say why */
+    model = revertTo;
+    undoStack.pop();
+    persist();
+    showGen();
+    showProps();
+    signal.className = "ok";
+    msg.className = "err";
+    msg.textContent = "Not done: " + r.err.trim().split("\n")[0].replace(/^.*?:\d+:\d+: (syntax )?error: /, "");
+    return;
+  } else showError(r.err.trim() || `Wire stopped (exit ${r.code}).`, path);
+  if (mode === "write") paint();
+}
+
+function showError(text, path) {
+  signal.className = "err";
+  msg.className = "err";
+  msg.innerHTML = "";
+  const m = /^(.*?):(\d+):(\d+): (?:syntax )?error/.exec(text);
+  errLine = m && m[1] === path && mode === "write" ? +m[2] : 0;
+  const pre = document.createElement("pre");
+  pre.textContent = text.replace(new RegExp("^" + path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ":", "gm"), "line ");
+  msg.append(pre);
+  if (errLine) {
+    const b = document.createElement("button");
+    b.textContent = `Go to line ${errLine}`;
+    b.onclick = () => goLine(errLine, m ? +m[3] : 1);
+    msg.append(b);
+  }
+}
+function fatal(e) {
+  signal.className = "err";
+  msg.className = "err";
+  msg.textContent = `Wire could not start here: ${e.message || e}. The examples site still works.`;
+}
+
+/* the page Wire made, swapped in once it has loaded so nothing flickers; in
+ * drawing mode it is told where the parts go and what to keep */
+function show(html) {
+  if (mode === "draw") {
+    let keep = {};
+    try { keep = frames[front].contentWindow.wireEditState ? frames[front].contentWindow.wireEditState() : {}; } catch (e) {}
+    const edit = { pos: Object.fromEntries(model.parts.map(p => [p.name, [p.x, p.y]])), view: keep.view || null, states: keep.states || {} };
+    html = html.replace("<head>", () => "<head><script>window.WIRE_EDIT=" + JSON.stringify(edit).replace(/</g, "\\u003c") + "<\/script>");
+  }
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  const back = frames[1 - front];
+  back.onload = () => {
+    back.classList.remove("back");
+    frames[front].classList.add("back");
+    if (frontUrl) URL.revokeObjectURL(frontUrl);
+    frontUrl = url;
+    front = 1 - front;
+    $("loading").hidden = true;
+  };
+  back.src = url;
+}
+
+/* ===================================================== changing the drawing */
+function change(fn) {
+  const before = clone(model);
+  fn(model);
+  undoStack.push(before);
+  if (undoStack.length > 200) undoStack.shift();
+  persist();
+  showGen();
+  showProps();
+  compile(before);
+}
+function undo() {
+  if (!undoStack.length) return;
+  model = undoStack.pop();
+  persist(); showGen(); showProps(); compile();
+}
+
+/* what the circuit page tells us (window.parent.wireCanvas) */
+window.wireCanvas = {
+  add(kind, x, y) {
+    if (!KINDS[kind]) return;
+    disarm();
+    change(m => {
+      const p = { id: m.next++, kind, name: freshName(kind), x, y };
+      if (KINDS[kind].bits) p.bits = KINDS[kind].bits;
+      if (KINDS[kind].n) p.n = KINDS[kind].n;
+      m.parts.push(p);
+      selectedName = p.name;
+    });
+  },
+  tap(x, y) { if (!armed) return false; this.add(armed, x, y); return true; },
+  connect(a, b) {
+    let o = a, i = b;
+    if (a.dir === "in" && b.dir === "out") { o = b; i = a; }
+    if (o.dir !== "out" || i.dir !== "in") {
+      msg.className = "err";
+      msg.textContent = "Wire an output (on the right of a part) to an input (on the left of one).";
+      return;
+    }
+    const fp = partByName(o.name), tp = partByName(i.name);
+    if (!fp || !tp) return;
+    change(m => {
+      m.links = m.links.filter(l => !(l.to.id === tp.id && l.to.pin === i.pin));
+      m.links.push({ from: { id: fp.id, pin: o.pin }, to: { id: tp.id, pin: i.pin } });
+    });
+  },
+  disconnect(i) {
+    const tp = partByName(i.name);
+    if (!tp || !model.links.some(l => l.to.id === tp.id && l.to.pin === i.pin)) return;
+    change(m => { m.links = m.links.filter(l => !(l.to.id === tp.id && l.to.pin === i.pin)); });
+  },
+  moved(name, x, y) {
+    const p = partByName(name);
+    if (!p || (p.x === x && p.y === y)) return;
+    undoStack.push(clone(model));
+    p.x = x; p.y = y;
+    persist();
+  },
+  movedAll(pos) {
+    undoStack.push(clone(model));
+    model.parts.forEach(p => { if (pos[p.name]) { p.x = pos[p.name][0]; p.y = pos[p.name][1]; } });
+    persist();
+  },
+  selected(name) { selectedName = name; showProps(); },
+  remove(name) { removePart(name); },
+  undo() { undo(); },
+  viewMoved() {}
+};
+function removePart(name) {
+  const p = partByName(name);
+  if (!p) return;
+  change(m => {
+    m.parts = m.parts.filter(q => q.id !== p.id);
+    m.links = m.links.filter(l => l.from.id !== p.id && l.to.id !== p.id);
+  });
+  selectedName = null;
+  showProps();
+}
+
+/* ---- the palette */
+function arm(kind) {
+  armed = armed === kind ? null : kind;
+  document.querySelectorAll(".parts button").forEach(b => b.setAttribute("aria-pressed", b.dataset.kind === armed));
+  if (armed) {
+    msg.className = "";
+    const what = GATE_NAMES[armed] || armed === "not" ? `${KINDS[armed].label} gate` : KINDS[armed].label.toLowerCase();
+    msg.textContent = `Now ${narrow() ? "tap" : "click"} the circuit where the ${what} goes.`;
+    if (narrow()) pane("circuit");
+  }
+}
+function disarm() { if (armed) arm(armed); }
+for (const [kind, k] of Object.entries(KINDS)) {
+  const b = document.createElement("button");
+  b.dataset.kind = kind;
+  b.draggable = true;
+  b.setAttribute("aria-pressed", "false");
+  b.title = `Drag the ${k.label.toLowerCase()} onto the circuit, or click it and then the circuit`;
+  b.innerHTML = `<svg viewBox="0 0 40 26" aria-hidden="true">${ICONS[kind]}</svg><span>${k.label}</span>`;
+  b.addEventListener("dragstart", e => { e.dataTransfer.setData("text/x-wire-part", kind); e.dataTransfer.effectAllowed = "copy"; });
+  b.addEventListener("click", () => arm(kind));
+  document.querySelector(`.parts[data-group="${k.group}"]`).append(b);
+}
+
+/* ---- the selected part */
+function showProps() {
+  const box = $("props");
+  const p = selectedName && model && partByName(selectedName);
+  box.innerHTML = "";
+  if (!p) {
+    const s = document.createElement("span");
+    s.className = "how";
+    s.textContent = "Click a part in the circuit to rename it or change its size.";
+    box.append(s);
+    return;
+  }
+  const k = p.kind, kind = KINDS[k];
+  const title = document.createElement("div");
+  title.className = "title";
+  title.innerHTML = `<span></span>`;
+  title.prepend(p.name + " ");
+  title.querySelector("span").textContent = kind.label + (GATE_NAMES[k] || k === "not" ? " gate" : "");
+  box.append(title);
+  const row = document.createElement("div");
+  row.className = "row";
+  box.append(row);
+  const field = (label, input) => { const l = document.createElement("label"); l.append(label + " ", input); row.append(l); return input; };
+
+  const nm = field("Name", Object.assign(document.createElement("input"), { type: "text", value: p.name, spellcheck: false }));
+  nm.setAttribute("autocapitalize", "off");
+  nm.addEventListener("change", () => {
+    const v = nm.value.trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(v) || RESERVED.has(v)) {
+      msg.className = "err";
+      msg.textContent = `${v || "An empty name"} cannot be a name: use letters, digits and _, starting with a letter, and not a word of Wire.`;
+      nm.value = p.name; return;
+    }
+    if (v === p.name) return;
+    if (model.parts.some(q => q !== p && q.name.toLowerCase() === v.toLowerCase())) {
+      msg.className = "err"; msg.textContent = `There is already a part called ${v}.`; nm.value = p.name; return;
+    }
+    selectedName = v;
+    change(() => { p.name = v; });
+  });
+  if (k === "input" || k === "output" || k === "counter") {
+    const b = field("Bits", Object.assign(document.createElement("input"), { type: "number", min: 1, max: 32, value: p.bits || 1 }));
+    b.addEventListener("change", () => {
+      const v = Math.max(1, Math.min(32, parseInt(b.value, 10) || 1));
+      if (v !== (p.bits || 1)) change(() => { p.bits = v; });
+    });
+  }
+  if (GATE_NAMES[k] || k === "mux") {
+    const sel = document.createElement("select");
+    (k === "mux" ? [2, 4, 8, 16] : [2, 3, 4, 5, 6, 7, 8]).forEach(v => sel.append(new Option(String(v), String(v), false, v === (p.n || 2))));
+    field(k === "mux" ? "Data inputs" : "Inputs", sel);
+    sel.addEventListener("change", () => {
+      const v = +sel.value;
+      change(m => {
+        p.n = v;
+        const keep = new Set(insOf(p));
+        m.links = m.links.filter(l => l.to.id !== p.id || keep.has(l.to.pin));
+      });
+    });
+  }
+  const tick = (label, key) => {
+    const c = Object.assign(document.createElement("input"), { type: "checkbox", checked: !!p[key] });
+    const l = document.createElement("label");
+    l.append(c, " " + label);
+    row.append(l);
+    c.addEventListener("change", () => change(m => {
+      p[key] = c.checked;
+      if (!c.checked) m.links = m.links.filter(x => !(x.to.id === p.id && x.to.pin === key));
+    }));
+  };
+  if (k === "dff" || k === "counter") { tick("Enable input", "en"); tick("Reset input", "rst"); }
+  if (k === "add") tick("Carry in", "cin");
+  const del = document.createElement("button");
+  del.className = "del";
+  del.textContent = "Delete";
+  del.onclick = () => removePart(p.name);
+  row.append(del);
+}
+
+/* ---- the Wire the drawing makes */
+function showGen() { $("gen").innerHTML = highlight(genCode(model)); }
+$("undo").onclick = undo;
+$("tidy").onclick = () => {
+  /* the circuit page lays it out in columns and tells us where it put things */
+  try { frames[front].contentWindow.document.getElementById("tidy").click(); } catch (e) {}
+};
+$("tocode").onclick = () => {
+  if (dirty && src.value.trim() && !confirm("Replace the code in the editor with this drawing's Wire?")) return;
+  src.value = genCode(model);
+  dir = "";
+  dirty = true;
+  setMode("write");
+};
+
+/* ======================================================== writing: editor */
+const KW = "circuit|import|component|input|output|wire|led|seg7|hex|button|clock|bus|keypad";
+const PARTS = "and|or|nand|nor|xor|xnor|not|buf|mux|demux|decoder|encoder|add|compare|dff|reg|tff|jkff|counter|tri|rom|ram";
+const TOK = new RegExp(`(#[^\\n]*|//[^\\n]*)|("[^"\\n]*"?)|\\b(0b[01_]+|0x[0-9a-fA-F_]+|\\d+)\\b|\\b(${KW})\\b|\\b(${PARTS})(?=\\s*\\()`, "g");
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function highlightLine(line) {
+  let html = "", at = 0, m;
+  TOK.lastIndex = 0;
+  while ((m = TOK.exec(line))) {
+    html += esc(line.slice(at, m.index));
+    const cls = m[1] ? "cm" : m[2] ? "str" : m[3] ? "num" : m[4] ? "kw" : "part";
+    html += `<span class="t-${cls}">${esc(m[0])}</span>`;
+    at = m.index + m[0].length;
+  }
+  return html + esc(line.slice(at));
+}
+const highlight = text => text.split("\n").map(highlightLine).join("\n");
+function paint() {
+  const lines = src.value.split("\n");
+  hl.innerHTML = lines.map((line, i) => {
+    const html = highlightLine(line);
+    return i + 1 === errLine ? `<span class="errline">${html || " "}</span>` : html;
+  }).join("\n") + "\n";
+  gutter.innerHTML = lines.map((_, i) => `<div${i + 1 === errLine ? ' class="err"' : ""}>${i + 1}</div>`).join("");
+  sync();
+}
+function sync() { hl.scrollTop = src.scrollTop; hl.scrollLeft = src.scrollLeft; gutter.scrollTop = src.scrollTop; }
+function goLine(line, col) {
+  const lines = src.value.split("\n");
+  let at = 0;
+  for (let i = 0; i < line - 1 && i < lines.length; i++) at += lines[i].length + 1;
+  at += Math.max(0, col - 1);
+  pane("side");
+  src.focus();
+  src.setSelectionRange(at, at);
+  const lh = parseFloat(getComputedStyle(src).lineHeight) || 21;
+  src.scrollTop = Math.max(0, (line - 4) * lh);
+  sync();
+}
+src.addEventListener("input", () => { dirty = true; paint(); persist(); schedule(); });
+src.addEventListener("scroll", sync);
+src.addEventListener("keydown", e => {
+  /* Tab indents (Escape first to move on with Tab); Enter keeps the indent */
+  if (e.key === "Tab" && !e.altKey && !e.ctrlKey && !e.metaKey && !src.dataset.leaving) {
+    e.preventDefault();
+    document.execCommand("insertText", false, "    ");
+  } else if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    const before = src.value.slice(0, src.selectionStart);
+    const line = before.slice(before.lastIndexOf("\n") + 1);
+    let ind = /^\s*/.exec(line)[0];
+    if (/\{\s*$/.test(line)) ind += "    ";
+    e.preventDefault();
+    document.execCommand("insertText", false, "\n" + ind);
+  } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault(); compile();
+  } else if (e.key === "Escape") {
+    src.dataset.leaving = "1";
+  }
+});
+src.addEventListener("blur", () => { delete src.dataset.leaving; });
+
+/* ===================================================== modes and documents */
+function setMode(m) {
+  mode = m;
+  $("mode-draw").setAttribute("aria-pressed", m === "draw");
+  $("mode-write").setAttribute("aria-pressed", m === "write");
+  $("draw").hidden = m !== "draw";
+  $("editor").hidden = m !== "write";
+  $("tab-side").textContent = m === "draw" ? "Parts" : "Code";
+  disarm();
+  if (m === "draw") { showGen(); showProps(); } else paint();
+  persist();
+  schedule(0);
+}
+$("mode-draw").onclick = () => { if (mode !== "draw") { $("example").value = ""; setMode("draw"); } };
+$("mode-write").onclick = () => { if (mode !== "write") setMode("write"); };
+
+const ex = $("example");
+if (narrow()) ex.options[0].text = "Examples";
+for (const s of EXAMPLES) {
+  const g = document.createElement("optgroup");
+  g.label = s.title;
+  for (const it of s.items) g.append(new Option(it.title, it.path));
+  ex.append(g);
+}
+const fitName = () => { $("name").style.width = Math.max(4, $("name").value.length + 1) + "ch"; };
+function loadCode(text, name, d) {
+  src.value = text;
+  $("name").value = name; fitName();
+  dir = d;
+  dirty = false;
+  errLine = 0;
+  src.scrollTop = 0;
+  setMode("write");
+}
+ex.addEventListener("change", () => {
+  const p = ex.value;
+  if (!p) return;
+  if (mode === "write" && dirty && !confirm("Replace your code with the example? Your changes to it are not kept.")) { ex.value = ""; return; }
+  loadCode(FILES[p], p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, ""), p.slice(0, p.lastIndexOf("/")));
+});
+
+const STARTER_CODE = `circuit "My circuit"
+
+# Write what is connected to what, and the circuit is drawn as you
+# type. Click its inputs to try it. Save .vhd gives you the same
+# circuit in VHDL, for Vivado.
+
+input  a, b, cin
+output sum, cout
+
+p    = a ^ b
+sum  = p ^ cin
+cout = (a & b) | (p & cin)
+`;
+$("new").onclick = () => {
+  if (mode === "draw") {
+    if (model.parts.length > 0 && !confirm("Start a new drawing? This one is not kept (Undo brings it back).")) return;
+    change(m => { const s = STARTER_DRAWING(); m.parts = []; m.links = []; m.next = s.next; });
+    selectedName = null; showProps();
+  } else {
+    if (dirty && !confirm("Start again? Your code is not kept.")) return;
+    ex.value = "";
+    loadCode(STARTER_CODE, "my_circuit", "");
+  }
+};
+$("name").addEventListener("input", () => { fitName(); persist(); schedule(); });
+$("name").addEventListener("change", () => { $("name").value = fileName(); fitName(); persist(); schedule(0); });
+
+/* ================================================== saving and sharing */
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function flash(btn, text) {
+  const was = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => { btn.textContent = was; }, 1400);
+}
+$("savewire").onclick = () => download(fileName() + ".wire", sourceNow(), "text/plain");
+$("savevhd").onclick = async () => {
+  const path = mainPath();
+  const r = await wire(["--to-vhdl", "-o", "/out.vhd", path], path, sourceNow());
+  if (r.code !== 0) { showError(r.err.trim(), path); if (mode === "write") paint(); return; }
+  download(fileName() + ".vhd", r.read("/out.vhd"), "text/x-vhdl");
+};
+const toB64 = s => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const fromB64 = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0)));
+$("share").onclick = async () => {
+  const q = new URLSearchParams({ n: fileName() });
+  if (mode === "draw") q.set("m", toB64(JSON.stringify(model)));
+  else { q.set("c", toB64(src.value)); if (dir) q.set("d", dir); }
+  const url = location.href.replace(/#.*$/, "") + "#" + q.toString();
+  history_replace(url);
+  try { await navigator.clipboard.writeText(url); flash($("share"), "Link copied"); }
+  catch (e) { flash($("share"), "Link is in the address bar"); }
+};
+function history_replace(url) { window.history.replaceState(null, "", url); }
+
+/* ---- phones: two tabs */
+function pane(which) {
+  $("main").dataset.pane = which;
+  $("tab-side").setAttribute("aria-selected", which === "side");
+  $("tab-circuit").setAttribute("aria-selected", which === "circuit");
+}
+$("tab-side").onclick = () => pane("side");
+$("tab-circuit").onclick = () => pane("circuit");
+
+/* undo also from here, unless typing */
+addEventListener("keydown", e => {
+  if (mode !== "draw" || !(e.ctrlKey || e.metaKey) || (e.key !== "z" && e.key !== "Z")) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+  e.preventDefault(); undo();
+});
+
+/* ===================================== start: a shared link, what you had,
+ * else a small drawing to begin from */
+function validModel(m) { return m && Array.isArray(m.parts) && Array.isArray(m.links) && m.parts.every(p => KINDS[p.kind] && typeof p.name === "string"); }
+(function start() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) {}
+  model = saved && validModel(saved.draw) ? saved.draw : STARTER_DRAWING();
+  if (!model.next) model.next = Math.max(0, ...model.parts.map(p => p.id)) + 1;
+  src.value = saved && saved.write && typeof saved.write.text === "string" ? saved.write.text : STARTER_CODE;
+  dir = saved && saved.write ? saved.write.dir || "" : "";
+  dirty = !!(saved && saved.write && saved.write.text && saved.write.text !== STARTER_CODE);
+  $("name").value = saved && saved.name ? saved.name : "my_circuit";
+  let m = saved && saved.mode === "write" ? "write" : "draw";
+  if (q.get("m")) {
+    try { const d = JSON.parse(fromB64(q.get("m"))); if (validModel(d)) { model = d; m = "draw"; $("name").value = q.get("n") || "my_circuit"; } } catch (e) {}
+  } else if (q.get("c")) {
+    try { src.value = fromB64(q.get("c")); dir = q.get("d") || ""; dirty = true; m = "write"; $("name").value = q.get("n") || "my_circuit"; } catch (e) {}
+  } else if (q.get("ex") && FILES[q.get("ex")]) {
+    const p = q.get("ex");
+    ex.value = p;
+    src.value = FILES[p]; dir = p.slice(0, p.lastIndexOf("/")); dirty = false; m = "write";
+    $("name").value = p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, "");
+  }
+  fitName();
+  setMode(m);
+})();
+ready.catch(fatal);
+</script>
+</body>
+</html>

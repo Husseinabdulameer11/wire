@@ -3,8 +3,11 @@
 [![ci](https://github.com/Husseinabdulameer11/wire/actions/workflows/ci.yml/badge.svg)](https://github.com/Husseinabdulameer11/wire/actions/workflows/ci.yml)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Husseinabdulameer11/wire)
 
-**Try it without installing anything:** every example runs in the browser at
-[husseinlogicgatesimulator.netlify.app](https://husseinlogicgatesimulator.netlify.app).
+**Try it without installing anything:** draw or write your own circuit in
+the [playground](https://husseinabdulameer11.github.io/wire/playground.html),
+or open any of the [examples](https://husseinabdulameer11.github.io/wire/).
+The site is built and published from this repository on every push
+(`.github/workflows/pages.yml`).
 
 Wire is a small language for digital circuits, built with
 [gram](https://github.com/Husseinabdulameer11/gram). You write which parts
@@ -65,6 +68,33 @@ files Wire writes belong to you, not root.
 with Wire, gram, Node, GHDL and a C compiler ready, so you can use Wire *and*
 change it, and `make test` runs every check.
 
+## The playground
+
+`playground.html` is Wire itself, compiled to WebAssembly, in a page.
+Nothing is installed and nothing leaves the browser.
+
+- **Draw:** drag parts onto the circuit (inputs, buttons, clocks, outputs,
+  LEDs, hex digits, every gate, a mux, an adder, a comparator, a D
+  flip-flop, a counter), drag from pin to pin to wire them, and click a part
+  to rename it or change its width, its number of inputs, or whether it has
+  an enable, a reset or a carry in. It runs as you build it. A change that
+  cannot work (a 4-bit bus into a 1-bit gate) is undone, and the page says
+  why. The drawing is written as Wire as you go (**Edit as code** carries on
+  from it), so it simulates and turns into VHDL like any other circuit.
+- **Write:** write the circuit in Wire, or start from any example (its
+  imports and rom files come with it). It is drawn and simulated as you
+  type, with the error and its line marked when there is one.
+
+**Save .vhd** gives the circuit in VHDL for Vivado, **Save .wire** keeps it,
+and **Copy link** makes a link that opens the same circuit for someone else.
+On a phone, the parts (or code) and the circuit are two tabs: tap a part,
+tap where it goes, and wire it with a finger.
+
+It is the same compiler as the `wire` command, byte for byte:
+`tests/web/webtest.js` runs both on every example, every circuit in
+`tests/sim` and every error in `tests/errors`, and compares the pages, the
+netlists, the VHDL and the error messages.
+
 ## On the page
 
 - **Inputs**: click a 1-bit input to flip it. Multi-bit inputs show one cell
@@ -81,8 +111,10 @@ change it, and `make test` runs every check.
   with the word being read lit up. Click a word to change it; Reset puts the
   contents written in the circuit back. Clicking a rom or ram opens it too.
 - If two parts drive a bus at once, the page says **Bus conflict**.
-- **VHDL** shows the VHDL of the example (the `.vhd` file next to the
-  `.wire` file), with the entity of the chip you select or open lit up.
+- **VHDL** shows the circuit in VHDL, with the entity of the chip you select
+  or open lit up: the `.vhd` file next to the `.wire` file if there is one,
+  otherwise the VHDL Wire makes from the circuit (see [VHDL](#vhdl)).
+  **Save** downloads it as a `.vhd` file, ready to add to a Vivado project.
 - **Book** shows a pdf beside the circuit, and turns to the pages about the
   part you select or the chip you open (see `books/README.md`). A page can
   carry several books (pick one at the top of the panel). Build with
@@ -269,6 +301,50 @@ Ports are matched by name; `# test:` lines in a `.wire` file tune the
 stimulus, and `# vhdl ports: a=b` renames a port Wire cannot use (`hex` is a
 word of Wire).
 
+## VHDL
+
+Wire writes any circuit as VHDL, so a circuit you design and test here can
+go straight into Vivado (or GHDL):
+
+```
+wire --to-vhdl adder.wire              # prints it
+wire --to-vhdl -o adder.vhd adder.wire # writes adder.vhd
+```
+
+A page shows the same VHDL under **VHDL** when there is no `.vhd` file next
+to the circuit.
+
+- It is **VHDL-93**, what Vivado reads a `.vhd` file as unless told
+  otherwise: it never reads an `out` port, and every process lists its
+  signals.
+- **Every component is an entity**, instantiated where it is used, and the
+  circuit is an entity named like the file. Inputs, buttons, keypads and
+  clocks are `in` ports; outputs, LEDs and displays are `out` ports.
+- **Names stay yours.** A name that is a VHDL word, or that clashes once
+  case is ignored (`Q` and `q`), gets a suffix, and the first lines of the
+  file list every port that was renamed (`-- renamed: out=out_s`).
+- **It behaves like Wire.** Flip-flops, counters and ram start at 0 (as
+  initial values), `rst` is asynchronous, a counter's `load` works without
+  `en`, `tri()` drives `'Z'` and a bus is a resolved signal with one driver
+  per `tri()`. A bit that nothing drives is stored as 0, as in Wire. Loops of
+  gates (an SR latch) start in the state Wire settles to, so they power up
+  the same way.
+- One difference: when two `tri()`s drive a bus at once, Wire shows the bus
+  as unknown (and warns of a bus conflict); VHDL resolves it bit by bit.
+
+The VHDL is made from the circuit, so it reads like a netlist: a signal per
+named wire, `n1`, `n2`... for wires with no name. Name the wires you care
+about and they keep their names. The handwritten `.vhd` files of the
+examples are the readable version of the same circuits.
+
+**It is checked like the examples' VHDL:** `node tests/vhdl/cosim.js
+build/wire --generated` makes the VHDL of every example and every circuit in
+`tests/sim`, reads it with GHDL as strict VHDL-93, synthesizes it with GHDL
+(so it is hardware, not only a simulation), and runs it against Wire on
+random inputs and clocks (`make test` does this when GHDL is installed).
+GHDL cannot synthesize a tri-state bus inside a design; Vivado can (it turns
+it into logic), so those circuits are only simulated.
+
 ## Components and imports
 
 Build your own chips in Wire, then use them like the built-in parts:
@@ -351,7 +427,8 @@ WebAssembly simulator against the original JavaScript one on every example
 and on the circuits in `tests/sim`: both get the same random clicks, clock
 ticks and resets, and every wire must agree after every step. It also checks
 that the SAP-1 computes 28, and (if GHDL is installed) runs
-`tests/vhdl/cosim.js`, which checks every example against its VHDL.
+`tests/vhdl/cosim.js`, which checks every example against its VHDL, and
+every circuit against the VHDL Wire makes for it.
 
 ## Building from source
 
@@ -375,6 +452,15 @@ for gram.
 
 Or build the Docker image: `docker build --build-context gram=../gram -t wire .`
 
+The playground needs Wire built for the web, with
+[Emscripten](https://emscripten.org) (`emcc`) and gram's source:
+
+```
+make web GRAM=../gram       # build/web/wire.js and wire.wasm
+make web-test GRAM=../gram  # checks it against the native wire
+make site                   # now with playground.html
+```
+
 Releases (installer, archives, Docker image) are made by pushing a version
 tag; see [RELEASING.md](RELEASING.md).
 
@@ -397,6 +483,21 @@ The netlist is written as JSON into a copy of `src/wire_view.html`, which is
 baked into the binary. The page does the rest: a layered layout (columns by
 longest path, loops broken at feedback, crossings reduced by barycentre
 sweeps) and channel routing with one vertical track per wire.
+
+`src/wire_web.c` is the whole of `wire.c` with one entry point for the
+browser, `wire_run("--to-vhdl\nfile.wire")`. The playground makes a fresh
+WebAssembly instance for every run (the compiler stops at the first error),
+fills its file system with the circuit, the examples and the standard
+library, and shows the page Wire writes. In drawing mode it keeps the drawing as parts and
+links, writes the Wire for it, and puts `window.WIRE_EDIT` (where each part
+goes, the view, the input values) in the page; the page then lets parts be
+placed and wired, routes wires straight from pin to pin, and hands every
+change back to the playground.
+
+`src/wire_vhdl.c` (part of `wire.c`) writes the VHDL from the same netlist:
+one entity per component, from its first use, and the circuit last. To give
+loops of gates the right initial values it settles the circuit once in C,
+in the same order as the simulator.
 
 The simulator is `src/wire_sim.js`, pasted into the page when Wire is built.
 When the page opens it compiles the netlist straight into a WebAssembly

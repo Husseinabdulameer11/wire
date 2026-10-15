@@ -5,6 +5,9 @@ keypad k
 bus data[8]
 output q[8], c[4]
 
+# two drivers on data at once is a bus conflict: Wire says unknown, VHDL resolves it
+# test: apart ae be
+
 component outreg(d[8], oe, clk) -> (out[8]) {
     r = reg(d, clk)
     out = tri(r, oe)

@@ -114,13 +114,15 @@ li b { display: block; font-size: 16px; }
 li span { display: block; color: var(--soft); font-size: 13.5px; margin-top: 2px; }
 li code { font-family: ui-monospace, monospace; font-size: 12px; color: var(--soft); }
 footer { margin-top: 40px; color: var(--soft); font-size: 14px; }
+p.play { margin: 18px 0 0; padding: 12px 14px; background: var(--card); border: 1.5px solid var(--ink); border-left: 6px solid var(--hi); border-radius: 6px; }
+p.play a { font-weight: 600; color: var(--ink); text-decoration-color: var(--hi); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 </style>
 </head>
 <body>
 <main>
 <h1>Wire circuits</h1>
 <p class="lead">Digital circuits written in <a href="https://github.com/Husseinabdulameer11/wire">Wire</a> and simulated in your browser, following my FPGA notes and the examples of Pong P. Chu's <i>FPGA Prototyping by VHDL Examples</i>. Click the inputs, run the clock, open the chips; <b>VHDL</b> shows the same circuit in VHDL, checked against it with GHDL.</p>
-<nav>${sections.map((s, i) => `<a href="#s${i}">${esc(s.title.replace(/^Chu, chapter (\d+):.*/, "Chu ch. $1").replace(/,.*$/, ""))}</a>`).join("")}</nav>
+${fs.existsSync(path.join(out, "playground.html")) ? `<p class="play"><a href="playground.html">Open the playground</a> to write your own circuit, try it here, and save it as VHDL for Vivado.</p>\n` : ""}<nav>${sections.map((s, i) => `<a href="#s${i}">${esc(s.title.replace(/^Chu, chapter (\d+):.*/, "Chu ch. $1").replace(/,.*$/, ""))}</a>`).join("")}</nav>
 ${sections.map((s, i) => `<h2 id="s${i}">${esc(s.title)}</h2>
 ${s.about ? `<p class="about">${esc(s.about)}</p>\n` : ""}<ul>
 ${s.items.map(p => `<li><a href="${p.page}"><b>${esc(p.title)}</b>${p.about ? `<span>${esc(p.about)}</span>` : ""}<code>${esc(p.rel)}.wire${p.vhdl ? " · .vhd" : ""}</code></a></li>`).join("\n")}

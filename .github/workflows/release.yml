@@ -8,6 +8,8 @@ name: release
 #     wire-linux-x86_64.tar.gz      Linux (static, any distro)
 #     wire-linux-aarch64.tar.gz     Linux on ARM (Raspberry Pi 4/5, ARM servers)
 #     wire-macos-universal.tar.gz   macOS, Intel and Apple silicon
+#     wire-site.zip                 the examples site with the playground, for
+#                                   Netlify Drop or any static host
 #     SHA256SUMS                    checksums (install.sh verifies them)
 #   ghcr.io/<owner>/wire:0.1.0 and :latest   Docker image, amd64 + arm64
 #
@@ -170,6 +172,34 @@ jobs:
             dist/wire-windows-setup.exe
           if-no-files-found: error
 
+  # the examples site and the playground (Wire in WebAssembly), checked
+  # against the native wire first
+  site:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.GRAM_REPO }}", ref: "${{ env.GRAM_REF }}", path: gram-src }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: emscripten-core/setup-emsdk@v14
+        with: { version: 3.1.74 }
+      - name: Build and check Wire for the web, then the site
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          make web-test GRAM=gram-src VERSION="$VERSION"
+          make site GRAM=gram-src VERSION="$VERSION"
+          test -f build/site/playground.html
+          mkdir -p dist
+          (cd build && zip -qr ../dist/wire-site.zip site)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wire-site
+          path: dist/wire-site.zip
+          if-no-files-found: error
+
   docker:
     needs: version
     runs-on: ubuntu-latest
@@ -204,7 +234,7 @@ jobs:
             org.opencontainers.image.version=${{ needs.version.outputs.version }}
 
   release:
-    needs: [version, linux, macos, windows, docker]
+    needs: [version, linux, macos, windows, docker, site]
     if: needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -242,6 +272,8 @@ jobs:
           It writes adder.html next to adder.wire; open it in your browser.
 
           Or open the repository in GitHub Codespaces: Wire and gram come ready to use and to extend.
+
+          **The examples site and the playground:** wire-site.zip is the whole site (every example, and a playground where you write a circuit in the browser and save it as VHDL). Unzip it and drag the site folder onto Netlify Drop, or put it on any static host.
 
           **No install at all:** the examples run in the browser at https://husseinlogicgatesimulator.netlify.app
           EOF

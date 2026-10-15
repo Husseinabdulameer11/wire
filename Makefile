@@ -37,6 +37,7 @@ endif
 
 ifneq ($(GRAM),)
   # a gram source checkout: build its library and gramgen into build/
+  GRAM_C   = $(GRAM)/gram.c
   GRAMGEN  = build/gramgen$(EXE)
   GRAM_LIB = build/gram.o
   GRAM_INC = -I$(GRAM)
@@ -90,7 +91,7 @@ build/wire_grammar.h: src/wire.gram $(GRAMGEN) | need-gram build
 build/wire_view.h: src/wire_view.html src/wire_sim.js $(EMBED)
 	$(EMBED) src/wire_view.html wire_view > $@
 
-$(WIRE): $(SRC) build/wire_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram
+$(WIRE): $(SRC) src/wire_vhdl.c build/wire_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram
 	$(CC) $(CFLAGS) -Wall -Wextra -DWIRE_VERSION='"$(VERSION)"' -Isrc -Ibuild $(GRAM_INC) \
 	    $(SRC) $(GRAM_LIB) $(LDFLAGS) -o $@
 
@@ -104,6 +105,7 @@ test: $(WIRE)
 	   node tests/sim/run.js $(WIRE) examples/notes/sap1.wire 200 outp | grep -q "outp = 28" \
 	     || { echo "examples/notes/sap1.wire: the SAP-1 did not compute 16 + 20 + 24 - 32 = 28"; exit 1; }; \
 	   node tests/vhdl/cosim.js $(WIRE) || exit 1; \
+	   node tests/vhdl/cosim.js $(WIRE) --generated || exit 1; \
 	 else echo "wire: node not found, skipping the simulator tests (tests/sim, tests/vhdl)"; fi
 	@# installed and run from PATH (argv[0] is then just "wire"), it must still
 	@# find its standard library in ../share/wire/lib
@@ -112,6 +114,25 @@ test: $(WIRE)
 	@cd tests/install && PATH="$(CURDIR)/build/prefix/bin:$$PATH" wire$(EXE) --check uses_stdlib.wire >../../build/err.txt 2>&1 \
 	    || { cat ../../build/err.txt; echo "wire: installed wire, run from PATH, did not find its standard library"; exit 1; }
 	@echo "wire: all tests passed"
+
+# Wire in WebAssembly, for the playground: build/web/wire.js + wire.wasm.
+# Needs Emscripten (emcc). `make web-test` checks it against build/wire.
+EMCC ?= emcc
+WEB_FLAGS = -sMODULARIZE=1 -sEXPORT_NAME=WireCompiler -sEXIT_RUNTIME=1 \
+            -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=33554432 \
+            -sEXPORTED_FUNCTIONS=_wire_run -sEXPORTED_RUNTIME_METHODS='["FS","ccall"]' \
+            -sENVIRONMENT=web,node
+web: build/web/wire.js
+
+build/web/wire.js: src/wire_web.c $(SRC) src/wire_vhdl.c build/wire_grammar.h build/wire_view.h | need-gram
+	@command -v $(EMCC) >/dev/null 2>&1 || { echo "wire: make web needs Emscripten (emcc)"; exit 1; }
+	@test -n "$(GRAM_C)" || { echo "wire: make web compiles gram too, so it needs gram's source: make web GRAM=path/to/gram"; exit 1; }
+	mkdir -p build/web
+	$(EMCC) -O2 -Wall -Wextra -DWIRE_VERSION='"$(VERSION)"' -Isrc -Ibuild $(GRAM_INC) \
+	    src/wire_web.c $(GRAM_C) $(WEB_FLAGS) -o $@
+
+web-test: $(WIRE) build/web/wire.js
+	node tests/web/webtest.js $(WIRE) build/web/wire.js
 
 # every example as a page, plus an index, in build/site: drag that folder
 # onto Netlify Drop (app.netlify.com/drop), or serve it from any static host.
@@ -122,8 +143,12 @@ test: $(WIRE)
 CHU_PDF ?= chu_fpga_prototyping_vhdl.pdf
 BOOKS   ?= $(if $(wildcard books/fpga_summary.pdf),--book books/fpga_summary.pdf --book-name "My notes" --topics books/fpga_summary.topics) \
            --book-url $(CHU_PDF) --book-name "Chu" --topics books/chu.topics --book-dir chu
+# With Wire built for the web (make web, needs Emscripten), the site gets the
+# playground too: write a circuit in the browser and see it.
 site: $(WIRE)
 	rm -rf build/site
+	@if [ -f build/web/wire.wasm ]; then node tools/playground.js build/web build/site; \
+	 else echo "wire: no build/web/wire.wasm, so the site has no playground (make web needs Emscripten)"; fi
 	node tools/site.js $(WIRE) build/site $(BOOKS)
 
 # check that every section of the topics files points at real pages:
@@ -145,4 +170,4 @@ uninstall:
 clean:
 	rm -rf build
 
-.PHONY: all test install uninstall clean need-gram site check-books
+.PHONY: all test install uninstall clean need-gram site check-books web web-test

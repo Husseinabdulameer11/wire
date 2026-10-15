@@ -1,0 +1,37 @@
+circuit "Awkward names and rare options, for the VHDL Wire makes"
+
+# for tests/vhdl/cosim.js --generated: names that are VHDL words or clash
+# when case is ignored, a component named like the file, every part with
+# its rarer settings
+
+input  signal, Q, q_, x__y, sel[2], data[4], j, k, ld, dn, en
+clock  clk
+keypad pad
+output out[4], In, select_, Qo, qq, enc[2], ok, dm0[4], dm3[4], cmp, jk, cnt[3], w1, rd[1]
+led    lit
+
+component vhdl_edges(a, b) -> (y) {
+    y = a ^ b
+}
+component unsigned(v[4]) -> (r[4]) {      # a VHDL type name as a component
+    r = ~v
+}
+
+out    = unsigned(data)
+In     = vhdl_edges(signal, Q)
+select_ = and(q_, x__y, 1)
+Qo     = Q
+qq     = Q                                  # one input, two outputs
+e      = encoder(data)
+enc    = e
+ok     = e.valid
+dmx    = demux(data, sel = sel)
+dm0    = dmx[0]
+dm3    = dmx[3]
+cmp    = compare(data, 0b0101).gt
+jk     = jkff(j, k, clk, rst = ld)
+cnt    = counter(clk, bits = 3, en = en, load = ld, d = data[2:0], down = dn)
+w1     = decoder(sel, en = en)[2]
+rom1   = rom(data[0], bits = 1, data = "1 0")
+rd     = {rom1}
+lit    = mux(0, 1, signal, Q, sel = sel)

@@ -1,0 +1,60 @@
+name: pages
+
+# The examples site and the playground on GitHub Pages:
+#   https://<owner>.github.io/<repo>/      (here: husseinabdulameer11.github.io/wire)
+#
+# Every push to main builds Wire for the web (Emscripten), checks it against
+# the native wire, makes the site (make site) and publishes it.
+#
+# One-time setup: Settings -> Pages -> Build and deployment -> Source:
+# "GitHub Actions". Run it by hand from the Actions tab too.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write       # publish to Pages
+  id-token: write    # prove the deployment comes from this workflow
+
+# one deployment at a time; a newer push wins
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  GRAM_REPO: ${{ github.repository_owner }}/gram
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: emscripten-core/setup-emsdk@v14
+        with: { version: 3.1.74 }
+      - name: Build Wire for the web and check it against the native wire
+        run: make web-test GRAM=gram-src VERSION=${GITHUB_SHA::7}
+      - name: Make the site
+        run: |
+          make site GRAM=gram-src VERSION=${GITHUB_SHA::7}
+          test -f build/site/playground.html
+          test -f build/site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with: { path: build/site }
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
