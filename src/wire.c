@@ -2014,6 +2014,9 @@ __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void *, char *,
 #include <unistd.h>
 #include <limits.h>
 #else
+#include <unistd.h>
+#include <limits.h>
+#endif
 
 static int dir_len(const char *path);
 
