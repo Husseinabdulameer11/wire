@@ -2011,11 +2011,9 @@ static char exedir[1024];
 __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void *, char *, unsigned long);
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
-#include <limits.h>
-#else
 #include <unistd.h>
 #include <limits.h>
-#endif
+#else
 
 static int dir_len(const char *path);
 
