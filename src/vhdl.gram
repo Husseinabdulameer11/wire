@@ -1,0 +1,147 @@
+# VHDL, the part Wire reads (wire_vhdl_in.c turns it into Wire).
+# Case does not matter in VHDL, so every keyword is matched with 'i.
+# Processes, generate loops and component instances are recognised, so the
+# translator can say they are not supported yet instead of a syntax error.
+
+design    <- unit* ;
+unit      <^ library / use / entity / arch ;
+
+library   <- ~LIBRARY ident (~',' ident)* ~';' ;
+use       <- ~USE selname (~',' selname)* ~';' ;
+selname   <= ident ('.' (ident / ALL))* ;
+
+entity    <- ~ENTITY ident ~IS generics? ports? ~END ~ENTITY? ident? ~';' ;
+generics  <- ~GENERIC ~'(' gdecl (~';' gdecl)* ~';'? ~')' ~';' ;
+gdecl     <- idlist ~':' type (~':=' expr)? ;
+ports     <- ~PORT ~'(' pdecl (~';' pdecl)* ~';'? ~')' ~';' ;
+pdecl     <- idlist ~':' mode? type (~':=' expr)? ;
+idlist    <- ident (~',' ident)* ;
+mode      <= ('inout'i / 'in'i / 'out'i / 'buffer'i / 'linkage'i) ![A-Za-z0-9_] ;
+type      <- ident (~'(' drange ~')' / ~RANGE drange)? ;
+drange    <- expr dir expr ;
+dir       <= ('downto'i / 'to'i) ![A-Za-z0-9_] ;
+
+arch      <- ~ARCHITECTURE ident ~OF ident ~IS adecl* ~BEGIN cstmt* ~END ~ARCHITECTURE? ident? ~';' ;
+adecl     <^ signal / constant / compdecl / other ;
+signal    <- ~SIGNAL idlist ~':' type (~':=' expr)? ~';' ;
+constant  <- ~CONSTANT idlist ~':' type ~':=' expr ~';' ;
+compdecl  <- ~COMPONENT ident ~IS? generics? ports? ~END ~COMPONENT ident? ~';' ;
+# type, subtype, alias, attribute, function...: recognised, then refused
+other     <- subprog / otherkw (!';' .)* ~';' ;
+otherkw   <= ('type'i / 'subtype'i / 'alias'i / 'attribute'i
+             / 'shared'i / 'variable'i / 'file'i) ![A-Za-z0-9_] ;
+subprog   <= ('pure'i [ \t\r\n]+ / 'impure'i [ \t\r\n]+)? ('function'i / 'procedure'i) ![A-Za-z0-9_]
+             (!endsub .)* endsub [^;]* ';' ;
+endsub    <= 'end'i [ \t\r\n]+ ('function'i / 'procedure'i) ![A-Za-z0-9_] ;
+
+# ---- concurrent statements ---------------------------------------------
+cstmt     <^ process / generate / inst / selassign / condassign / assert ;
+label     <- ident ~':' ;
+process   <- label? ~POSTPONED? PROCESS pbody ident? ~';' ;
+pbody     <= (!endproc .)* endproc ;
+endproc   <= 'end'i [ \t\r\n]+ ('postponed'i [ \t\r\n]+)? 'process'i ![A-Za-z0-9_] ;
+generate  <- label (FOR / IF) gbody ident? ~';' ;
+gbody     <= (!endgen .)* endgen ;
+endgen    <= 'end'i [ \t\r\n]+ 'generate'i ![A-Za-z0-9_] ;
+assert    <- label? ASSERT (!';' .)* ~';' ;
+
+inst      <- label (~ENTITY selname (~'(' ident ~')')? / ~COMPONENT? ident) gmap? pmap ~';' ;
+gmap      <- ~GENERIC ~MAP ~'(' assoc (~',' assoc)* ~')' ;
+pmap      <- ~PORT ~MAP ~'(' assoc (~',' assoc)* ~')' ;
+assoc     <- (target ~'=>')? (OPEN / expr) ;
+
+# y <= a when c else b when d else e;
+condassign <- label? target ~'<=' wave wclause* lastwhen? ~';' ;
+wclause   <- ~WHEN expr ~ELSE wave ;
+lastwhen  <- ~WHEN expr ;
+# with s select y <= a when "00", b when "01" | "10", c when others;
+selassign <- label? ~WITH expr ~SELECT target ~'<=' selarm (~',' selarm)* ~';' ;
+selarm    <- wave ~WHEN choices ;
+choices   <- choice (~'|' choice)* ;
+choice    <^ OTHERS / expr ;
+wave      <^ expr after? ;
+after     <- ~AFTER (!(WHEN / ELSE / ';' / ',') .)* ;
+
+target    <- ident (~'(' (drange / expr) ~')')? ;
+
+# ---- expressions, loosest first (VHDL's own order) ---------------------
+expr      <^ relation (logop relation)* ;
+logop     <= ('and'i / 'or'i / 'xor'i / 'nand'i / 'nor'i / 'xnor'i) ![A-Za-z0-9_] ;
+relation  <^ shift (relop shift)? ;
+relop     <= '=' !'>' / '/=' / '<=' / '>=' / '<' / '>' ;
+shift     <^ simple (shiftop simple)? ;
+shiftop   <= ('sll'i / 'srl'i / 'sla'i / 'sra'i / 'rol'i / 'ror'i) ![A-Za-z0-9_] ;
+simple    <^ (neg / term) (addop term)* ;
+neg       <- ~'-' term ;
+addop     <= '+' / '-' / '&' ;
+term      <^ factor (mulop factor)* ;
+mulop     <= '**' / '*' / '/' !'=' / ('mod'i / 'rem'i) ![A-Za-z0-9_] ;
+factor    <^ notx / absx / primary ;
+notx      <- ~NOT primary ;
+absx      <- ~ABS primary ;
+primary   <^ ~'(' expr ~')' / aggregate / chr / bitstr / str / number / name ;
+aggregate <- ~'(' agel (~',' agel)* ~')' ;
+agel      <- (choices ~'=>')? expr ;
+name      <^ ident (args / attr)* ;
+args      <- ~'(' arg (~',' arg)* ~')' ;
+arg       <^ drange / named / expr ;
+named     <- ident ~'=>' expr ;
+attr      <- ~'\'' attrname ;
+attrname  <= [A-Za-z] [A-Za-z0-9_]* ;   # 'range is a keyword, still an attribute
+
+# ---- tokens --------------------------------------------------------------
+chr       <= '\'' . '\'' ;
+str       <= '"' [^"\n]* '"' ;
+bitstr    <= [0-9]* [bBoOxXdD] '"' [0-9a-fA-F_]* '"' ;
+number    <= [0-9] [0-9_]* ('#' [0-9a-fA-F_]+ '#')? ;
+ident     <= !keyword [A-Za-z] [A-Za-z0-9_]* ;
+
+ALL       <= 'all'i ![A-Za-z0-9_] ;
+LIBRARY   <= 'library'i ![A-Za-z0-9_] ;
+USE       <= 'use'i ![A-Za-z0-9_] ;
+ENTITY    <= 'entity'i ![A-Za-z0-9_] ;
+IS        <= 'is'i ![A-Za-z0-9_] ;
+END       <= 'end'i ![A-Za-z0-9_] ;
+GENERIC   <= 'generic'i ![A-Za-z0-9_] ;
+PORT      <= 'port'i ![A-Za-z0-9_] ;
+MAP       <= 'map'i ![A-Za-z0-9_] ;
+RANGE     <= 'range'i ![A-Za-z0-9_] ;
+ARCHITECTURE <= 'architecture'i ![A-Za-z0-9_] ;
+OF        <= 'of'i ![A-Za-z0-9_] ;
+BEGIN     <= 'begin'i ![A-Za-z0-9_] ;
+SIGNAL    <= 'signal'i ![A-Za-z0-9_] ;
+CONSTANT  <= 'constant'i ![A-Za-z0-9_] ;
+COMPONENT <= 'component'i ![A-Za-z0-9_] ;
+POSTPONED <= 'postponed'i ![A-Za-z0-9_] ;
+PROCESS   <= 'process'i ![A-Za-z0-9_] ;
+FOR       <= 'for'i ![A-Za-z0-9_] ;
+IF        <= 'if'i ![A-Za-z0-9_] ;
+ASSERT    <= 'assert'i ![A-Za-z0-9_] ;
+OPEN      <= 'open'i ![A-Za-z0-9_] ;
+WHEN      <= 'when'i ![A-Za-z0-9_] ;
+ELSE      <= 'else'i ![A-Za-z0-9_] ;
+WITH      <= 'with'i ![A-Za-z0-9_] ;
+SELECT    <= 'select'i ![A-Za-z0-9_] ;
+OTHERS    <= 'others'i ![A-Za-z0-9_] ;
+AFTER     <= 'after'i ![A-Za-z0-9_] ;
+NOT       <= 'not'i ![A-Za-z0-9_] ;
+ABS       <= 'abs'i ![A-Za-z0-9_] ;
+
+keyword   <= ('abs'i / 'access'i / 'after'i / 'alias'i / 'all'i / 'and'i / 'architecture'i
+             / 'array'i / 'assert'i / 'attribute'i / 'begin'i / 'block'i / 'body'i
+             / 'buffer'i / 'bus'i / 'case'i / 'component'i / 'configuration'i
+             / 'constant'i / 'disconnect'i / 'downto'i / 'else'i / 'elsif'i / 'end'i
+             / 'entity'i / 'exit'i / 'file'i / 'for'i / 'function'i / 'generate'i
+             / 'generic'i / 'group'i / 'guarded'i / 'if'i / 'impure'i / 'inertial'i
+             / 'inout'i / 'in'i / 'is'i / 'label'i / 'library'i / 'linkage'i / 'literal'i
+             / 'loop'i / 'map'i / 'mod'i / 'nand'i / 'new'i / 'next'i / 'nor'i / 'not'i
+             / 'null'i / 'of'i / 'on'i / 'open'i / 'or'i / 'others'i / 'out'i
+             / 'package'i / 'port'i / 'postponed'i / 'procedure'i / 'process'i
+             / 'pure'i / 'range'i / 'record'i / 'register'i / 'reject'i / 'rem'i
+             / 'report'i / 'return'i / 'rol'i / 'ror'i / 'select'i / 'severity'i
+             / 'shared'i / 'signal'i / 'sla'i / 'sll'i / 'sra'i / 'srl'i / 'subtype'i
+             / 'then'i / 'to'i / 'transport'i / 'type'i / 'units'i / 'until'i / 'use'i
+             / 'variable'i / 'wait'i / 'when'i / 'while'i / 'with'i / 'xnor'i / 'xor'i)
+            ![A-Za-z0-9_] ;
+
+skip      <= ([ \t\r\n\x0c] / '--' [^\n]* / '/*' (!'*/' .)* '*/')* ;

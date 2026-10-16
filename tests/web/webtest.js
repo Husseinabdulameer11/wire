@@ -6,7 +6,8 @@
  * For every example, every circuit in tests/sim and every file in
  * tests/errors it runs both on the same files and compares, byte for byte:
  * the page (wire -o), the netlist (--json), the VHDL (--to-vhdl), and the
- * error messages and exit codes. The WebAssembly side gets the repository's
+ * error messages and exit codes. Every .vhd file is read as VHDL too
+ * (--to-wire and the page, or the same error). The WebAssembly side gets the repository's
  * files in its in-memory file system at the same relative paths, and the
  * standard library in /wire/lib, where the playground puts it. */
 "use strict";
@@ -63,7 +64,8 @@ const norm = s => s.split(exeDir).join("/wire/bin/");
 
 (async () => {
   const circuits = files.filter(f => f.endsWith(".wire") && !f.includes("/lib/") && !f.startsWith("tests/errors/") && !f.startsWith("tests/install/"));
-  const errors = files.filter(f => f.startsWith("tests/errors/") && f.endsWith(".wire"));
+  const errors = files.filter(f => f.startsWith("tests/errors/") && /\.(wire|vhd)$/.test(f));
+  const vhdl = files.filter(f => f.endsWith(".vhd") && !f.startsWith("tests/errors/"));
   let failed = 0, runs = 0;
   const same = (what, f, a, b) => {
     runs++;
@@ -80,10 +82,16 @@ const norm = s => s.split(exeDir).join("/wire/bin/");
       same(args[0], f, a, b);
     }
   }
+  for (const f of vhdl) {
+    for (const args of [["--to-wire", f], ["-o", "webtest-page.html", f]]) {
+      const a = nat(args), b = await web(args);
+      same(args[0], f, a, b);
+    }
+  }
   for (const f of errors) {
     const args = ["--check", f];
     same("error", f, nat(args), await web(args));
   }
   if (failed) { console.log(`${failed} of ${runs} runs differ between wasm and native`); process.exit(1); }
-  console.log(`wasm: all ${runs} runs match native wire byte for byte (${circuits.length} circuits x page, json, vhdl; ${errors.length} error messages)`);
+  console.log(`wasm: all ${runs} runs match native wire byte for byte (${circuits.length} circuits x page, json, vhdl; ${vhdl.length} VHDL files read; ${errors.length} error messages)`);
 })().catch(e => { console.error(e); process.exit(1); });

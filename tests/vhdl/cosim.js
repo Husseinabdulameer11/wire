@@ -3,6 +3,12 @@
  *   node tests/vhdl/cosim.js build/wire [file.wire ...] [--steps N] [--keep]
  *   node tests/vhdl/cosim.js build/wire --generated [file.wire ...]
  *
+ * --vhdl-in checks Wire reading VHDL: each .vhd file (every one under
+ * examples/ and tests/vhdl_in/ if none are given) is turned into a circuit
+ * by wire itself and run against the same .vhd in GHDL. A file that uses
+ * what Wire does not read yet must say so ("not supported yet"); any other
+ * error fails.
+ *
  * --generated checks the VHDL Wire writes itself (wire --to-vhdl) instead of
  * the .vhd files, for every example and every circuit in tests/sim. It also
  * reads it with GHDL as strict VHDL-93 (what Vivado uses by default) and,
@@ -33,15 +39,22 @@ const WireSim = require("../../src/wire_sim.js");
 const args = process.argv.slice(2);
 const wire = args[0];
 if (!wire) { console.error("usage: node tests/vhdl/cosim.js build/wire [file.wire ...] [--steps N] [--keep]"); process.exit(2); }
-let STEPS = 300, KEEP = false, GEN = false;
+let STEPS = 300, KEEP = false, GEN = false, VIN = false;
 const files = [];
 for (let i = 1; i < args.length; i++) {
   if (args[i] === "--steps") STEPS = +args[++i];
   else if (args[i] === "--keep") KEEP = true;
   else if (args[i] === "--generated") GEN = true;
+  else if (args[i] === "--vhdl-in") VIN = true;
   else files.push(args[i]);
 }
 const root = path.join(__dirname, "..", "..");
+if (!files.length && VIN) {
+  const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
+    e.isDirectory() ? walk(path.join(d, e.name)) : e.name.endsWith(".vhd") ? [path.join(d, e.name)] : []);
+  for (const d of ["examples", path.join("tests", "vhdl_in")])
+    for (const f of walk(path.join(root, d)).sort()) files.push(path.relative(process.cwd(), f));
+}
 if (!files.length) {
   const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
     e.isDirectory() ? (e.name === "lib" ? [] : walk(path.join(d, e.name))) : e.name.endsWith(".wire") ? [path.join(d, e.name)] : []);
@@ -94,8 +107,9 @@ const lit = (w, v, k) => {
 
 let failed = 0;
 let skipped = 0;
+let notYet = 0;
 for (const file of files) {
-  const top = path.basename(file, ".wire");
+  const top = path.basename(file, VIN ? ".vhd" : ".wire");
   const fail = msg => { failed++; console.log(`FAIL ${file}\n  ${msg}`); };
   let vfile = file.replace(/\.wire$/, ".vhd"), gendir = null;
   if (GEN) {
@@ -118,13 +132,25 @@ for (const file of files) {
       }
     }
   }
-  const src = fs.readFileSync(file, "utf8"), vtext = fs.readFileSync(vfile, "utf8");
+  if (VIN) {
+    /* only what Wire reads; the rest must say it is not supported yet */
+    const r = spawnSync(wire, ["--check", file], { encoding: "utf8" });
+    if (r.status !== 0) {
+      const msg = (r.stderr || "").trim();
+      if (/not supported yet/.test(msg)) { notYet++; skipped++; console.log(`not yet  ${file}: ${msg.replace(/^.*error: /, "").split(/[.;]/)[0]}`); }
+      else fail(msg);
+      continue;
+    }
+  }
+  const sib = file.replace(/\.vhd$/, ".wire");
+  const src = VIN ? (fs.existsSync(sib) ? fs.readFileSync(sib, "utf8") : "") : fs.readFileSync(file, "utf8"), vtext = fs.readFileSync(vfile, "utf8");
   let ports;
   try { ports = vhdlPorts(vtext, top); } catch (e) { fail(`${vfile}: ${e.message}`); continue; }
   /* options from the .wire file */
   const rename = {}, prob = {}, hold = {}, apart = [];
   let steps = STEPS;
-  if (!GEN) for (const m of src.matchAll(/^#\s*vhdl ports:(.*)$/gm)) for (const kv of m[1].trim().split(/\s+/)) { const [a, b] = kv.split("="); rename[a] = b; }
+  if (VIN) {}   /* the names are the VHDL's own (a Wire word gets a _, matched below) */
+  else if (!GEN) for (const m of src.matchAll(/^#\s*vhdl ports:(.*)$/gm)) for (const kv of m[1].trim().split(/\s+/)) { const [a, b] = kv.split("="); rename[a] = b; }
   else for (const m of vtext.matchAll(/^--\s*renamed:(.*)$/gm)) for (const kv of m[1].trim().split(/\s+/)) { const [a, b] = kv.split("="); rename[a] = b; }
   for (const m of src.matchAll(/^#\s*test:(.*)$/gm)) {
     let h = false;
@@ -138,7 +164,7 @@ for (const file of files) {
   let D;
   try { D = JSON.parse(execFileSync(wire, ["--json", file], { stdio: ["ignore", "pipe", "pipe"] }).toString()); }
   catch (e) { fail(String(e.stderr || e.message).trim()); continue; }
-  const vname = n => rename[n] || n;
+  const vname = n => rename[n] || (VIN && ports.some(p => p.name + "_" === n) ? n.slice(0, -1) : n);
   const top0 = D.nodes.map((n, j) => ({ n, j })).filter(x => x.n.inst === 0);
   const wins = top0.filter(x => ["input", "button", "keypad"].includes(x.n.kind)).map(x => ({ j: x.j, name: vname(x.n.name), w: D.nets[x.n.out[0]].w }));
   const clocks = top0.filter(x => x.n.kind === "clock").map(x => ({ j: x.j, name: vname(x.n.name) }));
@@ -233,9 +259,10 @@ end sim;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cosim-"));
   fs.writeFileSync(path.join(dir, "tb.vhd"), tb);
   const run = (a, opts) => spawnSync("ghdl", a, { cwd: dir, encoding: "utf8", ...opts });
-  let r = run(["-a", "--std=08", "-frelaxed", path.resolve(vfile), "tb.vhd"]);
+  const syn = VIN ? ["-fsynopsys"] : [];   /* std_logic_unsigned */
+  let r = run(["-a", "--std=08", "-frelaxed", ...syn, path.resolve(vfile), "tb.vhd"]);
   if (r.status !== 0) { fail(`GHDL could not read ${vfile}:\n  ${(r.stderr || r.stdout).trim().split("\n").slice(0, 6).join("\n  ")}`); continue; }
-  r = run(["--elab-run", "--std=08", "-frelaxed", "cosim_tb", "--ieee-asserts=disable"]);
+  r = run(["--elab-run", "--std=08", "-frelaxed", ...syn, "cosim_tb", "--ieee-asserts=disable"]);
   const out = (r.stdout || "") + (r.stderr || "");
   const errs = out.split("\n").filter(l => /\(assertion error\)|error:/.test(l));
   if (!/cosim: done/.test(out) || errs.length) {
@@ -246,8 +273,9 @@ end sim;
   if (gendir && !KEEP) fs.rmSync(gendir, { recursive: true, force: true });
   console.log(`ok   ${file}: ${steps} steps, ${outs.length} output(s) agree with ${path.basename(vfile)}${clocks.length ? "" : " (no clock)"}`);
 }
-if (failed) { console.log(`${failed} of ${files.length} ${GEN ? "circuits differ from the VHDL Wire made" : "examples differ from their VHDL"}`); process.exit(1); }
+if (failed) { console.log(`${failed} of ${files.length} ${VIN ? "VHDL files are not read right" : GEN ? "circuits differ from the VHDL Wire made" : "examples differ from their VHDL"}`); process.exit(1); }
 const ran = files.length - skipped;
+if (VIN) { console.log(`all ${ran} VHDL files Wire reads agree with GHDL${notYet ? `; ${notYet} use what is not supported yet` : ""}`); process.exit(0); }
 console.log(GEN ? `all ${ran} circuits agree with the VHDL Wire made for them${skipped ? ` (${skipped} skipped)` : ""}` +
                   (canSynth ? `; GHDL synthesizes all of it${synthNotes ? ` but ${synthNotes} with an internal tri-state bus (GHDL cannot; Vivado makes it logic)` : ""}` : "")
                 : `all ${ran} examples agree with their VHDL`);

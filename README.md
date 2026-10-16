@@ -30,6 +30,7 @@ cout = or(and(a, b), and(x1, cin))
 
 ```
 wire full_adder.wire          # writes full_adder.html
+wire full_adder.vhd           # VHDL works too (see VHDL in)
 ```
 
 ## Install
@@ -83,7 +84,10 @@ Nothing is installed and nothing leaves the browser.
   from it), so it simulates and turns into VHDL like any other circuit.
 - **Write:** write the circuit in Wire, or start from any example (its
   imports and rom files come with it). It is drawn and simulated as you
-  type, with the error and its line marked when there is one.
+  type, with the error and its line marked when there is one. The menu next
+  to Write switches the editor to **VHDL** (see [VHDL in](#vhdl-in)); the
+  examples whose VHDL Wire reads open as VHDL there, and **Save .wire**
+  gives the Wire your VHDL turned into.
 
 **Save .vhd** gives the circuit in VHDL for Vivado, **Save .wire** keeps it,
 and **Copy link** makes a link that opens the same circuit for someone else.
@@ -345,6 +349,55 @@ random inputs and clocks (`make test` does this when GHDL is installed).
 GHDL cannot synthesize a tri-state bus inside a design; Vivado can (it turns
 it into logic), so those circuits are only simulated.
 
+## VHDL in
+
+Wire also reads VHDL, so a circuit from a lecture or a book can be drawn and
+simulated without writing it again:
+
+```
+wire alu4.vhd                  # writes alu4.html
+wire --to-wire alu4.vhd        # prints the Wire it was turned into
+```
+
+It turns the VHDL into Wire and goes on from there, so the checks, the
+page, the truth table and the VHDL panel all work as usual (the Source and
+VHDL panels show your VHDL, and clicking a part finds its line in it). It
+reads the part of VHDL that is wiring, the same subset Vivado turns into
+gates:
+
+- **One entity and its architecture.** Ports and signals of `std_logic`,
+  `std_logic_vector`, `unsigned`, `signed` and `boolean`, `downto` or `to`;
+  integer generics (with their default values) and constants.
+- **Concurrent statements:** assignments (`<=`), `when ... else` and
+  `with ... select`, each becoming gates, multiplexers, adders and
+  comparators.
+- **Expressions:** `and or xor nand nor xnor not`, `= /= < <= > >=`, `+ -`
+  (with `ieee.numeric_std`, or `std_logic_unsigned`), `&`, bits and slices,
+  aggregates like `(others => '0')`, `unsigned() signed()
+  std_logic_vector() to_unsigned() to_signed() resize()`, and shifts by a
+  constant (`shift_left`, `shift_right`, `sll`, `srl`, `sra`, `rol`, `ror`).
+
+Not yet: processes (so no flip-flops written as `if rising_edge(clk)`),
+`generate`, component instances, more than one entity in a file, integer
+signals and `type` declarations. A file that uses one says so, at its line:
+
+```
+counter.vhd:14:3: error: processes are not supported yet. For now Wire reads
+concurrent VHDL: assignments (<=), when ... else and with ... select
+```
+
+VHDL's own rules are checked too, with the messages in VHDL's words: widths
+must match (`the target is 4 bits, but the value is 8 bits`), `unsigned` is
+not `std_logic_vector` without a conversion, `and` and `or` need parentheses
+when mixed, a `with ... select` must cover every value, and a `when` without
+an `else` is refused (it would be a latch).
+
+**How it is checked:** `node tests/vhdl/cosim.js build/wire --vhdl-in` takes
+every `.vhd` file under `examples/` and `tests/vhdl_in/`, turns each one Wire
+reads into a circuit, and runs it against the same file in GHDL on random
+inputs; every file it does not read must say "not supported yet" (`make test`
+does this when GHDL is installed).
+
 ## Components and imports
 
 Build your own chips in Wire, then use them like the built-in parts:
@@ -493,6 +546,11 @@ links, writes the Wire for it, and puts `window.WIRE_EDIT` (where each part
 goes, the view, the input values) in the page; the page then lets parts be
 placed and wired, routes wires straight from pin to pin, and hands every
 change back to the playground.
+
+`src/vhdl.gram` and `src/wire_vhdl_in.c` read VHDL: the file is parsed with
+gram, checked with VHDL's rules, and turned into Wire that keeps the VHDL's
+lines (each statement lands on the line it came from), so every error Wire
+finds later, and every part's line on the page, points into the VHDL.
 
 `src/wire_vhdl.c` (part of `wire.c`) writes the VHDL from the same netlist:
 one entity per component, from its first use, and the circuit last. To give

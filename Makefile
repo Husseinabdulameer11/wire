@@ -87,11 +87,15 @@ $(EMBED): tools/embed.c | build
 build/wire_grammar.h: src/wire.gram $(GRAMGEN) | need-gram build
 	$(GRAMGEN) src/wire.gram wire build
 
+# the VHDL that Wire reads (build/vhdl_grammar.h)
+build/vhdl_grammar.h: src/vhdl.gram $(GRAMGEN) | need-gram build
+	$(GRAMGEN) src/vhdl.gram vhdl build
+
 # the HTML viewer, baked into the binary as a string
 build/wire_view.h: src/wire_view.html src/wire_sim.js $(EMBED)
 	$(EMBED) src/wire_view.html wire_view > $@
 
-$(WIRE): $(SRC) src/wire_vhdl.c build/wire_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram
+$(WIRE): $(SRC) src/wire_vhdl.c src/wire_vhdl_in.c build/wire_grammar.h build/vhdl_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram
 	$(CC) $(CFLAGS) -Wall -Wextra -DWIRE_VERSION='"$(VERSION)"' -Isrc -Ibuild $(GRAM_INC) \
 	    $(SRC) $(GRAM_LIB) $(LDFLAGS) -o $@
 
@@ -101,11 +105,16 @@ test: $(WIRE)
 	    if $(WIRE) --check $$f 2> build/err.txt; then echo "$$f: expected an error"; exit 1; fi; \
 	    grep -qF "$$(sed -n 's/^# expect: //p' $$f)" build/err.txt || { echo "$$f: wrong error:"; cat build/err.txt; exit 1; }; \
 	done
+	@for f in tests/errors/*.vhd; do \
+	    if $(WIRE) --check $$f 2> build/err.txt; then echo "$$f: expected an error"; exit 1; fi; \
+	    grep -qF "$$(sed -n 's/^-- expect: //p' $$f)" build/err.txt || { echo "$$f: wrong error:"; cat build/err.txt; exit 1; }; \
+	done
 	@if command -v node >/dev/null 2>&1; then node tests/sim/simtest.js $(WIRE) || exit 1; \
 	   node tests/sim/run.js $(WIRE) examples/notes/sap1.wire 200 outp | grep -q "outp = 28" \
 	     || { echo "examples/notes/sap1.wire: the SAP-1 did not compute 16 + 20 + 24 - 32 = 28"; exit 1; }; \
 	   node tests/vhdl/cosim.js $(WIRE) || exit 1; \
 	   node tests/vhdl/cosim.js $(WIRE) --generated || exit 1; \
+	   node tests/vhdl/cosim.js $(WIRE) --vhdl-in || exit 1; \
 	 else echo "wire: node not found, skipping the simulator tests (tests/sim, tests/vhdl)"; fi
 	@# installed and run from PATH (argv[0] is then just "wire"), it must still
 	@# find its standard library in ../share/wire/lib
@@ -124,7 +133,7 @@ WEB_FLAGS = -sMODULARIZE=1 -sEXPORT_NAME=WireCompiler -sEXIT_RUNTIME=1 \
             -sENVIRONMENT=web,node
 web: build/web/wire.js
 
-build/web/wire.js: src/wire_web.c $(SRC) src/wire_vhdl.c build/wire_grammar.h build/wire_view.h | need-gram
+build/web/wire.js: src/wire_web.c $(SRC) src/wire_vhdl.c src/wire_vhdl_in.c build/wire_grammar.h build/vhdl_grammar.h build/wire_view.h | need-gram
 	@command -v $(EMCC) >/dev/null 2>&1 || { echo "wire: make web needs Emscripten (emcc)"; exit 1; }
 	@test -n "$(GRAM_C)" || { echo "wire: make web compiles gram too, so it needs gram's source: make web GRAM=path/to/gram"; exit 1; }
 	mkdir -p build/web
@@ -140,14 +149,15 @@ web-test: $(WIRE) build/web/wire.js
 # site) and Chu's book, which is NOT copied (it is not ours to publish):
 # the page asks for your own copy with Open PDF, or loads it if you put it
 # beside the pages as $(CHU_PDF). Change BOOKS to use others.
+
 BOOKS   ?= $(if $(wildcard books/fpga_summary.pdf),--book books/fpga_summary.pdf --book-name "My notes" --topics books/fpga_summary.topics) \
            $(if $(wildcard books/chu_fpga_prototyping_vhdl.pdf),--book books/chu_fpga_prototyping_vhdl.pdf --book-name "chu_fpga_prototyping_vhdl" $(if $(wildcard books/chu.topics),--topics books/chu.topics))
-# With Wire built for the web (make web, needs Emscripten), the site gets the
+
 # With Wire built for the web (make web, needs Emscripten), the site gets the
 # playground too: write a circuit in the browser and see it.
 site: $(WIRE)
 	rm -rf build/site
-	@if [ -f build/web/wire.wasm ]; then node tools/playground.js build/web build/site $(BOOKS); \
+	@if [ -f build/web/wire.wasm ]; then node tools/playground.js build/web build/site --wire $(WIRE) $(BOOKS); \
 	 else echo "wire: no build/web/wire.wasm, so the site has no playground (make web needs Emscripten)"; fi
 	node tools/site.js $(WIRE) build/site $(BOOKS)
 

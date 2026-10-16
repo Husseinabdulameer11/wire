@@ -50,6 +50,7 @@ header {
 h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: -.005em; white-space: nowrap; }
 h1 span { color: var(--ink-soft); font-weight: 400; }
 .file { display: flex; align-items: center; gap: 6px; }
+.file[hidden] { display: none; }
 .file label { color: var(--ink-soft); white-space: nowrap; }
 select, input[type=text], input[type=number] {
   font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line);
@@ -163,8 +164,9 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
   .mode { order: 2; }
   .file.ex { order: 3; flex: 1 1 0; min-width: 0; }
   .file.ex select { flex: 1; min-width: 0; max-width: none; width: 100%; }
-  .file:not(.ex) { order: 4; }
-  .actions { order: 5; }
+  .file:not(.ex) { order: 5; }
+  .actions { order: 6; }
+  header::before { content: ""; order: 4; flex-basis: 100%; height: 0; }
   .spacer { display: none; }
   header > * { flex-shrink: 1; }
   header::after { content: ""; order: 1; flex-basis: 100%; height: 0; }
@@ -183,13 +185,18 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
   <h1>Wire <span>playground</span></h1>
   <div class="group mode" role="group" aria-label="How to make the circuit">
     <button id="mode-draw" aria-pressed="true" title="Drag parts onto the circuit and wire them">Draw</button>
-    <button id="mode-write" aria-pressed="false" title="Write the circuit in Wire">Write</button>
+    <button id="mode-write" aria-pressed="false" title="Write the circuit in Wire or in VHDL">Write</button>
+  </div>
+  <div class="file lang" id="langbox" hidden>
+    <select id="lang" aria-label="Write in" title="Write the circuit in Wire, or in VHDL (assignments, when/else, with/select)">
+      <option value="wire">Wire</option><option value="vhdl">VHDL</option>
+    </select>
   </div>
   <div class="file ex">
     <select id="example" aria-label="Open an example"><option value="">Open an example…</option></select>
   </div>
   <div class="file">
-    <div class="name"><input id="name" aria-label="File name" type="text" value="my_circuit" spellcheck="false" autocapitalize="off" autocomplete="off" title="The VHDL entity gets this name"><span>.wire</span></div>
+    <div class="name"><input id="name" aria-label="File name" type="text" value="my_circuit" spellcheck="false" autocapitalize="off" autocomplete="off" title="The VHDL entity gets this name"><span id="ext">.wire</span></div>
   </div>
   <div class="group actions" role="group" aria-label="Your circuit">
     <button id="new" title="Start a new circuit">New</button>
@@ -433,11 +440,16 @@ async function wire(args, mainPath, mainText) {
 
 /* ======================================================= the two documents */
 let mode = "draw";             /* draw: the drawing; write: the code editor */
+let lang = "wire";             /* what the code editor holds: wire or vhdl */
 let dir = "";                  /* the example's folder, where its imports are */
 let dirty = false;             /* the code was edited since it was loaded */
+/* the code of the other language, kept while you switch: { text, dir, dirty } */
+const other = { wire: null, vhdl: null };
 const STORE = "wire-playground-2";
+const vhdlNow = () => mode === "write" && lang === "vhdl";
 const fileName = () => ($("name").value.replace(/[^A-Za-z0-9_]/g, "") || "my_circuit");
-const mainPath = () => (mode === "write" && dir ? dir + "/" : "") + fileName() + ".wire";
+const ext = () => vhdlNow() ? ".vhd" : ".wire";
+const mainPath = () => (mode === "write" && dir ? dir + "/" : "") + fileName() + ext();
 const sourceNow = () => mode === "draw" ? genCode(model) : src.value;
 /* the Book panel: the pdfs by their full address (the circuit is shown from a
  * blob: page, where a name next to this page would not resolve), and a book
@@ -449,7 +461,9 @@ function bookArgs() {
     "--book-url", new URL(b.url, location.href).href, "--book-name", b.name, ...(b.topics ? ["--topics", "/r/" + b.topics] : [])]);
 }
 function persist() {
-  try { localStorage.setItem(STORE, JSON.stringify({ mode, name: $("name").value, draw: model, write: { dir, text: src.value } })); } catch (e) {}
+  const doc = { dir, text: src.value, dirty };
+  const docs = { wire: lang === "wire" ? doc : other.wire, vhdl: lang === "vhdl" ? doc : other.vhdl };
+  try { localStorage.setItem(STORE, JSON.stringify({ mode, lang, name: $("name").value, draw: model, write: docs.wire || { dir: "", text: STARTER_CODE }, vhdl: docs.vhdl })); } catch (e) {}
 }
 
 /* ============================================================== compiling */
@@ -467,8 +481,8 @@ async function compile(revertTo) {
     errLine = 0;
     signal.className = "ok";
     msg.className = "";
-    const line = r.err.split("\n").find(l => /\.wire: \d+ inputs?,/.test(l)) || "";
-    const sum = line.replace(/^.*?\.wire:\s*/, "").replace(/, 0 chips/, "") || "It works";
+    const line = r.err.split("\n").find(l => /\.(wire|vhd): \d+ inputs?,/.test(l)) || "";
+    const sum = line.replace(/^.*?\.(wire|vhd):\s*/, "").replace(/, 0 chips/, "") || "It works";
     msg.innerHTML = "";
     msg.append(sum.charAt(0).toUpperCase() + sum.slice(1) + ". ");
     const h = document.createElement("span");
@@ -726,6 +740,7 @@ $("tidy").onclick = () => {
   try { frames[front].contentWindow.document.getElementById("tidy").click(); } catch (e) {}
 };
 $("tocode").onclick = () => {
+  if (lang === "vhdl") { other.vhdl = { text: src.value, dir, dirty }; lang = "wire"; const d = other.wire; if (d) { src.value = d.text; dir = d.dir; dirty = d.dirty; } }
   if (dirty && src.value.trim() && !confirm("Replace the code in the editor with this drawing's Wire?")) return;
   src.value = genCode(model);
   dir = "";
@@ -750,10 +765,29 @@ function highlightLine(line) {
   return html + esc(line.slice(at));
 }
 const highlight = text => text.split("\n").map(highlightLine).join("\n");
+/* VHDL: keywords in any case, -- comments, '0' and "0101" and x"F0" */
+const VKW = "abs|after|all|and|architecture|array|assert|begin|block|buffer|case|component|constant|downto|else|elsif|end|entity|"
+  + "for|function|generate|generic|if|in|inout|is|library|loop|map|mod|nand|nor|not|null|of|open|or|others|out|package|port|"
+  + "procedure|process|range|rem|return|rol|ror|select|signal|sla|sll|sra|srl|subtype|then|to|type|use|variable|wait|when|while|with|xnor|xor";
+const VFN = "std_logic_vector|std_ulogic_vector|std_logic|std_ulogic|unsigned|signed|integer|natural|positive|boolean|bit_vector|bit|"
+  + "to_unsigned|to_signed|to_integer|resize|shift_left|shift_right|rotate_left|rotate_right|rising_edge|falling_edge";
+const VTOK = new RegExp(`(--[^\n]*)|("[^"\n]*"?|'.')|\b([bBoOxX]"[0-9a-fA-F_]*"|\d[\d_]*)|\b(${VKW})\b|\b(${VFN})\b`, "gi");
+function highlightAny(line) {
+  if (lang !== "vhdl") return highlightLine(line);
+  let html = "", at = 0, m;
+  VTOK.lastIndex = 0;
+  while ((m = VTOK.exec(line))) {
+    html += esc(line.slice(at, m.index));
+    const cls = m[1] ? "cm" : m[2] ? "str" : m[3] ? "num" : m[4] ? "kw" : "part";
+    html += `<span class="t-${cls}">${esc(m[0])}</span>`;
+    at = m.index + m[0].length;
+  }
+  return html + esc(line.slice(at));
+}
 function paint() {
   const lines = src.value.split("\n");
   hl.innerHTML = lines.map((line, i) => {
-    const html = highlightLine(line);
+    const html = highlightAny(line);
     return i + 1 === errLine ? `<span class="errline">${html || " "}</span>` : html;
   }).join("\n") + "\n";
   gutter.innerHTML = lines.map((_, i) => `<div${i + 1 === errLine ? ' class="err"' : ""}>${i + 1}</div>`).join("");
@@ -802,6 +836,8 @@ function setMode(m) {
   $("draw").hidden = m !== "draw";
   $("editor").hidden = m !== "write";
   $("tab-side").textContent = m === "draw" ? "Parts" : "Code";
+  $("langbox").hidden = m !== "write";
+  showLang();
   disarm();
   if (m === "draw") { showGen(); showProps(); } else paint();
   persist();
@@ -810,12 +846,40 @@ function setMode(m) {
 $("mode-draw").onclick = () => { if (mode !== "draw") { $("example").value = ""; setMode("draw"); } };
 $("mode-write").onclick = () => { if (mode !== "write") setMode("write"); };
 
+/* Wire or VHDL in the editor; each keeps its own code while you switch */
+function showLang() {
+  const v = vhdlNow();
+  $("lang").value = lang;
+  $("ext").textContent = ext();
+  src.setAttribute("aria-label", v ? "VHDL source" : "Wire source");
+  $("savewire").title = v ? "Download the Wire this VHDL is turned into" : "Download the Wire source";
+  $("savevhd").title = v ? "Download your VHDL" : "Download the circuit as VHDL-93, ready for Vivado";
+  for (const o of ex.querySelectorAll("option")) {
+    if (!o.value) continue;
+    o.disabled = lang === "vhdl" && !VHD[o.value];
+    o.title = o.disabled ? "Its VHDL uses what Wire does not read yet (a process, a component...)" : "";
+  }
+}
+function setLang(l) {
+  if (l === lang) return;
+  other[lang] = { text: src.value, dir, dirty };
+  lang = l;
+  const d = other[l] || { text: l === "vhdl" ? STARTER_VHDL : STARTER_CODE, dir: "", dirty: false };
+  src.value = d.text; dir = d.dir; dirty = d.dirty;
+  ex.value = "";
+  errLine = 0;
+  src.scrollTop = 0;
+  setMode("write");
+}
+$("lang").onchange = () => setLang($("lang").value);
+
 const ex = $("example");
+const VHD = {};                 /* example -> its .vhd, when Wire reads it */
 if (narrow()) ex.options[0].text = "Examples";
 for (const s of EXAMPLES) {
   const g = document.createElement("optgroup");
   g.label = s.title;
-  for (const it of s.items) g.append(new Option(it.title, it.path));
+  for (const it of s.items) { g.append(new Option(it.title, it.path)); if (it.vhd) VHD[it.path] = it.vhd; }
   ex.append(g);
 }
 const fitName = () => { $("name").style.width = Math.max(4, $("name").value.length + 1) + "ch"; };
@@ -832,7 +896,8 @@ ex.addEventListener("change", () => {
   const p = ex.value;
   if (!p) return;
   if (mode === "write" && dirty && !confirm("Replace your code with the example? Your changes to it are not kept.")) { ex.value = ""; return; }
-  loadCode(FILES[p], p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, ""), p.slice(0, p.lastIndexOf("/")));
+  const f = lang === "vhdl" && VHD[p] ? VHD[p] : p;
+  loadCode(FILES[f], p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, ""), p.slice(0, p.lastIndexOf("/")));
 });
 
 const STARTER_CODE = `circuit "My circuit"
@@ -848,6 +913,25 @@ p    = a ^ b
 sum  = p ^ cin
 cout = (a & b) | (p & cin)
 `;
+const STARTER_VHDL = `-- Write VHDL and the circuit is drawn as you type. Wire reads one
+-- entity with assignments, when ... else and with ... select
+-- (processes are not supported yet). Click the inputs to try it.
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity my_circuit is
+  port(a, b, cin : in  std_logic;
+       sum, cout : out std_logic);
+end my_circuit;
+
+architecture rtl of my_circuit is
+  signal p : std_logic;
+begin
+  p    <= a xor b;
+  sum  <= p xor cin;
+  cout <= (a and b) or (p and cin);
+end rtl;
+`;
 $("new").onclick = () => {
   if (mode === "draw") {
     if (model.parts.length > 0 && !confirm("Start a new drawing? This one is not kept (Undo brings it back).")) return;
@@ -856,7 +940,7 @@ $("new").onclick = () => {
   } else {
     if (dirty && !confirm("Start again? Your code is not kept.")) return;
     ex.value = "";
-    loadCode(STARTER_CODE, "my_circuit", "");
+    loadCode(lang === "vhdl" ? STARTER_VHDL : STARTER_CODE, "my_circuit", "");
   }
 };
 $("name").addEventListener("input", () => { fitName(); persist(); schedule(); });
@@ -876,8 +960,15 @@ function flash(btn, text) {
   btn.textContent = text;
   setTimeout(() => { btn.textContent = was; }, 1400);
 }
-$("savewire").onclick = () => download(fileName() + ".wire", sourceNow(), "text/plain");
+$("savewire").onclick = async () => {
+  if (!vhdlNow()) return download(fileName() + ".wire", sourceNow(), "text/plain");
+  const path = mainPath();
+  const r = await wire(["--to-wire", path], path, src.value);
+  if (r.code !== 0) { showError(r.err.trim(), path); paint(); return; }
+  download(fileName() + ".wire", r.out, "text/plain");
+};
 $("savevhd").onclick = async () => {
+  if (vhdlNow()) return download(fileName() + ".vhd", src.value, "text/x-vhdl");
   const path = mainPath();
   const r = await wire(["--to-vhdl", "-o", "/out.vhd", path], path, sourceNow());
   if (r.code !== 0) { showError(r.err.trim(), path); if (mode === "write") paint(); return; }
@@ -888,7 +979,7 @@ const fromB64 = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/
 $("share").onclick = async () => {
   const q = new URLSearchParams({ n: fileName() });
   if (mode === "draw") q.set("m", toB64(JSON.stringify(model)));
-  else { q.set("c", toB64(src.value)); if (dir) q.set("d", dir); }
+  else { q.set("c", toB64(src.value)); if (dir) q.set("d", dir); if (lang === "vhdl") q.set("l", "vhdl"); }
   const url = location.href.replace(/#.*$/, "") + "#" + q.toString();
   history_replace(url);
   try { await navigator.clipboard.writeText(url); flash($("share"), "Link copied"); }
@@ -924,14 +1015,26 @@ function validModel(m) { return m && Array.isArray(m.parts) && Array.isArray(m.l
   src.value = saved && saved.write && typeof saved.write.text === "string" ? saved.write.text : STARTER_CODE;
   dir = saved && saved.write ? saved.write.dir || "" : "";
   dirty = !!(saved && saved.write && saved.write.text && saved.write.text !== STARTER_CODE);
+  if (saved && saved.vhdl && typeof saved.vhdl.text === "string") other.vhdl = { text: saved.vhdl.text, dir: saved.vhdl.dir || "", dirty: !!saved.vhdl.dirty };
+  if (saved && saved.lang === "vhdl") {   /* what was in the editor was VHDL */
+    other.wire = { text: src.value, dir, dirty };
+    lang = "vhdl";
+    const d = other.vhdl || { text: STARTER_VHDL, dir: "", dirty: false };
+    src.value = d.text; dir = d.dir; dirty = d.dirty;
+  }
   $("name").value = saved && saved.name ? saved.name : "my_circuit";
   let m = saved && saved.mode === "write" ? "write" : "draw";
   if (q.get("m")) {
     try { const d = JSON.parse(fromB64(q.get("m"))); if (validModel(d)) { model = d; m = "draw"; $("name").value = q.get("n") || "my_circuit"; } } catch (e) {}
   } else if (q.get("c")) {
-    try { src.value = fromB64(q.get("c")); dir = q.get("d") || ""; dirty = true; m = "write"; $("name").value = q.get("n") || "my_circuit"; } catch (e) {}
+    try {
+      const text = fromB64(q.get("c")), l = q.get("l") === "vhdl" ? "vhdl" : "wire";
+      if (l !== lang) { other[lang] = { text: src.value, dir, dirty }; lang = l; }
+      src.value = text; dir = q.get("d") || ""; dirty = true; m = "write"; $("name").value = q.get("n") || "my_circuit";
+    } catch (e) {}
   } else if (q.get("ex") && FILES[q.get("ex")]) {
     const p = q.get("ex");
+    if (lang === "vhdl") { other.vhdl = { text: src.value, dir, dirty }; lang = "wire"; }
     ex.value = p;
     src.value = FILES[p]; dir = p.slice(0, p.lastIndexOf("/")); dirty = false; m = "write";
     $("name").value = p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, "");

@@ -38,6 +38,29 @@ typedef struct { const char *name; const char *text; size_t len; } File;
 static File files[MAXFILES];
 static int nfiles;
 static const char *src_name;   /* the file named on the command line */
+static const char *vhdl_in;    /* its text, when it is VHDL (files[0] then holds the Wire made from it) */
+static size_t vhdl_in_len;
+
+/* does the name end in .vhd or .vhdl (any case)? returns the extension's length */
+static size_t vhdl_ext(const char *p)
+{
+    size_t n = strlen(p), k;
+    static const char *exts[] = { ".vhd", ".vhdl" };
+    int e;
+    for (e = 0; e < 2; e++) {
+        k = strlen(exts[e]);
+        if (n > k) {
+            size_t i;
+            for (i = 0; i < k; i++) {
+                int c = p[n - k + i];
+                if (c >= 'A' && c <= 'Z') c += 32;
+                if (c != exts[e][i]) break;
+            }
+            if (i == k) return k;
+        }
+    }
+    return 0;
+}
 
 static int file_of(const gram_node *at)
 {
@@ -1314,14 +1337,15 @@ static void write_json(void)
     fputs(",\"file\":", jf);
     jcstr(src_name);
     fputs(",\"source\":", jf);
-    jstr(files[0].text, (int)files[0].len);
+    if (vhdl_in) jstr(vhdl_in, (int)vhdl_in_len); else jstr(files[0].text, (int)files[0].len);
     fputs(",\"files\":[", jf);
     for (i = 0; i < nfiles; i++) {
         if (i) fputc(',', jf);
         fputs("{\"name\":", jf);
         jcstr(files[i].name);
         fputs(",\"source\":", jf);
-        jstr(files[i].text, (int)files[i].len);
+        if (i == 0 && vhdl_in) jstr(vhdl_in, (int)vhdl_in_len);
+        else jstr(files[i].text, (int)files[i].len);
         fputc('}', jf);
     }
     fputs("],\"insts\":[", jf);
@@ -1407,6 +1431,7 @@ static char *base_name(const char *path, int keep_ext)
     for (p = path; *p; p++) if (*p == '/' || *p == '\\') b = p + 1;
     n = strlen(b);
     if (!keep_ext && n > 5 && !strcmp(b + n - 5, ".wire")) n -= 5;
+    else if (!keep_ext) n -= vhdl_ext(b);
     r = (char *)malloc(n + 1);
     memcpy(r, b, n);
     r[n] = 0;
@@ -1559,6 +1584,10 @@ static char *read_file(const char *path, size_t *len)
 }
 
 static void put(int c, void *ctx) { fputc(c, (FILE *)ctx); }
+
+/* ---- VHDL in: a .vhd file, turned into Wire --------------------------- */
+
+#include "wire_vhdl_in.c"
 
 static long opt_hz(gram_node *opts)
 {
@@ -2243,7 +2272,7 @@ int main(int argc, char **argv)
     gram_grammar *g;
     gram_node *prog;
     const char *out = NULL;
-    int i, json = 0, tree = 0, check = 0, to_vhdl = 0;
+    int i, json = 0, tree = 0, check = 0, to_vhdl = 0, to_wire = 0;
     char *text, *def = NULL;
     size_t len;
 
@@ -2255,6 +2284,8 @@ int main(int argc, char **argv)
             printf("wire %s - describe a digital circuit, get an interactive page\n\n"
                    "usage: wire [-o out.html] file.wire\n\n"
                    "  file.wire        writes file.html next to it\n"
+                   "  file.vhd         VHDL works too (one entity; assignments, when/else, with/select)\n"
+                   "  --to-wire        print the Wire a .vhd file is turned into\n"
                    "  -o out.html      write the page somewhere else\n"
                    "  --json           print the netlist as JSON instead\n"
                    "  --to-vhdl        print the circuit as VHDL instead (with -o: write it there)\n"
@@ -2272,6 +2303,7 @@ int main(int argc, char **argv)
         } else if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--json")) json = 1;
         else if (!strcmp(argv[i], "--to-vhdl")) to_vhdl = 1;
+        else if (!strcmp(argv[i], "--to-wire")) to_wire = 1;
         else if (!strcmp(argv[i], "--check")) check = 1;
         else if (!strcmp(argv[i], "-t")) tree = 1;
         else if (!strcmp(argv[i], "-I") && i + 1 < argc && nincdirs < 16) incdirs[nincdirs++] = argv[++i];
@@ -2290,6 +2322,12 @@ int main(int argc, char **argv)
     text = read_file(src_name, &len);
     if (!text) { perror(src_name); return 1; }
     find_exedir(argv[0]);
+    if (vhdl_ext(src_name)) {
+        vhdl_in = text;
+        vhdl_in_len = len;
+        text = vhdl_to_wire(vhdl_in, vhdl_in_len, src_name, &len);
+        if (!vhdl_file) vhdl_file = src_name;   /* the VHDL panel shows the file itself */
+    } else if (to_wire) { fprintf(stderr, "wire: --to-wire is for .vhd files; %s is Wire already\n", src_name); return 2; }
 
     gram_arena_init(&arena, mem, sizeof mem);
     g = gram_compile(&arena, WIRE_GRAMMAR, &err);
@@ -2313,6 +2351,7 @@ int main(int argc, char **argv)
     check_unused();
     finish();
     if (check) return 0;
+    if (to_wire) { vhdl_print_wire(stdout, files[0].text); return 0; }
     if (json) { jf = stdout; write_json(); putchar('\n'); return 0; }
     if (to_vhdl) {
         char *top = base_name(src_name, 0), *text = vhdl_generate(top, base_name(src_name, 1));
@@ -2327,6 +2366,7 @@ int main(int argc, char **argv)
         def = (char *)malloc(n + 6);
         strcpy(def, src_name);
         if (n > 5 && !strcmp(def + n - 5, ".wire")) def[n - 5] = 0;
+        else def[n - vhdl_ext(def)] = 0;
         strcat(def, ".html");
         out = def;
     }

@@ -2,7 +2,7 @@
 /* playground.js - makes the playground: Wire itself, compiled to
  * WebAssembly (make web), in a page where you write a circuit and see it.
  *
- *   node tools/playground.js build/web build/site [books]   (make site does this)
+ *   node tools/playground.js build/web build/site [--wire build/wire] [books]   (make site does this)
  *
  * Writes playground.html (src/playground.html with every example, the files
  * they import, the standard library and the books' topics put in), wire.js
@@ -12,8 +12,11 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
-function build(web, out, books = []) {
+/* wire: the native wire, to find which examples' VHDL it reads (those can
+ * be opened in the playground's VHDL editor) */
+function build(web, out, books = [], wire = null) {
   const root = path.join(__dirname, "..");
   const ex = path.join(root, "examples");
   const walk = (d, keep) => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
@@ -50,6 +53,16 @@ function build(web, out, books = []) {
     sections[sections.length - 1].items.push({ path: p, title: title(p) });
     listed.add(p);
   }
+  /* the VHDL beside each example, where Wire reads it */
+  let nvhd = 0;
+  for (const s of sections) for (const it of s.items) {
+    const v = it.path.replace(/\.wire$/, ".vhd"), full = path.join(root, v);
+    if (!wire || !fs.existsSync(full)) continue;
+    if (spawnSync(wire, ["--check", full], { stdio: "ignore" }).status !== 0) continue;
+    files[v] = fs.readFileSync(full, "utf8");
+    it.vhd = v;
+    nvhd++;
+  }
   const rest = Object.keys(files).filter(p => p.startsWith("examples/") && p.endsWith(".wire") && !p.includes("/lib/") && !listed.has(p)).sort();
   if (rest.length) sections.push({ title: "More", items: rest.map(p => ({ path: p, title: title(p) })) });
 
@@ -63,12 +76,14 @@ function build(web, out, books = []) {
   fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, "playground.html"), page);
   for (const f of ["wire.js", "wire.wasm"]) fs.copyFileSync(path.join(web, f), path.join(out, f));
-  return Object.keys(files).length;
+  return { files: Object.keys(files).length, vhd: nvhd };
 }
 
 if (require.main === module) {
   const args = process.argv.slice(2), pos = [], books = [];
+  let wire = null;
   for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--wire") { wire = args[++i]; continue; }
     const key = { "--book": "book", "--book-url": "url", "--book-name": "name", "--topics": "topics", "--book-dir": "dir" }[args[i]];
     if (key === "book" || key === "url") books.push({ [key]: args[++i] });
     else if (key) { if (!books.length) { console.error(`playground.js: ${args[i]} before any --book`); process.exit(2); } books[books.length - 1][key] = args[++i]; }
@@ -76,7 +91,8 @@ if (require.main === module) {
   }
   const [web = "build/web", out = "build/site"] = pos;
   if (!fs.existsSync(path.join(web, "wire.wasm"))) { console.error(`playground.js: no ${web}/wire.wasm; run make web first (it needs Emscripten)`); process.exit(1); }
-  const n = build(web, out, books);
-  console.log(`wrote playground.html, wire.js and wire.wasm to ${out} (${n} example and library files inside)`);
+  const n = build(web, out, books, wire);
+  console.log(`wrote playground.html, wire.js and wire.wasm to ${out} (${n.files} example and library files inside, ` +
+              `${n.vhd} examples with VHDL Wire reads)`);
 }
 module.exports = { build };
