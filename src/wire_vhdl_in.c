@@ -17,18 +17,25 @@
  * port map places it, so chips can be built from chips. The top entity is
  * the one no other entity uses (the last one, if there are several).
  * for ... generate and if ... generate are unrolled (labels and signals
- * inside get _0, _1 ... on the end). Processes are recognised and refused
- * with a message, not a syntax error.
+ * inside get _0, _1 ... on the end). Processes are read statement by
+ * statement (if, case, for with exit, variables): a clocked one (if
+ * rising_edge(clk), with or without an asynchronous reset first) becomes
+ * registers (dff) with the logic in front of them, any other one becomes
+ * logic, and a signal it does not give a value on every path is refused
+ * (it would be a latch). Enumerations (type state is (idle, run)) are
+ * numbered in binary; arrays (type mem is array (0 to 15) of ...) become a
+ * signal per element, read with a mux, or a rom when constant; integers
+ * with a range become unsigned.
  *
  * The Wire keeps the VHDL's lines: each statement lands on the line (and
  * near the column) it came from, so every error Wire finds later, and every
  * part's line on the page, points at the right line of the VHDL. */
 #include "vhdl_grammar.h"
 
-enum { T_SL, T_BOOL, T_SLV, T_UNS, T_SGN, T_STR, T_INT };
+enum { T_SL, T_BOOL, T_SLV, T_UNS, T_SGN, T_STR, T_INT, T_ENUM, T_ARR, T_INTV };
 static const char *vi_tyname[] = { "std_logic", "boolean", "std_logic_vector", "unsigned", "signed",
-                                   "a literal", "integer" };
-enum { VK_IN, VK_OUT, VK_SIG, VK_CONST, VK_GEN, VK_LABEL };
+                                   "a literal", "integer", "a state (an enumeration)", "an array", "integer" };
+enum { VK_IN, VK_OUT, VK_SIG, VK_CONST, VK_GEN, VK_LABEL, VK_VAR };
 
 typedef struct {
     const char *name;            /* as declared (points into the VHDL) */
@@ -40,7 +47,21 @@ typedef struct {
     unsigned long bits;          /* a vector constant */
     const gram_node *at;
     gram_node *def;              /* a port's default value (:= '0'), or NULL */
+    int ut;                      /* an enumeration or array: its type (vi_types index + 1) */
+    int elem0;                   /* an array signal: the index of its first element's VSym */
+    unsigned long *abits;        /* an array constant: each element */
+    int hasinit;                 /* a signal's initial value (:= ...) is in bits */
 } VSym;
+
+/* a type of the architecture: an enumeration or an array */
+typedef struct {
+    const gram_node *id;
+    int isarr;
+    gram_node *lits;             /* enumeration: the first literal */
+    int n, w;                    /* enumeration: how many literals, and bits */
+    VSym elem;                   /* array: the element type */
+    int alo, ahi;                /* array: the lowest and highest index */
+} VType;
 
 /* an entity, its architecture and its ports (as seen from outside) */
 typedef struct {
@@ -61,6 +82,8 @@ typedef struct {
     unsigned long v;
     long iv;
     int cat;                     /* s is a {...} that more can be added to */
+    int tid;                     /* an enumeration value: its type (vi_types index + 1) */
+    char *m0, *m1, *ms;          /* s is mux(m0, m1, sel = ms) */
 } VX;
 
 static const char *vi_src;       /* the VHDL */
@@ -82,6 +105,10 @@ static int *vi_xline, vi_nx;     /* the VHDL line each of those lines comes from
 static const long *vi_over;      /* while a copy is read: its generics' values */
 static VEnt *vi_cur;             /* the entity being turned into Wire */
 static char vi_suffix[128];      /* inside generate: _3 (or _3_1 nested) for names declared there */
+static VType *vi_types;          /* the enumerations and arrays declared so far */
+static int vi_ntypes;
+static gram_node *vi_funcs[64];  /* the functions declared so far: inlined where they are called */
+static int vi_nfuncs;
 
 #define VT(n) (int)(n)->len, (n)->text
 
@@ -139,10 +166,12 @@ static gram_node *vi_kid(const gram_node *n, int rule)
 
 /* ---- names ------------------------------------------------------------- */
 
+static int vi_scope;              /* names declared from here on may hide earlier ones (a function's) */
+
 static VSym *vi_find(const gram_node *id)
 {
     int i, j;
-    for (i = 0; i < vi_nsyms; i++) {
+    for (i = vi_nsyms - 1; i >= 0; i--) {   /* the latest first: a function's names hide the architecture's */
         VSym *s = &vi_syms[i];
         if (s->nlen != (int)id->len) continue;
         for (j = 0; j < s->nlen; j++) if (vi_lower(s->name[j]) != vi_lower(id->text[j])) break;
@@ -171,7 +200,7 @@ static int vi_wname_used(const char *w)
 static VSym *vi_declare(gram_node *id, int kind)
 {
     VSym *s;
-    if (vi_find(id)) vi_fail(id, "%.*s is declared twice", VT(id));
+    if (vi_find(id) && vi_find(id) - vi_syms >= vi_scope) vi_fail(id, "%.*s is declared twice", VT(id));
     if (vi_nsyms == vi_cap) {
         vi_cap = vi_cap ? vi_cap * 2 : 64;
         vi_syms = (VSym *)realloc(vi_syms, (size_t)vi_cap * sizeof *vi_syms);
@@ -336,9 +365,27 @@ static long vi_const_int(const gram_node *n, const char *what)
 /* ---- types --------------------------------------------------------------- */
 
 /* type -> ty, width and range */
+static VType *vi_find_type(const gram_node *id, int *index)
+{
+    int i;
+    for (i = vi_ntypes - 1; i >= 0; i--)
+        if (vi_is(id, vi_fmt("%.*s", (int)vi_types[i].id->len, vi_types[i].id->text))) { if (index) *index = i; return &vi_types[i]; }
+    return NULL;
+}
+
+/* allow_int: 0 no integers, 1 integer constants, 2 integer signals and variables (with a range) */
 static void vi_type(gram_node *t, VSym *s, int allow_int)
 {
     gram_node *id = t->child, *r = id->next;
+    int ti;
+    VType *ut = vi_find_type(id, &ti);
+    if (ut) {
+        if (r) vi_fail(r, "%.*s has no range of its own", VT(id));
+        s->ut = ti + 1;
+        if (ut->isarr) { s->ty = T_ARR; s->w = ut->elem.w; }
+        else { s->ty = T_ENUM; s->w = ut->w; s->left = ut->w - 1; s->right = 0; s->down = 1; }
+        return;
+    }
     if ((vi_is(id, "std_logic") || vi_is(id, "std_ulogic") || vi_is(id, "std_logic_vector") || vi_is(id, "std_ulogic_vector"))
         && !(vi_ctx & CTX_1164))
         vi_fail(id, "%.*s is not visible here: put library ieee; use ieee.std_logic_1164.all; before this entity "
@@ -355,6 +402,19 @@ static void vi_type(gram_node *t, VSym *s, int allow_int)
         if (!allow_int)
             vi_fail(id, "Wire needs a width here: use std_logic_vector(n-1 downto 0) or unsigned(n-1 downto 0) "
                         "instead of %.*s", VT(id));
+        if (allow_int == 2) {   /* an integer signal or variable: unsigned bits, as many as its range needs */
+            long lo, hi;
+            if (!r) vi_fail(id, "give this %.*s a range, like %.*s range 0 to 9, so Wire knows how many bits it has", VT(id), VT(id));
+            lo = vi_const_int(r->child, "a range");
+            hi = vi_const_int(r->child->next->next, "a range");
+            if (vi_is(r->child->next, "downto")) { long tmp = lo; lo = hi; hi = tmp; }
+            if (lo < 0) vi_fail(r, "integers below 0 are not supported yet; use signed");
+            if (hi < lo) vi_fail(r, "this range is empty");
+            s->ty = T_INTV; s->w = 1;
+            while (s->w < 31 && (1L << s->w) <= hi) s->w++;
+            s->left = s->w - 1; s->right = 0; s->down = 1;
+            return;
+        }
         s->ty = T_INT; s->w = 0;
         return;
     }
@@ -374,12 +434,12 @@ static void vi_type(gram_node *t, VSym *s, int allow_int)
     s->down = vi_is(r->child->next, "downto");
     s->w = s->down ? s->left - s->right + 1 : s->right - s->left + 1;
     if (s->w < 1) vi_fail(r, "this range is empty");
-    if (s->w > MAXW) vi_fail(r, "Wire handles up to %d bits, and this is %d", MAXW, s->w);
+    if (s->w > MAXW) vi_fail(r, "Wire handles up to %d bits, and this is %d; wider values are not supported yet", MAXW, s->w);
 }
 
 static int vi_num(int ty)        /* can do arithmetic */
 {
-    return ty == T_UNS || ty == T_SGN || (ty == T_SLV && vi_slv_num);
+    return ty == T_UNS || ty == T_SGN || ty == T_INTV || (ty == T_SLV && vi_slv_num);
 }
 
 static int vi_signed(int ty) { return ty == T_SGN || (ty == T_SLV && vi_slv_num == 2); }
@@ -430,7 +490,7 @@ static VX vi_strlit(const gram_node *n)
     size_t i;
     int w = (int)n->len - 2;
     if (w < 1) vi_fail(n, "an empty string is not a value");
-    if (w > MAXW) vi_fail(n, "Wire handles up to %d bits, and this is %d", MAXW, w);
+    if (w > MAXW) vi_fail(n, "Wire handles up to %d bits, and this is %d; wider values are not supported yet", MAXW, w);
     for (i = 1; i + 1 < n->len; i++) v = (v << 1) | (unsigned long)vi_bitchar(n, n->text[i]);
     return vi_const(v, w, T_STR);
 }
@@ -464,13 +524,16 @@ static VX vi_bitstr(const gram_node *n)
         bits = (int)width;
     }
     if (bits < 1) vi_fail(n, "an empty literal is not a value");
-    if (bits > MAXW) vi_fail(n, "Wire handles up to %d bits, and this is %d", MAXW, bits);
+    if (bits > MAXW) vi_fail(n, "Wire handles up to %d bits, and this is %d; wider values are not supported yet", MAXW, bits);
     return vi_const(v, bits, T_STR);
 }
 
 /* ---- expressions ----------------------------------------------------------- */
 
 static VX vi_gen(gram_node *n, int want);
+static VX vi_var_read(VSym *s, gram_node *at);
+static VX vi_array_read(VSym *s, gram_node *id, gram_node *args, int want);
+static VX vi_barrel(VX x, VX amount, int left, int arith, int rot, gram_node *at);
 
 static char *vi_wrap(const VX *x, int need)      /* x as an operand that needs atom level need */
 {
@@ -558,8 +621,24 @@ static VX vi_index(VSym *s, gram_node *id, gram_node *arg)
     } else {
         long i;
         int k;
-        if (!vi_ceval(arg, &i))
-            vi_fail(arg, "picking a bit with a signal is not supported yet; the index must be a constant");
+        if (!vi_ceval(arg, &i)) {   /* a bit picked by a signal: a mux over the bits */
+            VX ix = vi_gen(arg, -1);
+            VBuf b = { 0, 0, 0 };
+            int j, n;
+            if (!strcmp(base, "@")) vi_fail(arg, "a bit picked by a signal cannot be used here");
+            if (ix.ty != T_INTV && ix.ty != T_UNS) vi_fail(arg, "an index is an integer: write %.*s(to_integer(...))", VT(id));
+            if (ix.w > 5) vi_fail(arg, "picking one of more than 32 bits with a signal is not supported yet");
+            n = 1 << ix.w;
+            vb_add(&b, "mux(", 4);
+            for (j = 0; j < n; j++) {
+                if (j < lo || j > hi) { vb_add(&b, "0b0, ", 5); continue; }
+                k = s->down ? j - lo : hi - j;
+                if (s->kind == VK_CONST) vbf(&b, "0b%lu, ", (s->bits >> k) & 1);
+                else vbf(&b, "%s[%d], ", base, k);
+            }
+            vbf(&b, "sel = %s)", ix.s);
+            return vi_mk(b.s, T_SL, 1, 2);
+        }
         if (i < lo || i > hi)
             vi_fail(arg, "%ld is outside %.*s(%d %s %d)", i, VT(id), s->left, s->down ? "downto" : "to", s->right);
         k = s->down ? (int)i - lo : hi - (int)i;
@@ -591,6 +670,9 @@ static char *vi_sl(const char *b, int hi, int lo)   /* b[hi:lo], or b[hi] for on
 }
 
 /* f(...): a conversion, or a bit or slice of a signal */
+static gram_node *vi_find_func(const gram_node *id, int nargs);
+static VX vi_func_call(gram_node *f, gram_node *id, gram_node *args);
+
 static VX vi_call(gram_node *n, int want)
 {
     gram_node *id = n->child, *args = id->next;
@@ -617,8 +699,25 @@ static VX vi_call(gram_node *n, int want)
         x.ty = to;
         return x;
     }
+    if (s && s->ty == T_ARR) return vi_array_read(s, id, args, want);
+    if (!s && args->rule == VHDL_R_args) {
+        gram_node *f = vi_find_func(id, vi_nargs(args));
+        if (f) {
+            if (args->next) vi_fail(args->next, "one thing at a time, please: give the function's result a name first");
+            return vi_func_call(f, id, args);
+        }
+    }
     if (args->next) vi_fail(args->next, "one index or slice at a time, please");
     if (s && s->kind == VK_LABEL) vi_fail(id, "%.*s is the label of an instance, not a signal", VT(id));
+    if (s && s->kind == VK_VAR) {   /* a bit or slice of a variable: of its value so far */
+        VX v = vi_var_read(s, id);
+        VSym tmp = *s;
+        if (vi_nargs(args) != 1) vi_fail(args, "%.*s takes one index or slice", VT(id));
+        tmp.kind = v.cst ? VK_CONST : VK_SIG;
+        tmp.bits = v.v;
+        tmp.wname = vi_wrap(&v, 2);
+        return vi_index(&tmp, id, args->child);
+    }
     if (s && s->kind != VK_GEN && !(s->kind == VK_CONST && s->ty == T_INT)) {
         if (vi_nargs(args) != 1) vi_fail(args, "%.*s takes one index or slice", VT(id));
         return vi_index(s, id, args->child);
@@ -653,8 +752,13 @@ static VX vi_call(gram_node *n, int want)
         w = vi_const_int(vi_arg(args, 1), "the width");
         if (w < 1 || w > MAXW) vi_fail(vi_arg(args, 1), "Wire handles 1 to %d bits", MAXW);
         v = vi_gen(vi_arg(args, 0), -1);
+        if (v.ty == T_INTV) {   /* an integer signal or variable: its bits, to that width */
+            x = vi_resize(v, (int)w, 0);
+            x.ty = to;
+            return x;
+        }
         if (v.ty != T_INT || !v.cst)
-            vi_fail(vi_arg(args, 0), "integer signals are not supported yet: %.*s needs a constant here", VT(id));
+            vi_fail(vi_arg(args, 0), "%.*s takes an integer", VT(id));
         if (to == T_UNS && v.iv < 0) vi_fail(vi_arg(args, 0), "%ld is negative; unsigned cannot hold it", v.iv);
         x = vi_int_as(&v, (int)w, to == T_SLV ? (v.iv < 0 ? T_SGN : T_UNS) : to, vi_arg(args, 0));
         x.ty = to;
@@ -681,15 +785,25 @@ static VX vi_call(gram_node *n, int want)
         if (vi_nargs(args) != 2) vi_fail(args, "%.*s takes a value and a count", VT(id));
         x = vi_gen(vi_arg(args, 0), want);
         if (x.ty != T_UNS && x.ty != T_SGN) vi_fail(vi_arg(args, 0), "%.*s works on unsigned or signed", VT(id));
-        if (!vi_ceval(vi_arg(args, 1), &k))
-            vi_fail(vi_arg(args, 1), "shifting by a signal (a barrel shifter) is not supported yet; shift by a constant");
+        if (!vi_ceval(vi_arg(args, 1), &k))   /* by a signal: a barrel shifter */
+            return vi_barrel(x, vi_gen(vi_arg(args, 1), -1), vi_is(id, "shift_left") || vi_is(id, "rotate_left"), x.ty == T_SGN,
+                             vi_is(id, "rotate_left") || vi_is(id, "rotate_right"), n);
         return vi_shift(x, vi_is(id, "shift_left") || vi_is(id, "rotate_left"), x.ty == T_SGN,
                         vi_is(id, "rotate_left") || vi_is(id, "rotate_right"), k, n);
     }
-    if (vi_is(id, "to_integer") || vi_is(id, "conv_integer"))
-        vi_fail(id, "integer signals are not supported yet (here, %.*s() with a signal); keep the value unsigned", VT(id));
+    if (vi_is(id, "to_integer") || vi_is(id, "conv_integer")) {   /* the same bits, as an integer */
+        if (vi_nargs(args) != 1) vi_fail(args, "%.*s takes one value", VT(id));
+        x = vi_gen(args->child, -1);
+        if (x.ty == T_INT || x.ty == T_INTV) return x;
+        if (x.ty == T_SGN) vi_fail(args->child, "to_integer of a signed value is not supported yet");
+        if (x.ty != T_UNS && !(x.ty == T_SLV && (vi_slv_num || vi_is(id, "conv_integer"))))
+            vi_fail(args->child, "%.*s takes an unsigned value: write %.*s(unsigned(...))", VT(id), VT(id));
+        if (x.cst) { VX c; memset(&c, 0, sizeof c); c.ty = T_INT; c.cst = 1; c.iv = (long)x.v; c.s = vi_fmt("%ld", c.iv); c.atom = 2; return c; }
+        x.ty = T_INTV;
+        return x;
+    }
     if (vi_is(id, "rising_edge") || vi_is(id, "falling_edge"))
-        vi_fail(id, "%.*s belongs in a clocked process, and processes are not supported yet", VT(id));
+        vi_fail(id, "%.*s goes in a clocked process: if rising_edge(clk) then ... end if;", VT(id));
     vi_fail(id, "there is no signal or function called %.*s", VT(id));
     return x;
 }
@@ -745,7 +859,21 @@ static VX vi_aggregate(gram_node *n, int want)
     int i, pos = 0, named = 0, w = want;
     gram_node *el, *others = NULL;
     VBuf b = { 0, 0, 0 };
-    if (w < 1) {
+    long top = -1;
+    for (el = n->child; el && top != -2; el = el->next) {   /* only named bits and no others: its highest bit */
+        gram_node *c;
+        long k;
+        if (el->child->rule != VHDL_R_choices) { top = -2; break; }
+        for (c = el->child->child; c; c = c->next) {
+            long k2;
+            if (c->rule == VHDL_R_drange && vi_ceval(c->child, &k) && vi_ceval(c->child->next->next, &k2)) {
+                if (k2 > k) k = k2;
+            } else if (c->rule == VHDL_R_OTHERS || !vi_ceval(c, &k)) { top = -2; break; }
+            if (k > top) top = k;
+        }
+    }
+    if (top >= 0 && (w < 1 || top + 1 < w)) w = (int)top + 1;   /* like unsigned'(0 => '1') */
+    else if (w < 1) {
         for (el = n->child; el; el = el->next) {
             if (el->child->rule == VHDL_R_choices) break;
             pos++;
@@ -776,6 +904,16 @@ static VX vi_aggregate(gram_node *n, int want)
                 continue;
             }
             if (others) vi_fail(c, "others must be the last choice");
+            if (c->rule == VHDL_R_drange) {   /* 7 downto 0 => e */
+                long a = vi_const_int(c->child, "a range"), z = vi_const_int(c->child->next->next, "a range"), j;
+                if (a > z) { long t = a; a = z; z = t; }
+                if (a < 0 || z >= w) vi_fail(c, "this range is outside 0 to %d", w - 1);
+                for (j = a; j <= z; j++) {
+                    if (bit[j]) vi_fail(c, "bit %ld is given twice", j);
+                    bit[j] = v.s;
+                }
+                continue;
+            }
             if (!vi_ceval(c, &k)) vi_fail(c, "a choice in an aggregate must be a constant bit number");
             if (k < 0 || k >= w) vi_fail(c, "bit %ld is outside 0 to %d", k, w - 1);
             if (bit[k]) vi_fail(c, "bit %ld is given twice", k);
@@ -857,7 +995,18 @@ static VX vi_logic(gram_node *n, int want)
 static void vi_pair(VX *a, VX *b, gram_node *an, gram_node *bn, const char *op, int arith)
 {
     int ty, w;
+    if (a->ty == T_ENUM || b->ty == T_ENUM) {
+        if (a->ty != b->ty || a->tid != b->tid)
+            vi_fail(bn, "%s compares a state with something else (%s)", op, vi_tyname[a->ty == T_ENUM ? b->ty : a->ty]);
+        if (arith) vi_fail(bn, "states cannot be added or subtracted");
+        return;
+    }
     if (a->ty == T_INT && b->ty == T_INT) return;
+    if ((a->ty == T_INTV) != (b->ty == T_INTV) && a->ty != T_INT && b->ty != T_INT) {
+        /* unsigned and integer: the integer takes the unsigned's width, as numeric_std does */
+        VX *iv = a->ty == T_INTV ? a : b, *o = iv == a ? b : a;
+        if (vi_num(o->ty) || o->ty == T_STR) { *iv = vi_resize(*iv, o->w, 0); iv->ty = o->ty == T_STR ? T_UNS : o->ty; }
+    }
     if (a->ty == T_INT || b->ty == T_INT) {
         VX *i = a->ty == T_INT ? a : b, *v = a->ty == T_INT ? b : a;
         gram_node *in = a->ty == T_INT ? an : bn, *vn = a->ty == T_INT ? bn : an;
@@ -995,7 +1144,7 @@ static VX vi_simple(gram_node *n, int want)
             vi_need_value(&acc, n->child);
             vi_need_value(&b, rn);
             if (acc.ty == T_BOOL || b.ty == T_BOOL) vi_fail(k, "& joins bits; a condition is not a bit");
-            if (acc.w + b.w > MAXW) vi_fail(k, "Wire handles up to %d bits, and this is %d", MAXW, acc.w + b.w);
+            if (acc.w + b.w > MAXW) vi_fail(k, "Wire handles up to %d bits, and this is %d; wider values are not supported yet", MAXW, acc.w + b.w);
             if (acc.cst && b.cst) {
                 int ty = acc.ty == T_SL || acc.ty == T_STR ? (b.ty == T_SL ? T_STR : b.ty) : acc.ty;
                 acc = vi_const((acc.v << b.w) | b.v, acc.w + b.w, ty);
@@ -1037,6 +1186,133 @@ static VX vi_simple(gram_node *n, int want)
     return acc;
 }
 
+/* ---- inside a process: the values given so far ------------------------------ */
+
+typedef struct { int sym; VX v; unsigned long mask; } VSlot;   /* mask: the bits given on every path */
+typedef struct { VSlot *s; int n, cap; VX live; } VEnv;        /* live: 0 after exit, until the loop ends */
+static VEnv *vi_env;             /* inside a process */
+static int vi_clocked;           /* the process is clocked: a signal it does not set keeps its value */
+
+static VX vi_slot_init(int si, unsigned long *mask)
+{
+    VSym *s = &vi_syms[si];
+    VX x;
+    if (vi_clocked && s->kind != VK_VAR) {   /* a register keeps its value */
+        x = vi_mk(s->wname, s->ty, s->w, 2);
+        x.tid = s->ut;
+        *mask = vi_mask(s->w);
+        return x;
+    }
+    x = vi_const(0, s->w, s->ty);
+    x.tid = s->ut;
+    *mask = 0;
+    return x;
+}
+
+static VSlot *vi_slot_find(VEnv *e, int si)
+{
+    int i;
+    for (i = 0; i < e->n; i++) if (e->s[i].sym == si) return &e->s[i];
+    return NULL;
+}
+
+static VSlot *vi_slot(VEnv *e, int si)
+{
+    VSlot *sl = vi_slot_find(e, si);
+    if (sl) return sl;
+    if (e->n == e->cap) {
+        e->cap = e->cap ? e->cap * 2 : 16;
+        e->s = (VSlot *)realloc(e->s, (size_t)e->cap * sizeof *e->s);
+    }
+    e->s[e->n].sym = si;
+    e->s[e->n].v = vi_slot_init(si, &e->s[e->n].mask);
+    return &e->s[e->n++];
+}
+
+static VX vi_var_read(VSym *s, gram_node *at)
+{
+    VSlot *sl;
+    if (!vi_env) vi_fail(at, "%.*s is a variable; it can only be read inside its process", VT(at));
+    sl = vi_slot(vi_env, (int)(s - vi_syms));
+    if (sl->mask != vi_mask(s->w))
+        vi_fail(at, "%.*s is read before it is given a value on every path (that would need memory); give it a value first",
+                VT(at));
+    return sl->v;
+}
+
+/* arr(3), arr(i), arr(i)(7 downto 4): an element; picked by a signal, a mux (or a rom, for a constant) */
+static VX vi_array_read(VSym *s, gram_node *id, gram_node *args, int want)
+{
+    VType *t = &vi_types[s->ut - 1];
+    int si = (int)(s - vi_syms);
+    VX e, ix;
+    long k;
+    (void)want;
+    if (args->rule != VHDL_R_args || vi_nargs(args) != 1 || args->child->rule == VHDL_R_drange)
+        vi_fail(args, "pick one element of %.*s, like %.*s(0)", VT(id), VT(id));
+    if (vi_ceval(args->child, &k)) {
+        if (k < t->alo || k > t->ahi) vi_fail(args->child, "%ld is outside %.*s(%d to %d)", k, VT(id), t->alo, t->ahi);
+        if (s->kind == VK_CONST) e = vi_const(s->abits[k - t->alo], t->elem.w, t->elem.ty);
+        else {
+            VSym *el = &vi_syms[vi_syms[si].elem0 + (k - t->alo)];
+            e = el->kind == VK_VAR ? vi_var_read(el, id) : vi_mk(el->wname, el->ty, el->w, 2);
+        }
+    } else {
+        int j, n;
+        VBuf b = { 0, 0, 0 };
+        ix = vi_gen(args->child, -1);
+        if (ix.ty != T_INTV && ix.ty != T_UNS)
+            vi_fail(args->child, "an index is an integer: write %.*s(to_integer(...))", VT(id));
+        if (s->kind == VK_CONST) {   /* a constant array read with a signal is a rom */
+            if (ix.w > 16) vi_fail(args->child, "a rom has up to 16 address bits, and this index has %d", ix.w);
+            if (t->elem.w > 32) vi_fail(args->child, "a rom word has up to 32 bits");
+            n = 1 << ix.w;
+            vbf(&b, "rom(%s, bits = %d, data = \"", ix.s, t->elem.w);
+            for (j = 0; j < n; j++) vbf(&b, "%s%lX", j ? " " : "", j >= t->alo && j <= t->ahi ? s->abits[j - t->alo] : 0UL);
+            vb_add(&b, "\")", 2);
+        } else {
+            if (ix.w > 5) vi_fail(args->child, "picking one of more than 32 elements with a signal is not supported yet");
+            n = 1 << ix.w;
+            vb_add(&b, "mux(", 4);
+            for (j = 0; j < n; j++) {
+                if (j >= t->alo && j <= t->ahi) {
+                    VSym *el = &vi_syms[vi_syms[si].elem0 + (j - t->alo)];
+                    vbf(&b, "%s, ", el->wname);   /* array variables are refused when declared */
+                } else vbf(&b, "%s, ", vi_lit(0, t->elem.w));
+            }
+            vbf(&b, "sel = %s)", ix.s);
+        }
+        e = vi_mk(b.s, t->elem.ty, t->elem.w, 2);
+    }
+    e.tid = t->elem.ut;
+    if (args->next) {   /* then a bit or slice of the element */
+        VSym tmp = t->elem;
+        if (args->next->rule != VHDL_R_args || vi_nargs(args->next) != 1 || args->next->next)
+            vi_fail(args->next, "one index or slice at a time, please");
+        tmp.kind = e.cst ? VK_CONST : VK_SIG;
+        tmp.bits = e.v;
+        tmp.wname = vi_wrap(&e, 2);
+        return vi_index(&tmp, id, args->next->child);
+    }
+    return e;
+}
+
+/* x shifted by a signal: one shifted copy per amount, picked with a mux */
+static VX vi_barrel(VX x, VX amount, int left, int arith, int rot, gram_node *at)
+{
+    VBuf b = { 0, 0, 0 };
+    int j, n;
+    if (amount.ty == T_INT) return vi_shift(x, left, arith, rot, amount.iv, at);
+    if (amount.ty != T_INTV && amount.ty != T_UNS)
+        vi_fail(at, "a shift amount is an integer (to_integer(...)) or unsigned");
+    if (amount.w > 5) vi_fail(at, "shifting by a signal of more than 5 bits is not supported yet");
+    n = 1 << amount.w;
+    vb_add(&b, "mux(", 4);
+    for (j = 0; j < n; j++) vbf(&b, "%s, ", vi_shift(x, left, arith, rot, j, at).s);
+    vbf(&b, "sel = %s)", amount.s);
+    return vi_mk(b.s, x.ty, x.w, 2);
+}
+
 static VX vi_gen(gram_node *n, int want)
 {
     VX x;
@@ -1055,13 +1331,29 @@ static VX vi_gen(gram_node *n, int want)
     case VHDL_R_ident: {
         VSym *s = vi_find(n);
         if (!s) {
+            int t;
             if (vi_is(n, "true") || vi_is(n, "false")) return vi_const(vi_is(n, "true"), 1, T_BOOL);
+            for (t = vi_ntypes - 1; t >= 0; t--) {   /* a state of an enumeration */
+                gram_node *l;
+                int code = 0;
+                if (vi_types[t].isarr) continue;
+                for (l = vi_types[t].lits; l; l = l->next, code++)
+                    if (l->len == n->len && vi_is(n, vi_fmt("%.*s", VT(l)))) {
+                        x = vi_const((unsigned long)code, vi_types[t].w, T_ENUM);
+                        x.tid = t + 1;
+                        return x;
+                    }
+            }
             vi_fail(n, "there is no signal, port or constant called %.*s", VT(n));
         }
         if (s->kind == VK_LABEL) vi_fail(n, "%.*s is the label of an instance, not a signal", VT(n));
+        if (s->ty == T_ARR) vi_fail(n, "%.*s is an array; pick an element, like %.*s(0)", VT(n), VT(n));
+        if (s->kind == VK_VAR) return vi_var_read(s, n);
         if (s->ty == T_INT) { x.ty = T_INT; x.cst = 1; x.iv = s->ival; x.s = vi_fmt("%ld", s->ival); x.atom = 2; return x; }
-        if (s->kind == VK_CONST) return vi_const(s->bits, s->w, s->ty);
-        return vi_mk(s->wname, s->ty, s->w, 2);
+        if (s->kind == VK_CONST) { x = vi_const(s->bits, s->w, s->ty); x.tid = s->ut; return x; }
+        x = vi_mk(s->wname, s->ty, s->w, 2);
+        x.tid = s->ut;
+        return x;
     }
     case VHDL_R_name:
         return vi_call(n, want);
@@ -1089,8 +1381,9 @@ static VX vi_gen(gram_node *n, int want)
         long k;
         x = vi_gen(n->child, want);
         if (!vi_vec(x.ty) || x.ty == T_STR) vi_fail(n->child, "%.*s shifts a vector", VT(op));
-        if (!vi_ceval(op->next, &k))
-            vi_fail(op->next, "shifting by a signal (a barrel shifter) is not supported yet; shift by a constant");
+        if (!vi_ceval(op->next, &k))   /* by a signal: a barrel shifter */
+            return vi_barrel(x, vi_gen(op->next, -1), vi_is(op, "sll") || vi_is(op, "sla") || vi_is(op, "rol"),
+                             vi_is(op, "sra") || vi_is(op, "sla"), vi_is(op, "rol") || vi_is(op, "ror"), n);
         return vi_shift(x, vi_is(op, "sll") || vi_is(op, "sla") || vi_is(op, "rol"), vi_is(op, "sra") || vi_is(op, "sla"),
                         vi_is(op, "rol") || vi_is(op, "ror"), k, n);
     }
@@ -1110,11 +1403,18 @@ static VX vi_gen(gram_node *n, int want)
 
 static void vi_inst(gram_node *st);
 static void vi_generate(gram_node *st);
+static void vi_scan_clocks(gram_node *first);
+static void vi_scan_regs(gram_node *first);
+static int vi_is_reg(const gram_node *id);
+static gram_node *vi_regs[256];
+static int vi_nregs;
+static gram_node *vi_clk[64];
+static int vi_nclk;
 static VEnt *vi_copy(VEnt *e, long *val, gram_node *at);
 static void vi_decls(gram_node *first);
 static void vi_ports(gram_node *ports, int is_generic, int emit);
 
-typedef struct { char *s; int ty, w; VSym *sym; } VTarget;
+typedef struct { char *s; int ty, w; VSym *sym; int ut; } VTarget;
 
 static VTarget vi_target(gram_node *t)
 {
@@ -1125,8 +1425,28 @@ static VTarget vi_target(gram_node *t)
     if (s->kind == VK_IN) vi_fail(id, "%.*s is an input of the entity, so it cannot be given a value here", VT(id));
     if (s->kind == VK_CONST || s->kind == VK_GEN) vi_fail(id, "%.*s is a constant", VT(id));
     if (s->kind == VK_LABEL) vi_fail(id, "%.*s is the label of an instance, not a signal", VT(id));
+    if (s->kind == VK_VAR) vi_fail(id, "%.*s is a variable; it is given a value with := inside a process", VT(id));
     r.sym = s;
+    r.ut = s->ut;
+    if (s->ty == T_ARR) {   /* an element: arr(3), arr(3)(7 downto 4) */
+        VType *t = &vi_types[s->ut - 1];
+        long k;
+        if (!id->next) vi_fail(id, "%.*s is an array; give its elements values one by one, or in a process", VT(id));
+        if (!vi_ceval(id->next, &k))
+            vi_fail(id->next, "an element picked by a signal can only be given a value in a clocked process");
+        if (k < t->alo || k > t->ahi) vi_fail(id->next, "%ld is outside %.*s(%d to %d)", k, VT(id), t->alo, t->ahi);
+        s = &vi_syms[s->elem0 + (k - t->alo)];
+        r.sym = s;
+        r.ut = s->ut;
+        if (!id->next->next) { r.s = s->wname; r.ty = s->ty; r.w = s->w; return r; }
+        {
+            VX x = vi_index(s, id, id->next->next);
+            r.s = x.s; r.ty = x.ty; r.w = x.w;
+        }
+        return r;
+    }
     if (!id->next) { r.s = s->wname; r.ty = s->ty; r.w = s->w; return r; }
+    if (id->next->next) vi_fail(id->next->next, "one index or slice at a time, please");
     {
         VX x = vi_index(s, id, id->next);
         r.s = x.s; r.ty = x.ty; r.w = x.w;
@@ -1137,6 +1457,18 @@ static VTarget vi_target(gram_node *t)
 /* can value x be given to the target? */
 static void vi_assignable(const VTarget *t, VX *x, gram_node *at)
 {
+    if (t->ty == T_ENUM) {
+        if (x->ty != T_ENUM || x->tid != t->ut)
+            vi_fail(at, "this target is a state of %s, so give it one of its states", vi_fmt("%.*s", (int)vi_types[t->ut - 1].id->len, vi_types[t->ut - 1].id->text));
+        return;
+    }
+    if (x->ty == T_ENUM) vi_fail(at, "this is a state, but the target is %s", vi_tyname[t->ty]);
+    if (t->ty == T_INTV) {
+        if (x->ty == T_INT) { *x = vi_int_as(x, t->w, T_INTV, at); return; }
+        if (x->ty == T_INTV) { *x = vi_resize(*x, t->w, 0); x->ty = T_INTV; return; }
+        vi_fail(at, "this target is an integer, but the value is %s: convert it with to_integer(...)", vi_tyname[x->ty]);
+    }
+    if (x->ty == T_INTV) vi_fail(at, "this is an integer, but the target is %s: convert it with to_unsigned(x, %d)", vi_tyname[t->ty], t->w);
     if (x->ty == T_INT) {
         if (t->ty == T_SL) vi_fail(at, "%s is one bit: give it '0' or '1'", t->s);
         vi_fail(at, "an integer is not a %s: write to_unsigned(%ld, %d)%s", vi_tyname[t->ty], x->iv, t->w,
@@ -1179,11 +1511,34 @@ static VX vi_value(gram_node *e, const VTarget *t)
 static VX vi_mux2(VX d0, VX d1, VX c)
 {
     VX r;
+    if (d0.s && d1.s && !strcmp(d0.s, d1.s)) return d0;
+    if (c.cst) return c.v ? d1 : d0;
     if (d0.w == 1 && d0.cst && d1.cst) {         /* '1' when c else '0' is c */
-        if (d1.v == 1 && d0.v == 0) { r = c; r.ty = d0.ty == T_STR ? T_SL : d0.ty; return r; }
-        if (d1.v == 0 && d0.v == 1) { r = vi_not(c); r.ty = d0.ty == T_STR ? T_SL : d0.ty; return r; }
+        if (d1.v == 1 && d0.v == 0) { r = c; r.ty = d0.ty == T_STR ? T_SL : d0.ty; r.tid = d0.tid; r.m0 = r.m1 = r.ms = NULL; return r; }
+        if (d1.v == 0 && d0.v == 1) { r = vi_not(c); r.ty = d0.ty == T_STR ? T_SL : d0.ty; r.tid = d0.tid; return r; }
     }
-    return vi_mk(vi_fmt("mux(%s, %s, sel = %s)", d0.s, d1.s, c.s), d1.ty == T_STR ? d0.ty : d1.ty, d0.w, 2);
+    r = vi_mk(vi_fmt("mux(%s, %s, sel = %s)", d0.s, d1.s, c.s), d1.ty == T_STR ? d0.ty : d1.ty, d0.w, 2);
+    r.tid = d0.tid ? d0.tid : d1.tid;
+    r.m0 = d0.s; r.m1 = d1.s; r.ms = c.s;
+    return r;
+}
+
+/* a long value used more than once gets a wire of its own, so values that
+ * build on each other (a loop, an if after an if) do not grow without end */
+static const char *vi_bind_at;   /* where those wires are written: the process */
+static int vi_nbind;
+
+static void vi_bind(VX *x)
+{
+    char *w;
+    if (!vi_bind_at || x->cst || !x->s || x->w < 1 || x->ty == T_INT || strlen(x->s) < 120) return;
+    do w = vi_fmt("v%d_", ++vi_nbind); while (vi_wname_used(w));
+    vi_emitp(vi_bind_at, "wire %s[%d]", w, x->w);
+    vi_emitp(vi_bind_at, "%s = %s", w, x->s);
+    x->s = w;
+    x->atom = 2;
+    x->cat = 0;
+    x->m0 = x->m1 = x->ms = NULL;
 }
 
 static void vi_condassign(gram_node *st)
@@ -1438,8 +1793,9 @@ static void vi_ent_ports(VEnt *e)
 {
     int k;
     const long *saved = vi_over;
-    int savectx = vi_ctx;
+    int savectx = vi_ctx, savetypes = vi_ntypes;
     vi_set_ctx(e->ctx);
+    vi_ntypes = 0;   /* the architecture's types are not seen by the ports */
     vi_over = e->over;
     vi_nsyms = 0;
     vi_ports(vi_kid(e->ent, VHDL_R_generics), 1, 0);
@@ -1465,6 +1821,7 @@ static void vi_ent_ports(VEnt *e)
     if (!e->top && !e->nports) vi_fail(e->ent->child, "%.*s has no ports, so it cannot be used as a chip", VT(e->ent->child));
     vi_over = saved;
     vi_set_ctx(savectx);
+    vi_ntypes = savetypes;
 }
 
 static int vi_wname_taken(const char *w)   /* a component name already in use (or a part of Wire) */
@@ -1535,7 +1892,11 @@ static void vi_ent_emit(VEnt *e)
     vi_over = e->over;
     vi_to_extra = e->over != NULL;
     vi_nsyms = 0;
+    vi_ntypes = 0;
+    vi_nfuncs = 0;
     vi_suffix[0] = 0;
+    vi_nclk = 0;
+    if (e->top) vi_scan_clocks(e->arch->child->next->next);   /* their ports become clock */
     if (e->top) vi_emit(e->ent, "circuit \"%.*s\"", VT(e->ent->child));
     vi_ports(vi_kid(e->ent, VHDL_R_generics), 1, 0);
     vi_ports(vi_kid(e->ent, VHDL_R_ports), 0, e->top);
@@ -1560,7 +1921,7 @@ static void vi_ent_emit(VEnt *e)
     vi_decls(e->arch->child->next->next);
     for (k = e->arch->child->next->next; k; k = k->next) {
         if (k->rule == VHDL_R_signal || k->rule == VHDL_R_constant || k->rule == VHDL_R_compdecl
-            || k->rule == VHDL_R_other || k->rule == VHDL_R_ident)
+            || k->rule == VHDL_R_other || k->rule == VHDL_R_ident || k->rule == VHDL_R_typedecl || k->rule == VHDL_R_funcdecl)
             continue;
         vi_statement(k);
     }
@@ -1627,17 +1988,933 @@ static void vi_generate(gram_node *st)
     }
 }
 
+
+/* ---- processes ------------------------------------------------------------------ */
+
+static VEnv vi_env_copy(const VEnv *e)
+{
+    VEnv c = *e;
+    c.cap = e->n ? e->n : 1;
+    c.s = (VSlot *)malloc((size_t)c.cap * sizeof *c.s);
+    memcpy(c.s, e->s, (size_t)e->n * sizeof *c.s);
+    return c;
+}
+
+static int vi_live(const VEnv *e) { return e->live.cst && e->live.v == 1; }   /* no exit has happened */
+
+/* the bits hi..lo of old replaced by v */
+static VX vi_splice(VX old, int w, int hi, int lo, VX v)
+{
+    VBuf b = { 0, 0, 0 };
+    VX r;
+    if (hi == w - 1 && lo == 0) return v;
+    if (old.cst && v.cst) {
+        unsigned long m = vi_mask(hi - lo + 1) << lo;
+        r = vi_const((old.v & ~m) | ((v.v << lo) & m), w, old.ty);
+        r.tid = old.tid;
+        return r;
+    }
+    vb_add(&b, "{", 1);
+    if (hi < w - 1)
+        vbf(&b, "%s, ", old.cst ? vi_lit(old.v >> (hi + 1), w - 1 - hi) : vi_sl(vi_wrap(&old, 2), w - 1, hi + 1));
+    vbf(&b, "%s", v.s);
+    if (lo > 0) vbf(&b, ", %s", old.cst ? vi_lit(old.v, lo) : vi_sl(vi_wrap(&old, 2), lo - 1, 0));
+    vb_add(&b, "}", 1);
+    r = vi_mk(b.s, old.ty, w, 2);
+    r.cat = 1;
+    r.tid = old.tid;
+    return r;
+}
+
+/* si (bits hi..lo, or all when lo < 0) gets v, on this path */
+static void vi_put(VEnv *e, int si, VX v, int hi, int lo)
+{
+    VSlot *sl = vi_slot(e, si);
+    VSym *s = &vi_syms[si];
+    VX nv = lo < 0 ? v : vi_splice(sl->v, s->w, hi, lo, v);
+    unsigned long bits = lo < 0 ? vi_mask(s->w) : vi_mask(hi - lo + 1) << lo;
+    if (!vi_live(e)) { vi_bind(&sl->v); vi_bind(&nv); nv = vi_mux2(sl->v, nv, e->live); bits = 0; }
+    nv.tid = s->ut;
+    if (nv.ty == T_STR) nv.ty = s->ty;
+    sl->v = nv;
+    sl->mask |= bits;
+}
+
+/* si gets v only when c: an element picked by a signal */
+static void vi_put_when(VEnv *e, int si, VX v, VX c)
+{
+    VSlot *sl = vi_slot(e, si);
+    VX nv;
+    vi_bind(&sl->v);
+    nv = vi_mux2(sl->v, v, c);
+    if (!vi_live(e)) nv = vi_mux2(sl->v, nv, e->live);
+    nv.tid = vi_syms[si].ut;
+    sl->v = nv;
+}
+
+/* after if c then t else f: each value is mux(f, t, sel = c) */
+static void vi_merge(VEnv *out, VEnv *t, VEnv *f, VX c)
+{
+    VEnv m;
+    int i, pass;
+    memset(&m, 0, sizeof m);
+    for (pass = 0; pass < 2; pass++) {
+        VEnv *src = pass ? f : t;
+        for (i = 0; i < src->n; i++) {
+            int si = src->s[i].sym;
+            VSlot *a, *b, *o;
+            unsigned long ma, mb;
+            VX va, vb;
+            if (vi_slot_find(&m, si)) continue;
+            a = vi_slot_find(t, si); b = vi_slot_find(f, si);
+            if (a) { va = a->v; ma = a->mask; } else va = vi_slot_init(si, &ma);
+            if (b) { vb = b->v; mb = b->mask; } else vb = vi_slot_init(si, &mb);
+            o = vi_slot(&m, si);
+            if (strcmp(va.s, vb.s)) { vi_bind(&va); vi_bind(&vb); }
+            o->v = vi_mux2(vb, va, c);
+            o->v.tid = vi_syms[si].ut;
+            o->mask = ma & mb;
+        }
+    }
+    m.live = vi_mux2(f->live, t->live, c);
+    *out = m;
+}
+
+static VX vi_eq_code(VX sel, unsigned long code)   /* sel = code, as a condition */
+{
+    VX r;
+    if (sel.w == 1) { r = code ? sel : vi_not(sel); r.ty = T_BOOL; return r; }
+    return vi_mk(vi_fmt("compare(%s, %s).eq", sel.s, vi_lit(code, sel.w)), T_BOOL, 1, 2);
+}
+
+static void vi_seq(gram_node *first);
+
+/* element i of an array value: another array, or an aggregate like (others => (others => '0')) */
+static VX vi_array_elem(VType *t, gram_node *v, int i, gram_node *at)
+{
+    long idx = t->alo + i;
+    VX x;
+    VTarget tt;
+    memset(&tt, 0, sizeof tt);
+    tt.s = "an element"; tt.ty = t->elem.ty; tt.w = t->elem.w; tt.ut = t->elem.ut;
+    if (v->rule == VHDL_R_ident) {
+        VSym *a = vi_find(v);
+        if (!a || a->ty != T_ARR || &vi_types[a->ut - 1] != t) vi_fail(v, "this is not an array of the same type");
+        if (a->kind == VK_CONST) { x = vi_const(a->abits[i], t->elem.w, t->elem.ty); x.tid = t->elem.ut; return x; }
+        x = vi_mk(vi_syms[a->elem0 + i].wname, t->elem.ty, t->elem.w, 2);
+        x.tid = t->elem.ut;
+        return x;
+    }
+    if (v->rule == VHDL_R_aggregate) {
+        gram_node *el, *found = NULL, *others = NULL;
+        int pos = 0;
+        for (el = v->child; el; el = el->next) {
+            gram_node *ch = el->child->rule == VHDL_R_choices ? el->child : NULL, *e = ch ? ch->next : el->child, *c;
+            if (!ch) { if (pos++ == i) found = e; continue; }
+            for (c = ch->child; c; c = c->next) {
+                long k;
+                if (c->rule == VHDL_R_OTHERS) others = e;
+                else if (!vi_ceval(c, &k)) vi_fail(c, "a choice in an array aggregate must be a constant index");
+                else if (k == idx) found = e;
+            }
+        }
+        if (!found) found = others;
+        if (!found) vi_fail(v, "element %ld of this aggregate has no value; add others => ...", idx);
+        x = vi_gen(found, t->elem.w);
+        vi_assignable(&tt, &x, found);
+        x.tid = t->elem.ut;
+        return x;
+    }
+    vi_fail(at, "an array is given a value from another array or an aggregate, like (others => (others => '0'))");
+    memset(&x, 0, sizeof x);
+    return x;
+}
+
+/* the bits a slice or index of s picks: 1 for one bit */
+static int vi_bitrange(VSym *s, gram_node *id, gram_node *arg, int *hi, int *lo)
+{
+    VSym tmp = *s;
+    VX x;
+    tmp.kind = VK_SIG;
+    tmp.wname = "@";
+    x = vi_index(&tmp, id, arg);   /* "@[3:0]" or "@[2]" or "@" */
+    if (!strcmp(x.s, "@")) { *hi = s->w - 1; *lo = 0; return 0; }
+    if (sscanf(x.s, "@[%d:%d]", hi, lo) == 2) return 0;
+    sscanf(x.s, "@[%d]", hi);
+    *lo = *hi;
+    return 1;
+}
+
+static void vi_seq_assign(gram_node *target, gram_node *val, int isvar)
+{
+    gram_node *id = target->child, *a1 = id->next, *a2 = a1 ? a1->next : NULL;
+    gram_node *v = val->rule == VHDL_R_wave ? val->child : val;
+    VSym *s = vi_find(id);
+    VTarget tt;
+    VX x;
+    int si;
+    memset(&tt, 0, sizeof tt);
+    if (!s) vi_fail(id, "there is no signal or variable called %.*s", VT(id));
+    if (s->kind == VK_IN) vi_fail(id, "%.*s is an input of the entity, so it cannot be given a value here", VT(id));
+    if (s->kind == VK_CONST || s->kind == VK_GEN) vi_fail(id, "%.*s is a constant", VT(id));
+    if (s->kind == VK_LABEL) vi_fail(id, "%.*s is the label of an instance, not a signal", VT(id));
+    if (isvar && s->kind != VK_VAR) vi_fail(id, "%.*s is a signal; give it a value with <=", VT(id));
+    if (!isvar && s->kind == VK_VAR) vi_fail(id, "%.*s is a variable; give it a value with :=", VT(id));
+    si = (int)(s - vi_syms);
+    if (s->ty == T_ARR) {
+        VType *t = &vi_types[s->ut - 1];
+        int i, n = t->ahi - t->alo + 1, e0 = s->elem0;
+        long k;
+        if (!a1) {   /* the whole array */
+            for (i = 0; i < n; i++) vi_put(vi_env, e0 + i, vi_array_elem(t, v, i, v), -1, -1);
+            return;
+        }
+        if (!vi_ceval(a1, &k)) {   /* an element picked by a signal: each element, when the index is its own */
+            VX ix = vi_gen(a1, -1);
+            if (a2) vi_fail(a2, "a slice of an element picked by a signal is not supported yet");
+            if (ix.ty != T_INTV && ix.ty != T_UNS) vi_fail(a1, "an index is an integer: write %.*s(to_integer(...))", VT(id));
+            tt.s = "an element"; tt.ty = t->elem.ty; tt.w = t->elem.w; tt.ut = t->elem.ut;
+            x = vi_gen(v, t->elem.w);
+            vi_assignable(&tt, &x, v);
+            for (i = 0; i < n; i++) {
+                long idx = t->alo + i;
+                if (ix.w < 31 && idx >= (1L << ix.w)) continue;
+                vi_put_when(vi_env, e0 + i, x, vi_eq_code(ix, (unsigned long)idx));
+            }
+            return;
+        }
+        if (k < t->alo || k > t->ahi) vi_fail(a1, "%ld is outside %.*s(%d to %d)", k, VT(id), t->alo, t->ahi);
+        si = e0 + (int)(k - t->alo);
+        s = &vi_syms[si];
+        a1 = a2; a2 = NULL;
+    }
+    if (!a1) {
+        tt.s = s->wname; tt.ty = s->ty; tt.w = s->w; tt.sym = s; tt.ut = s->ut;
+        x = vi_gen(v, s->w);
+        vi_assignable(&tt, &x, v);
+        vi_put(vi_env, si, x, -1, -1);
+        return;
+    }
+    if (a2) vi_fail(a2, "one index or slice at a time, please");
+    if (a1->rule != VHDL_R_drange && vi_vec(s->ty) && !vi_ceval(a1, &(long){0})) {
+        /* a bit picked by a signal: each bit, when the index is its own */
+        VX ix = vi_gen(a1, -1);
+        int j, lo = vi_low(s), hi = vi_high(s);
+        if (ix.ty != T_INTV && ix.ty != T_UNS) vi_fail(a1, "an index is an integer: write %.*s(to_integer(...))", VT(id));
+        tt.s = s->wname; tt.ty = T_SL; tt.w = 1; tt.sym = s;
+        x = vi_gen(v, 1);
+        vi_assignable(&tt, &x, v);
+        {
+            VSlot *sl = vi_slot(vi_env, si);
+            VX old = sl->v, nv;
+            VBuf b = { 0, 0, 0 };
+            int k;
+            vi_bind(&old); vi_bind(&x); vi_bind(&ix);
+            vb_add(&b, "{", 1);
+            for (k = s->w - 1; k >= 0; k--) {
+                VX ob = old.cst ? vi_const((old.v >> k) & 1, 1, T_SL) : vi_mk(vi_sl(vi_wrap(&old, 2), k, k), T_SL, 1, 2), nb = ob;
+                j = s->down ? k + lo : hi - k;
+                if (ix.w >= 31 || j < (1L << ix.w)) {
+                    nb = vi_mux2(ob, x, vi_eq_code(ix, (unsigned long)j));
+                    if (!vi_live(vi_env)) nb = vi_mux2(ob, nb, vi_env->live);
+                }
+                vbf(&b, "%s%s", k == s->w - 1 ? "" : ", ", nb.s);
+            }
+            vb_add(&b, "}", 1);
+            nv = vi_mk(b.s, s->ty, s->w, 2);
+            nv.cat = 1;
+            nv.tid = s->ut;
+            sl->v = nv;
+        }
+        return;
+    }
+    {
+        int hi, lo, one = vi_bitrange(s, id, a1, &hi, &lo);
+        tt.s = s->wname; tt.ty = one ? T_SL : s->ty; tt.w = hi - lo + 1; tt.sym = s;
+        x = vi_gen(v, hi - lo + 1);
+        vi_assignable(&tt, &x, v);
+        vi_put(vi_env, si, x, hi, lo);
+    }
+}
+
+/* if c then body [elsif ...] [else ...] end if: both ways, then a mux per value */
+static void vi_seq_if(gram_node *cond, gram_node *body, gram_node *rest)
+{
+    VEnv *pre = vi_env, t, f;
+    VX c = vi_cond(cond);
+    if (c.cst) {   /* a constant condition (a generic, say): only one way is taken */
+        if (c.v) vi_seq(body->child);
+        else if (rest && rest->rule == VHDL_R_elsifp) vi_seq_if(rest->child, rest->child->next, rest->next);
+        else if (rest) vi_seq(rest->child->child);
+        return;
+    }
+    t = vi_env_copy(pre);
+    f = vi_env_copy(pre);
+    vi_env = &t;
+    vi_seq(body->child);
+    vi_env = &f;
+    if (rest && rest->rule == VHDL_R_elsifp) vi_seq_if(rest->child, rest->child->next, rest->next);
+    else if (rest) vi_seq(rest->child->child);
+    vi_env = pre;
+    vi_merge(pre, &t, &f, c);
+}
+
+/* case s is when ... => ...: every branch, then one mux per value with sel = s
+ * (or, for a wide selector, a chain of comparisons) */
+static void vi_seq_case(gram_node *st)
+{
+    gram_node *k = st->child, *seln, *w, *ch;
+    VEnv *pre = vi_env, *envs;
+    VX sel;
+    int nb = 0, b, others = -1, ncodes = 0, cap = 0, i, j, total;
+    unsigned long *codes = NULL;
+    int *owner_of = NULL;
+    if (k->rule == VHDL_R_label) k = k->next;
+    seln = k;
+    sel = vi_gen(seln, -1);
+    if (sel.ty == T_INT || sel.ty == T_ARR) vi_fail(seln, "case selects on a signal: a vector, an integer or a state");
+    for (w = seln->next; w && w->rule == VHDL_R_casew; w = w->next) nb++;
+    envs = (VEnv *)calloc((size_t)nb, sizeof *envs);
+    for (b = 0, w = seln->next; b < nb; b++, w = w->next) {
+        for (ch = w->child->child; ch; ch = ch->next) {
+            VX cv;
+            if (ch->rule == VHDL_R_OTHERS) {
+                if (b != nb - 1 || ch != w->child->child || ch->next) vi_fail(ch, "when others goes alone, in the last when");
+                others = b;
+                continue;
+            }
+            cv = vi_gen(ch, sel.w);
+            if (cv.ty == T_INT) cv = vi_int_as(&cv, sel.w, sel.ty == T_INTV ? T_INTV : T_UNS, ch);
+            if (!cv.cst) vi_fail(ch, "each choice must be a constant");
+            if (sel.ty == T_ENUM && (cv.ty != T_ENUM || cv.tid != sel.tid)) vi_fail(ch, "this is not one of the states of the selector");
+            if (cv.w != sel.w) vi_fail(ch, "the choice is %d bit%s, but the selector is %d", cv.w, cv.w == 1 ? "" : "s", sel.w);
+            for (i = 0; i < ncodes; i++) if (codes[i] == cv.v) vi_fail(ch, "this value is chosen twice");
+            if (ncodes == cap) {
+                cap = cap ? cap * 2 : 16;
+                codes = (unsigned long *)realloc(codes, (size_t)cap * sizeof *codes);
+                owner_of = (int *)realloc(owner_of, (size_t)cap * sizeof *owner_of);
+            }
+            codes[ncodes] = cv.v;
+            owner_of[ncodes++] = b;
+        }
+        envs[b] = vi_env_copy(pre);
+        vi_env = &envs[b];
+        vi_seq(w->child->next->child);
+        vi_env = pre;
+    }
+    total = sel.ty == T_ENUM ? vi_types[sel.tid - 1].n : sel.w < 17 ? 1 << sel.w : -1;
+    if (others < 0) {
+        if (total < 0) vi_fail(st, "a case on %d bits must have when others", sel.w);
+        for (j = 0; j < total; j++) {
+            for (i = 0; i < ncodes && codes[i] != (unsigned long)j; i++) {}
+            if (i == ncodes) {
+                if (sel.ty == T_ENUM) {
+                    gram_node *l = vi_types[sel.tid - 1].lits;
+                    int q;
+                    for (q = 0; q < j; q++) l = l->next;
+                    vi_fail(st, "this case does not choose %.*s; add it, or when others => null;", VT(l));
+                }
+                vi_fail(st, "this case does not cover %s; add when others => ...", vi_lit((unsigned long)j, sel.w));
+            }
+        }
+    }
+    if (sel.w <= 4) {   /* a table: one mux per value, with a data input per code */
+        int n = 1 << sel.w, *own = (int *)malloc((size_t)n * sizeof *own), pass;
+        VEnv m;
+        memset(&m, 0, sizeof m);
+        for (j = 0; j < n; j++) own[j] = others >= 0 ? others : nb - 1;   /* unused codes: whichever */
+        for (i = 0; i < ncodes; i++) own[codes[i]] = owner_of[i];
+        for (pass = 0; pass <= nb; pass++) {
+            int lim = pass < nb ? envs[pass].n : 1;
+            for (i = 0; i < lim; i++) {
+                int si = pass < nb ? envs[pass].s[i].sym : -1;
+                VX *vals = (VX *)malloc((size_t)n * sizeof *vals);
+                unsigned long mask = ~0UL;
+                int same = 1;
+                VBuf bb = { 0, 0, 0 };
+                if (pass == nb) {   /* live, the last time round */
+                    for (j = 0; j < n; j++) vals[j] = envs[own[j]].live;
+                } else {
+                    if (vi_slot_find(&m, si)) { free(vals); continue; }
+                    for (j = 0; j < n; j++) {
+                        VSlot *sl = vi_slot_find(&envs[own[j]], si);
+                        unsigned long mk;
+                        if (sl) { vals[j] = sl->v; mk = sl->mask; } else vals[j] = vi_slot_init(si, &mk);
+                        mask &= mk;
+                    }
+                }
+                for (j = 1; j < n; j++) if (strcmp(vals[j].s, vals[0].s)) same = 0;
+                if (!same) {
+                    VX r;
+                    vb_add(&bb, "mux(", 4);
+                    for (j = 0; j < n; j++) vbf(&bb, "%s, ", vals[j].s);
+                    vbf(&bb, "sel = %s)", sel.s);
+                    r = vi_mk(bb.s, vals[0].ty, vals[0].w, 2);
+                    r.tid = vals[0].tid;
+                    vals[0] = r;
+                }
+                if (pass == nb) m.live = vals[0];
+                else { VSlot *o = vi_slot(&m, si); o->v = vals[0]; o->mask = mask; }
+                free(vals);
+            }
+        }
+        *pre = m;
+        free(own);
+        return;
+    }
+    {   /* a wide selector: the default, then each branch in turn */
+        int def = others >= 0 ? others : nb - 1;
+        VEnv acc = envs[def];
+        for (b = nb - 1; b >= 0; b--) {
+            VBuf cb = { 0, 0, 0 };
+            int m = 0;
+            VX c;
+            if (b == def) continue;
+            for (i = 0; i < ncodes; i++)
+                if (owner_of[i] == b) vbf(&cb, "%s%s", m++ ? " | " : "", vi_wrap(&(VX){ .s = vi_eq_code(sel, codes[i]).s, .atom = 2 }, 1));
+            c = vi_mk(cb.s, T_BOOL, 1, m > 1 ? 0 : 2);
+            vi_merge(&acc, &envs[b], &acc, c);
+        }
+        *pre = acc;
+    }
+}
+
+static int vi_loops;   /* how deep in for loops: exit is allowed inside one */
+
+/* for i in a to b loop ... end loop: once per value (exit stops the rest of the loop) */
+static void vi_seq_loop(gram_node *st)
+{
+    gram_node *k = st->child, *var, *r, *body;
+    long from, to, step, i, n = 0;
+    VX live = vi_env->live;
+    if (k->rule == VHDL_R_label) k = k->next;
+    var = k; r = var->next; body = r->next;
+    from = vi_const_int(r->child, "the range of a loop");
+    to = vi_const_int(r->child->next->next, "the range of a loop");
+    step = vi_is(r->child->next, "downto") ? -1 : 1;
+    if ((to - from) * step < 0) return;
+    vi_loops++;
+    for (i = from; ; i += step) {
+        int mark = vi_nsyms;
+        VSym *v;
+        if (++n > 1024) vi_fail(r, "this loop runs more than 1024 times");
+        v = vi_declare(var, VK_CONST);
+        v->ty = T_INT;
+        v->ival = i;
+        vi_seq(body->child);
+        vi_nsyms = mark;
+        if (i == to) break;
+    }
+    vi_loops--;
+    vi_env->live = live;   /* after the loop, everything runs again */
+}
+
+static void vi_seq_exit(gram_node *st)
+{
+    const char *p = st->child->text + st->child->len;
+    gram_node *c = NULL;
+    if (!vi_loops) vi_fail(st, "exit belongs inside a for loop");
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    if (st->child->next && ((p[0] | 32) == 'w' && (p[1] | 32) == 'h' && (p[2] | 32) == 'e' && (p[3] | 32) == 'n'))
+        c = st->child->next;
+    else if (st->child->next && st->child->next->next) c = st->child->next->next;
+    if (!c) { vi_env->live = vi_const(0, 1, T_BOOL); return; }
+    {
+        VX cond = vi_cond(c), stay = vi_not(cond);
+        stay.ty = T_BOOL;
+        if (vi_live(vi_env)) vi_env->live = stay;
+        else vi_env->live = vi_mk(vi_fmt("%s & %s", vi_wrap(&vi_env->live, 1), vi_wrap(&stay, 1)), T_BOOL, 1, 0);
+    }
+}
+
+static int vi_ret_si = -1;       /* inside a function: the VSym its return value goes to */
+
+static void vi_seq_return(gram_node *st)
+{
+    VSym *r;
+    VX x;
+    VTarget tt;
+    if (vi_ret_si < 0) vi_fail(st, "return belongs inside a function");
+    if (vi_loops) vi_fail(st, "return inside a loop is not supported yet; set a variable and exit");
+    r = &vi_syms[vi_ret_si];
+    x = vi_gen(st->child, r->w ? r->w : -1);
+    if (!r->w) {   /* std_logic_vector, unsigned ...: as wide as what it returns */
+        if (x.ty == T_INT || x.w < 1) vi_fail(st->child, "Wire cannot tell how wide this is; give the function's return type a range");
+        r->w = x.w; r->left = x.w - 1; r->right = 0; r->down = 1;
+    }
+    memset(&tt, 0, sizeof tt);
+    tt.s = "the return value"; tt.ty = r->ty; tt.w = r->w; tt.ut = r->ut;
+    vi_assignable(&tt, &x, st->child);
+    vi_put(vi_env, vi_ret_si, x, -1, -1);
+    vi_slot(vi_env, vi_ret_si)->mask = vi_mask(r->w);   /* the paths not live here returned earlier */
+    vi_env->live = vi_const(0, 1, T_BOOL);   /* nothing after it runs */
+}
+
+static void vi_seq(gram_node *first)
+{
+    gram_node *st;
+    for (st = first; st; st = st->next) {
+        switch (st->rule) {
+        case VHDL_R_sassign: vi_seq_assign(st->child, st->child->next, 0); break;
+        case VHDL_R_vassign: vi_seq_assign(st->child, st->child->next, 1); break;
+        case VHDL_R_ifst: {
+            gram_node *k = st->child;
+            if (k->rule == VHDL_R_label) k = k->next;
+            vi_seq_if(k, k->next, k->next->next && k->next->next->rule != VHDL_R_ident ? k->next->next : NULL);
+            break;
+        }
+        case VHDL_R_casest: vi_seq_case(st); break;
+        case VHDL_R_loopst: vi_seq_loop(st); break;
+        case VHDL_R_exitst: vi_seq_exit(st); break;
+        case VHDL_R_retst: vi_seq_return(st); break;
+        case VHDL_R_nullst: case VHDL_R_assert: break;
+        case VHDL_R_ident: break;   /* end function name; */
+        case VHDL_R_waitst: vi_fail(st, "wait is for simulation; a process for hardware has a sensitivity list instead"); break;
+        default: vi_fail(st, "this kind of statement is not supported yet in a process");
+        }
+    }
+}
+
+/* ---- functions: inlined where they are called --------------------------- */
+
+static int vi_fparam_count(gram_node *fp)
+{
+    int n = 0;
+    gram_node *p, *id;
+    for (p = fp ? fp->child : NULL; p; p = p->next)
+        for (id = p->child->child; id; id = id->next) n++;
+    return n;
+}
+
+static gram_node *vi_find_func(const gram_node *id, int nargs)
+{
+    int i;
+    for (i = vi_nfuncs - 1; i >= 0; i--) {
+        gram_node *f = vi_funcs[i], *name = f->child;
+        if (name->len != id->len || !vi_is(id, vi_fmt("%.*s", VT(name)))) continue;
+        if (vi_fparam_count(name->next->rule == VHDL_R_fparams ? name->next : NULL) == nargs) return f;
+    }
+    return NULL;
+}
+
+static int vi_unconstrained(gram_node *t, VSym *s)   /* std_logic_vector without a range: its width comes later */
+{
+    gram_node *id = t->child;
+    if (id->next) return 0;
+    if (vi_is(id, "std_logic_vector") || vi_is(id, "std_ulogic_vector") || vi_is(id, "bit_vector")) s->ty = T_SLV;
+    else if (vi_is(id, "unsigned")) s->ty = T_UNS;
+    else if (vi_is(id, "signed")) s->ty = T_SGN;
+    else return 0;
+    s->w = 0;
+    return 1;
+}
+
+static int vi_fdepth;
+
+static VX vi_func_call(gram_node *f, gram_node *id, gram_node *args)
+{
+    gram_node *name = f->child, *k = name->next, *fp = NULL, *rty, *pd, *body, *p, *pid;
+    VSym *ps = NULL;
+    VX *pv = NULL, res;
+    int np = 0, i, mark = vi_nsyms, tmark = vi_ntypes, fmark = vi_nfuncs, scope = vi_scope;
+    int clocked = vi_clocked, loops = vi_loops, ret = vi_ret_si, rsi;
+    const char *bind_at = vi_bind_at;
+    VEnv env, *outer = vi_env;
+    VSlot *sl;
+    if (k->rule == VHDL_R_fparams) { fp = k; k = k->next; }
+    rty = k; pd = rty->next; body = pd->next;
+    if (vi_fdepth >= 16) vi_fail(id, "functions call each other too deeply (a function calling itself is not supported)");
+    /* the arguments, worked out where the function is called */
+    ps = (VSym *)calloc(64, sizeof *ps);
+    pv = (VX *)calloc(64, sizeof *pv);
+    for (p = fp ? fp->child : NULL; p; p = p->next) {
+        gram_node *t = vi_kid(p, VHDL_R_type);
+        VSym proto;
+        int open;
+        memset(&proto, 0, sizeof proto);
+        open = vi_unconstrained(t, &proto);
+        if (!open) vi_type(t, &proto, 1);
+        if (proto.ty == T_ARR) vi_fail(t, "an array argument is not supported yet");
+        for (pid = p->child->child; pid; pid = pid->next) {
+            gram_node *a = vi_arg(args, np);
+            VX x;
+            if (np >= 64) vi_fail(args, "more than 64 arguments");
+            if (a->rule == VHDL_R_named) vi_fail(a, "give a function's arguments in order, without names");
+            ps[np] = proto;
+            ps[np].name = pid->text; ps[np].nlen = (int)pid->len; ps[np].at = pid;
+            x = vi_gen(a, proto.ty == T_INT ? -1 : open ? -1 : proto.w);
+            if (proto.ty == T_INT) {
+                if (!x.cst || x.ty != T_INT) vi_fail(a, "an integer argument must be a constant here");
+                ps[np].ival = x.iv;
+            } else if (open) {
+                VSym *as = a->rule == VHDL_R_ident ? vi_find(a) : NULL;
+                if (x.ty == T_INT || x.w < 1 || x.ty == T_SL) vi_fail(a, "this argument is a vector");
+                ps[np].w = x.w; ps[np].left = x.w - 1; ps[np].right = 0; ps[np].down = 1;
+                if (as && as->w == x.w && vi_vec(as->ty)) { ps[np].left = as->left; ps[np].right = as->right; ps[np].down = as->down; }
+                if (x.ty == T_STR) x.ty = proto.ty;
+            } else {
+                VTarget tt;
+                memset(&tt, 0, sizeof tt);
+                tt.s = vi_fmt("%.*s", VT(pid)); tt.ty = proto.ty; tt.w = proto.w; tt.ut = proto.ut;
+                vi_assignable(&tt, &x, a);
+            }
+            pv[np++] = x;
+        }
+    }
+    /* the body, in a scope and a set of values of its own */
+    memset(&env, 0, sizeof env);
+    env.live = vi_const(1, 1, T_BOOL);
+    vi_scope = vi_nsyms;
+    vi_env = &env; vi_clocked = 0; vi_loops = 0;
+    for (i = 0; i < np; i++) {
+        VSym *s = vi_declare((gram_node *)ps[i].at, ps[i].ty == T_INT ? VK_CONST : VK_VAR);
+        s->ty = ps[i].ty; s->w = ps[i].w; s->left = ps[i].left; s->right = ps[i].right; s->down = ps[i].down;
+        s->ut = ps[i].ut; s->ival = ps[i].ival;
+        if (s->kind == VK_VAR) vi_put(&env, (int)(s - vi_syms), pv[i], -1, -1);
+    }
+    {
+        VSym proto, *r;
+        memset(&proto, 0, sizeof proto);
+        if (!vi_unconstrained(rty, &proto)) vi_type(rty, &proto, 0);
+        if (proto.ty == T_ARR) vi_fail(rty, "a function returning an array is not supported yet");
+        r = vi_declare(name, VK_VAR);
+        r->ty = proto.ty; r->w = proto.w; r->left = proto.left; r->right = proto.right; r->down = proto.down; r->ut = proto.ut;
+        r->nlen = 0;   /* not found by name: a call of the function is not its value */
+        rsi = (int)(r - vi_syms);
+    }
+    vi_ret_si = rsi;
+    if (pd->child) vi_decls(pd->child);
+    for (i = rsi + 1; i < vi_nsyms; i++)   /* variables that start with a value */
+        if (vi_syms[i].kind == VK_VAR && vi_syms[i].hasinit) vi_put(&env, i, vi_const(vi_syms[i].bits, vi_syms[i].w, vi_syms[i].ty), -1, -1);
+    if (!bind_at) vi_bind_at = id->text;
+    vi_fdepth++;
+    vi_seq(body && body->rule != VHDL_R_ident ? body : NULL);
+    vi_fdepth--;
+    vi_bind_at = bind_at;
+    sl = vi_slot_find(&env, rsi);
+    if (!sl || !vi_syms[rsi].w || sl->mask != vi_mask(vi_syms[rsi].w))
+        vi_fail(id, "%.*s does not return a value on every path", VT(id));
+    res = sl->v;
+    res.ty = vi_syms[rsi].ty;
+    res.tid = vi_syms[rsi].ut;
+    vi_env = outer; vi_clocked = clocked; vi_loops = loops; vi_ret_si = ret;
+    vi_scope = scope;
+    vi_nsyms = mark; vi_ntypes = tmark; vi_nfuncs = fmark;
+    free(ps); free(pv);
+    return res;
+}
+
+/* rising_edge(clk), falling_edge(clk), clk'event and clk = '1' */
+static int vi_edge(gram_node *c, gram_node **clk, int *neg)
+{
+    if (c->rule == VHDL_R_name && (vi_is(c->child, "rising_edge") || vi_is(c->child, "falling_edge"))) {
+        gram_node *args = c->child->next;
+        if (!args || args->rule != VHDL_R_args || vi_nargs(args) != 1 || args->child->rule != VHDL_R_ident || args->next)
+            vi_fail(c, "%.*s takes the clock signal", VT(c->child));
+        *clk = args->child;
+        *neg = vi_is(c->child, "falling_edge");
+        return 1;
+    }
+    if (c->rule == VHDL_R_expr && c->nchildren == 3 && vi_is(c->child->next, "and")) {
+        gram_node *a = c->child, *b = c->child->next->next, *ev, *lv;
+        int i;
+        for (i = 0; i < 2; i++) {
+            ev = i ? b : a; lv = i ? a : b;
+            if (ev->rule == VHDL_R_name && ev->child->next && ev->child->next->rule == VHDL_R_attr
+                && vi_is(ev->child->next->child, "event") && lv->rule == VHDL_R_relation
+                && lv->child->rule == VHDL_R_ident && vi_is(lv->child->next, "=") && lv->child->next->next->rule == VHDL_R_chr
+                && lv->child->len == ev->child->len && vi_is(lv->child, vi_fmt("%.*s", VT(ev->child)))) {
+                *clk = ev->child;
+                *neg = lv->child->next->next->text[1] == '0';
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int vi_has_edge(const gram_node *n)   /* a clock edge anywhere in n */
+{
+    const gram_node *k;
+    if (n->rule == VHDL_R_name && (vi_is(n->child, "rising_edge") || vi_is(n->child, "falling_edge"))) return 1;
+    if (n->rule == VHDL_R_attr && (vi_is(n->child, "event") || vi_is(n->child, "stable"))) return 1;
+    for (k = n->child; k; k = k->next) if (vi_has_edge(k)) return 1;
+    return 0;
+}
+
+/* a process's parts: its declarations and its first statement */
+static gram_node *vi_proc_body(gram_node *st, gram_node **decls)
+{
+    gram_node *k;
+    *decls = NULL;
+    for (k = st->child; k; k = k->next) {
+        if (k->rule == VHDL_R_pdecls) { *decls = k; return k->next; }
+    }
+    return NULL;
+}
+
+/* the clocked shape: if rising_edge(clk) then ... end if, or
+ * if rst = '1' then <constants> elsif rising_edge(clk) then ... end if */
+static int vi_proc_shape(gram_node *first, gram_node **clk, int *neg, gram_node **rst, gram_node **rbody, gram_node **cbody)
+{
+    gram_node *k = first, *c, *body, *rest, *st = NULL;
+    int n = 0;
+    for (k = first; k; k = k->next) if (k->rule != VHDL_R_ident && k->rule != VHDL_R_nullst && k->rule != VHDL_R_assert) { st = k; n++; }
+    *rst = *rbody = *cbody = NULL;
+    if (n != 1 || st->rule != VHDL_R_ifst) return 0;
+    c = st->child;
+    if (c->rule == VHDL_R_label) c = c->next;
+    body = c->next;
+    rest = body->next && body->next->rule != VHDL_R_ident ? body->next : NULL;
+    if (vi_edge(c, clk, neg)) {
+        if (rest) vi_fail(rest, "a clocked process has nothing after its if rising_edge(clk) part; put the logic inside it");
+        *cbody = body;
+        return 1;
+    }
+    if (rest && rest->rule == VHDL_R_elsifp && vi_edge(rest->child, clk, neg)) {
+        if (rest->next && rest->next->rule != VHDL_R_ident)
+            vi_fail(rest->next, "a clocked process has nothing after its elsif rising_edge(clk) part");
+        *rst = c; *rbody = body; *cbody = rest->child->next;
+        return 1;
+    }
+    return 0;
+}
+
+static void vi_emit_reg(gram_node *at, VSym *s, VX next, const char *clk, const char *rst, int has_reset, unsigned long k)
+{
+    const char *q = s->wname, *en = NULL;
+    VX d = next;
+    char *call, *ds;
+    if (next.m0 && !strcmp(next.m0, q)) { en = next.ms; d = vi_mk(next.m1, s->ty, s->w, 0); }   /* if en: an enable */
+    if (rst && !has_reset)   /* not reset: keeps its value while the reset is on */
+        en = en ? vi_fmt("(%s) & ~(%s)", en, rst) : vi_fmt("~(%s)", rst);
+    k &= vi_mask(s->w);
+    ds = !k ? d.s : k == vi_mask(s->w) ? vi_fmt("~(%s)", d.s) : vi_fmt("(%s) ^ %s", d.s, vi_lit(k, s->w));
+    call = vi_fmt("dff(%s, %s%s%s%s%s)", ds, clk, en ? ", en = " : "", en ? en : "", rst && has_reset ? ", rst = " : "",
+                  rst && has_reset ? rst : "");
+    /* a register that resets (or starts) at k, not 0: it keeps the value ^ k */
+    if (k) call = k == vi_mask(s->w) ? vi_fmt("~%s", call) : vi_fmt("%s ^ %s", call, vi_lit(k, s->w));
+    vi_emit(at, "%s = %s", q, call);
+}
+
+/* the reset part: each signal gets a constant */
+typedef struct { int sym; unsigned long v; } VReset;
+
+static int vi_reset_vals(gram_node *first, VReset **out)
+{
+    gram_node *st;
+    int n = 0, cap = 0;
+    VReset *r = NULL;
+    for (st = first; st; st = st->next) {
+        gram_node *id, *a1, *v;
+        VSym *s;
+        int i, cnt = 1, base;
+        if (st->rule == VHDL_R_nullst || st->rule == VHDL_R_assert) continue;
+        if (st->rule != VHDL_R_sassign)
+            vi_fail(st, "the reset part of a clocked process only gives signals constant values (<=)");
+        id = st->child->child; a1 = id->next;
+        v = st->child->next->rule == VHDL_R_wave ? st->child->next->child : st->child->next;
+        s = vi_find(id);
+        if (!s || s->kind == VK_IN || s->kind == VK_CONST || s->kind == VK_GEN || s->kind == VK_LABEL || s->kind == VK_VAR)
+            vi_fail(id, "%.*s cannot be given a value here", VT(id));
+        base = (int)(s - vi_syms);
+        if (s->ty == T_ARR) {
+            VType *t = &vi_types[s->ut - 1];
+            long k;
+            if (a1) {
+                if (!vi_ceval(a1, &k) || a1->next) vi_fail(a1, "reset an element with a constant index");
+                base = s->elem0 + (int)(k - t->alo);
+            } else { base = s->elem0; cnt = t->ahi - t->alo + 1; }
+            for (i = 0; i < cnt; i++) {
+                VX x = a1 ? vi_gen(v, t->elem.w) : vi_array_elem(t, v, i, v);
+                if (!x.cst) vi_fail(v, "a reset value must be a constant");
+                if (n == cap) { cap = cap ? cap * 2 : 16; r = (VReset *)realloc(r, (size_t)cap * sizeof *r); }
+                r[n].sym = base + i; r[n++].v = x.v;
+            }
+            continue;
+        }
+        if (a1) vi_fail(a1, "reset the whole signal, not a part of it");
+        {
+            VTarget tt;
+            VX x = vi_gen(v, s->w);
+            memset(&tt, 0, sizeof tt);
+            tt.s = s->wname; tt.ty = s->ty; tt.w = s->w; tt.ut = s->ut;
+            vi_assignable(&tt, &x, v);
+            if (!x.cst) vi_fail(v, "a reset value must be a constant");
+            if (n == cap) { cap = cap ? cap * 2 : 16; r = (VReset *)realloc(r, (size_t)cap * sizeof *r); }
+            r[n].sym = base; r[n++].v = x.v;
+        }
+    }
+    *out = r;
+    return n;
+}
+
+static void vi_process(gram_node *st)
+{
+    gram_node *decls, *first = vi_proc_body(st, &decls), *clk = NULL, *rst = NULL, *rbody = NULL, *cbody = NULL;
+    gram_node *at = vi_kid(st, VHDL_R_PROCESS) ? vi_kid(st, VHDL_R_PROCESS) : st;
+    int mark = vi_nsyms, tmark = vi_ntypes, fmark = vi_nfuncs, neg = 0, clocked, i;
+    VEnv env;
+    memset(&env, 0, sizeof env);
+    env.live = vi_const(1, 1, T_BOOL);
+    if (decls) vi_decls(decls->child);
+    clocked = vi_proc_shape(first, &clk, &neg, &rst, &rbody, &cbody);
+    if (!clocked) {
+        gram_node *k;
+        for (k = first; k; k = k->next)
+            if (vi_has_edge(k))
+                vi_fail(k, "Wire reads a clocked process written as  if rising_edge(clk) then ... end if;  or as  "
+                           "if rst = '1' then ... elsif rising_edge(clk) then ... end if;  with nothing else around it");
+    }
+    vi_clocked = clocked;
+    vi_env = &env;
+    vi_bind_at = at->text;
+    vi_seq(clocked ? cbody->child : first);
+    vi_bind_at = NULL;
+    vi_env = NULL;
+    vi_clocked = 0;
+    if (!clocked) {   /* logic: every signal must get a value on every path */
+        for (i = 0; i < env.n; i++) {
+            VSym *s = &vi_syms[env.s[i].sym];
+            if (s->kind == VK_VAR) continue;
+            if (env.s[i].mask != vi_mask(s->w))
+                vi_fail(at, "%s is not given a value on every path through this process, so it would need memory (a latch); "
+                            "give it a value at the top of the process", s->wname);
+            vi_emit(at, "%s = %s", s->wname, env.s[i].v.s);
+        }
+    } else {   /* registers */
+        VSym *cs = vi_find(clk);
+        VReset *rv = NULL;
+        int nr = 0, pass;
+        char *clks, *rsts = NULL;
+        if (!cs || cs->w != 1 || cs->ty == T_ARR || cs->kind == VK_VAR) vi_fail(clk, "the clock must be a one-bit signal or port");
+        clks = neg ? vi_fmt("~%s", cs->wname) : cs->wname;
+        if (rst) {
+            VX r = vi_cond(rst);
+            rsts = r.s;
+            nr = vi_reset_vals(rbody->child, &rv);
+        }
+        for (pass = 0; pass < 2; pass++) {
+            int lim = pass ? nr : env.n;
+            for (i = 0; i < lim; i++) {
+                int si = pass ? rv[i].sym : env.s[i].sym, j, has = 0;
+                unsigned long k = 0;
+                VSym *s = &vi_syms[si];
+                VSlot *sl;
+                VX next;
+                if (s->kind == VK_VAR) continue;
+                if (pass && vi_slot_find(&env, si)) continue;   /* done in the first pass */
+                for (j = 0; j < nr; j++) if (rv[j].sym == si) { has = 1; k = rv[j].v; }
+                if (!has && s->hasinit) k = s->bits;
+                sl = vi_slot_find(&env, si);
+                if (sl) next = sl->v;
+                else { next = vi_mk(s->wname, s->ty, s->w, 2); }
+                vi_emit_reg(at, s, next, clks, rsts, has, k);
+            }
+        }
+    }
+    vi_nsyms = mark;
+    vi_ntypes = tmark;
+    vi_nfuncs = fmark;
+}
+
+/* the clocks of the processes, before the ports are written: they become clock, not input */
+
+static void vi_scan_clocks_in(gram_node *first, gram_node **out, int *n, int depth);
+
+/* the clocks used in the entity e: a port given to a chip's clock is a clock too */
+static int vi_ent_clocks(VEnt *e, gram_node **out, int depth)
+{
+    int n = 0;
+    if (depth < 16) vi_scan_clocks_in(e->arch->child->next->next, out, &n, depth + 1);
+    return n;
+}
+
+static void vi_scan_clocks_in(gram_node *first, gram_node **out, int *n, int depth)
+{
+    gram_node *k;
+    for (k = first; k; k = k->next) {
+        if (k->rule == VHDL_R_process) {
+            gram_node *decls, *b = vi_proc_body(k, &decls), *c = NULL, *r, *rb, *cb;
+            int neg;
+            if (vi_proc_shape(b, &c, &neg, &r, &rb, &cb)) {
+                if (*n < 64) out[(*n)++] = c;
+                if (!depth) vi_scan_regs(cb->child);
+            }
+        } else if (k->rule == VHDL_R_inst) {
+            VEnt *e = vi_ent_named(vi_inst_name(k));
+            gram_node *inner[64], *pm = vi_kid(k, VHDL_R_pmap), *as;
+            int m, i, pos = 0;
+            if (!e || !pm) continue;
+            m = vi_ent_clocks(e, inner, depth);
+            for (as = pm->child; as; as = as->next, pos++) {
+                gram_node *f = as->child->next ? as->child : NULL, *v = f ? f->next : as->child, *formal = NULL;
+                if (v->rule != VHDL_R_ident) continue;
+                if (f) formal = f->child;
+                else {   /* by position: the pos-th port of the entity */
+                    gram_node *pd = vi_kid(e->ent, VHDL_R_ports), *d, *id;
+                    int q = 0;
+                    for (d = pd ? pd->child : NULL; d && !formal; d = d->next)
+                        for (id = d->child->child; id; id = id->next, q++) if (q == pos) { formal = id; break; }
+                }
+                if (!formal) continue;
+                for (i = 0; i < m; i++)
+                    if (inner[i]->len == formal->len && vi_is(formal, vi_fmt("%.*s", VT(inner[i])))) {
+                        if (*n < 64) out[(*n)++] = v;
+                        break;
+                    }
+            }
+        } else if (k->rule == VHDL_R_generate) {
+            gram_node *g = k->child->next, *b = g->child->next;
+            if (g->rule == VHDL_R_forgen) b = b->next;
+            if (b && b->rule == VHDL_R_gdecls) b = b->next;
+            vi_scan_clocks_in(b, out, n, depth);
+        }
+    }
+}
+
+static void vi_scan_clocks(gram_node *first)
+{
+    vi_nclk = 0;
+    vi_nregs = 0;
+    vi_scan_clocks_in(first, vi_clk, &vi_nclk, 0);
+}
+
+/* the signals clocked processes give values to (outputs among them need their width written) */
+
+static void vi_scan_regs(gram_node *first)
+{
+    gram_node *k;
+    for (k = first; k; k = k->next) {
+        if (k->rule == VHDL_R_sassign && vi_nregs < 256) vi_regs[vi_nregs++] = k->child->child;
+        else if (k->rule == VHDL_R_ifst || k->rule == VHDL_R_elsifp || k->rule == VHDL_R_elsep || k->rule == VHDL_R_sbody
+                 || k->rule == VHDL_R_casest || k->rule == VHDL_R_casew || k->rule == VHDL_R_loopst)
+            vi_scan_regs(k->child);
+    }
+}
+
+static int vi_is_reg(const gram_node *id)
+{
+    int i;
+    for (i = 0; i < vi_nregs; i++) if (vi_regs[i]->len == id->len && vi_is(id, vi_fmt("%.*s", VT(vi_regs[i])))) return 1;
+    return 0;
+}
+
+static int vi_is_clock(const gram_node *id)
+{
+    int i;
+    if (vi_is(id, "clk") || vi_is(id, "clock")) return 1;   /* named as one, even if only gates use it */
+    for (i = 0; i < vi_nclk; i++) if (vi_clk[i]->len == id->len && vi_is(id, vi_fmt("%.*s", VT(vi_clk[i])))) return 1;
+    return 0;
+}
+
 static void vi_statement(gram_node *st)
 {
     switch (st->rule) {
     case VHDL_R_condassign: vi_condassign(st); break;
     case VHDL_R_selassign: vi_selassign(st); break;
     case VHDL_R_assert: break;   /* only for simulation */
-    case VHDL_R_process:
-        vi_fail(vi_kid(st, VHDL_R_PROCESS) ? vi_kid(st, VHDL_R_PROCESS) : st,
-                "processes are not supported yet. For now Wire reads concurrent VHDL: assignments (<=), "
-                "when ... else, with ... select, port map and generate");
-        break;
+    case VHDL_R_process: vi_process(st); break;
     case VHDL_R_generate: vi_generate(st); break;
     case VHDL_R_inst: vi_inst(st); break;
     default:
@@ -1676,14 +2953,19 @@ static void vi_ports(gram_node *ports, int is_generic, int emit)
             vi_fail(mode, "%.*s ports are not supported yet; use in or out", VT(mode));
         out = mode && (vi_is(mode, "out") || vi_is(mode, "buffer"));
         vi_type(ty, &proto, 0);
-        for (id = ids->child; id; id = id->next) {
-            VSym *s = vi_declare(id, out ? VK_OUT : VK_IN);
-            s->ty = proto.ty; s->w = proto.w; s->left = proto.left; s->right = proto.right; s->down = proto.down;
-            s->def = def;
-            if (s->w > 1 || vi_vec(s->ty)) vbf(&b, "%s%s[%d]", b.n ? ", " : "", s->wname, s->w);
-            else vbf(&b, "%s%s", b.n ? ", " : "", s->wname);
+        {
+            VBuf c = { 0, 0, 0 };
+            for (id = ids->child; id; id = id->next) {
+                VSym *s = vi_declare(id, out ? VK_OUT : VK_IN);
+                s->ty = proto.ty; s->w = proto.w; s->left = proto.left; s->right = proto.right; s->down = proto.down;
+                s->def = def;
+                if (!out && s->w == 1 && !vi_vec(s->ty) && vi_is_clock(id)) { vbf(&c, "%s%s", c.n ? ", " : "", s->wname); continue; }
+                if (s->w > 1 || vi_vec(s->ty) || (out && vi_is_reg(id))) vbf(&b, "%s%s[%d]", b.n ? ", " : "", s->wname, s->w);
+                else vbf(&b, "%s%s", b.n ? ", " : "", s->wname);
+            }
+            if (emit && c.n) vi_emit(ids, "clock %s", c.s);   /* a clock of a process: Run and Step on the page */
+            if (emit && b.n) vi_emit(ids, "%s %s", out ? "output" : "input", b.s);
         }
-        if (emit) vi_emit(ids, "%s %s", out ? "output" : "input", b.s);
     }
 }
 
@@ -1693,23 +2975,99 @@ static void vi_decls(gram_node *first)   /* signal and constant declarations, fr
     for (d = first; d; d = d->next) {
         gram_node *id;
         VSym proto;
-        if (d->rule == VHDL_R_signal) {
+        if (d->rule == VHDL_R_signal || d->rule == VHDL_R_variable) {
+            int var = d->rule == VHDL_R_variable;
+            gram_node *ty = vi_kid(d, VHDL_R_type), *init = ty->next;
             VBuf b = { 0, 0, 0 };
             memset(&proto, 0, sizeof proto);
-            vi_type(vi_kid(d, VHDL_R_type), &proto, 0);
+            vi_type(ty, &proto, 2);
+            if (var && proto.ty == T_ARR) vi_fail(ty, "array variables are not supported yet; use a signal");
             for (id = d->child->child; id; id = id->next) {
-                VSym *s = vi_declare(id, VK_SIG);
+                VSym *s = vi_declare(id, var ? VK_VAR : VK_SIG);
+                int si = (int)(s - vi_syms);
                 s->ty = proto.ty; s->w = proto.w; s->left = proto.left; s->right = proto.right; s->down = proto.down;
-                if (vi_vec(s->ty)) vbf(&b, "%s%s[%d]", b.n ? ", " : "", s->wname, s->w);
-                else vbf(&b, "%s%s", b.n ? ", " : "", s->wname);
+                s->ut = proto.ut;
+                if (s->ty == T_ARR) {   /* a signal per element: mem_0, mem_1 ... */
+                    VType *t = &vi_types[proto.ut - 1];
+                    int k;
+                    vi_syms[si].elem0 = vi_nsyms;
+                    for (k = t->alo; k <= t->ahi; k++) {
+                        VSym *e;
+                        char *w = vi_fmt("%s_%d", vi_syms[si].wname, k);
+                        while (vi_wname_used(w)) w = vi_fmt("%s_", w);
+                        if (vi_nsyms == vi_cap) {
+                            vi_cap = vi_cap ? vi_cap * 2 : 64;
+                            vi_syms = (VSym *)realloc(vi_syms, (size_t)vi_cap * sizeof *vi_syms);
+                        }
+                        e = &vi_syms[vi_nsyms++];
+                        *e = t->elem;
+                        e->kind = VK_SIG;
+                        e->name = vi_syms[si].name;
+                        e->nlen = -1;   /* found through the array, not by name */
+                        e->wname = w;
+                        e->at = id;
+                        vbf(&b, "%s%s[%d]", b.n ? ", " : "", w, e->w);
+                    }
+                    continue;
+                }
+                if (init) {   /* the value it starts with: a register without a reset starts there */
+                    VTarget t;
+                    VX x;
+                    memset(&t, 0, sizeof t);
+                    t.s = vi_syms[si].wname; t.ty = proto.ty; t.w = proto.w; t.ut = proto.ut;
+                    x = vi_gen(init, proto.w);
+                    if (!x.cst) vi_fail(init, "a starting value must be a constant");
+                    vi_assignable(&t, &x, init);
+                    vi_syms[si].bits = x.v;
+                    vi_syms[si].hasinit = 1;
+                }
+                if (var) continue;   /* a variable is only a value inside its process */
+                /* always with its width: a register's width cannot be inferred from itself */
+                vbf(&b, "%s%s[%d]", b.n ? ", " : "", vi_syms[si].wname, proto.w);
             }
-            vi_emit(d->child, "wire %s", b.s);
+            if (b.n) vi_emit(d->child, "wire %s", b.s);
+        } else if (d->rule == VHDL_R_typedecl) {
+            VType t;
+            gram_node *def = d->child->next;
+            memset(&t, 0, sizeof t);
+            t.id = d->child;
+            if (def->rule == VHDL_R_enumdef) {
+                gram_node *l;
+                t.lits = def->child;
+                for (l = def->child; l; l = l->next) t.n++;
+                t.w = 1;
+                while ((1 << t.w) < t.n) t.w++;
+            } else {
+                gram_node *r = def->child;
+                long a = vi_const_int(r->child, "an array's range"), z = vi_const_int(r->child->next->next, "an array's range");
+                t.isarr = 1;
+                t.alo = (int)(a < z ? a : z);
+                t.ahi = (int)(a < z ? z : a);
+                if (t.ahi - t.alo + 1 > 4096) vi_fail(r, "Wire handles arrays of up to 4096 elements");
+                vi_type(r->next, &t.elem, 0);
+                if (t.elem.ty == T_ARR) vi_fail(r->next, "arrays of arrays are not supported yet");
+            }
+            vi_types = (VType *)realloc(vi_types, (size_t)(vi_ntypes + 1) * sizeof *vi_types);
+            vi_types[vi_ntypes++] = t;
         } else if (d->rule == VHDL_R_constant) {
             gram_node *ty = vi_kid(d, VHDL_R_type), *val = ty->next;
             memset(&proto, 0, sizeof proto);
             vi_type(ty, &proto, 1);
             for (id = d->child->child; id; id = id->next) {
                 VSym *s;
+                if (proto.ty == T_ARR) {   /* a table of constants, a rom when read with a signal */
+                    VType *t = &vi_types[proto.ut - 1];
+                    int k, n = t->ahi - t->alo + 1;
+                    unsigned long *bits = (unsigned long *)calloc((size_t)n, sizeof *bits);
+                    for (k = 0; k < n; k++) {
+                        VX x = vi_array_elem(t, val, k, val);
+                        if (!x.cst) vi_fail(val, "a constant's value must be known: literals and other constants");
+                        bits[k] = x.v;
+                    }
+                    s = vi_declare(id, VK_CONST);
+                    s->ty = T_ARR; s->ut = proto.ut; s->w = t->elem.w; s->abits = bits;
+                    continue;
+                }
                 if (proto.ty == T_INT) {
                     long v = vi_const_int(val, "a constant's value");
                     s = vi_declare(id, VK_CONST);
@@ -1717,15 +3075,19 @@ static void vi_decls(gram_node *first)   /* signal and constant declarations, fr
                 } else {
                     VTarget t;
                     VX x;
-                    t.s = vi_fmt("%.*s", VT(id)); t.ty = proto.ty; t.w = proto.w; t.sym = NULL;
+                    t.s = vi_fmt("%.*s", VT(id)); t.ty = proto.ty; t.w = proto.w; t.sym = NULL; t.ut = proto.ut;
                     x = vi_gen(val, proto.w);
                     if (!x.cst) vi_fail(val, "a constant's value must be known: literals and other constants");
                     vi_assignable(&t, &x, val);
                     s = vi_declare(id, VK_CONST);
                     s->ty = proto.ty; s->w = proto.w; s->left = proto.left; s->right = proto.right; s->down = proto.down;
+                    s->ut = proto.ut;
                     s->bits = x.v;
                 }
             }
+        } else if (d->rule == VHDL_R_funcdecl) {   /* inlined where it is called */
+            if (vi_nfuncs == 64) vi_fail(d, "more than 64 functions");
+            vi_funcs[vi_nfuncs++] = d;
         } else if (d->rule == VHDL_R_compdecl) {
             /* only used by instances, which say they are not supported */
         } else if (d->rule == VHDL_R_other) {
@@ -1841,8 +3203,7 @@ static char *vhdl_to_wire(const char *text, size_t len, const char *file, size_t
             if (!e) vi_fail(arch_of(u), "this architecture is of %.*s, but there is no entity called that before it",
                             VT(arch_of(u)));
             if (e != vi_ents[vi_nents - 1]) vi_fail(u->child, "put each architecture right after its entity");
-            if (e->arch) vi_fail(u->child, "a second architecture of %.*s is not supported yet", VT(e->ent->child));
-            e->arch = u;
+            e->arch = u;   /* several: the last one, as a simulator picks it */
             e->ctx |= ctx;
             ctx = 0;
         }

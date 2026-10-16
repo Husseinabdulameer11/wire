@@ -368,12 +368,14 @@ wire --to-wire alu4.vhd        # prints the Wire it was turned into
 It turns the VHDL into Wire and goes on from there, so the checks, the
 page, the truth table and the VHDL panel all work as usual (the Source and
 VHDL panels show your VHDL, and clicking a part finds its line in it). It
-reads the part of VHDL that is wiring, the same subset Vivado turns into
-gates:
+reads the VHDL Vivado turns into hardware, the kind written in a digital
+design course (every example of Chu's *FPGA Prototyping by VHDL Examples*
+reads), and the VHDL Wire writes itself, so the playground can switch a
+circuit from Wire to VHDL and back:
 
 - **Entities and their architectures.** Ports and signals of `std_logic`,
-  `std_logic_vector`, `unsigned`, `signed` and `boolean`, `downto` or `to`;
-  integer generics and constants.
+  `std_logic_vector`, `unsigned`, `signed`, `boolean` and `integer range
+  0 to n`, `downto` or `to`; integer generics and constants.
 - **Chips from chips.** Every entity but the top one becomes a chip (a Wire
   component), and `port map` (named or by position, `entity work.x` or a
   component) places it, so a full adder can be built from half adders and an
@@ -384,20 +386,32 @@ gates:
 - **Concurrent statements:** assignments (`<=`), `when ... else` and
   `with ... select`, each becoming gates, multiplexers, adders and
   comparators.
+- **Processes.** A clocked process (`if rising_edge(clk) then`, or with an
+  asynchronous reset first: `if reset = '1' then ... elsif rising_edge(clk)
+  then`) becomes flip-flops, with an enable where a value is only sometimes
+  given; a process of logic (every signal given a value on every path)
+  becomes gates. Inside: `if`/`elsif`/`else`, `case`, `for` loops with
+  `exit`, variables and `null`. An input used as a clock becomes a Wire
+  `clock`, with Run and Step on the page.
+- **Types:** enumerations (`type state is (idle, run, done)`, for state
+  machines, coded in binary) and arrays (`type regs is array (0 to 3) of
+  std_logic_vector(7 downto 0)`): a constant array read with a signal is a
+  rom, a signal array is a register per element.
+- **Functions** with `return` anywhere but in a loop, put in place where they
+  are called.
 - **Expressions:** `and or xor nand nor xnor not`, `= /= < <= > >=`, `+ -`
-  (with `ieee.numeric_std`, or `std_logic_unsigned`), `&`, bits and slices,
+  (with `ieee.numeric_std`, or `std_logic_unsigned`), `&`, bits and slices
+  (also picked by a signal: `x(to_integer(i))`, on either side of `<=`),
   aggregates like `(others => '0')`, `unsigned() signed()
-  std_logic_vector() to_unsigned() to_signed() resize()`, and shifts by a
-  constant (`shift_left`, `shift_right`, `sll`, `srl`, `sra`, `rol`, `ror`).
+  std_logic_vector() to_unsigned() to_signed() to_integer() resize()`, and
+  shifts (`shift_left`, `shift_right`, `sll`, `srl`, `sra`, `rol`, `ror`).
 
-Not yet: processes (so no flip-flops written as `if rising_edge(clk)`),
-integer signals, `type` declarations and connecting part of a port
-(`x(0) => a`). A file that uses one says so, at its line:
+Not yet: `'Z'` (tri-state), values wider than 32 bits, procedures, `wait`
+and connecting part of a port (`x(0) => a`). A file that uses one says so,
+at its line:
 
 ```
-counter.vhd:14:3: error: processes are not supported yet. For now Wire reads
-concurrent VHDL: assignments (<=), when ... else, with ... select, port map
-and generate
+bus.vhd:30:44: error: 'Z' (tri-state) is not supported yet
 ```
 
 VHDL's own rules are checked too, with the messages in VHDL's words: widths
@@ -411,8 +425,9 @@ use ...` lines, as Vivado wants.
 **How it is checked:** `node tests/vhdl/cosim.js build/wire --vhdl-in` takes
 every `.vhd` file under `examples/` and `tests/vhdl_in/`, turns each one Wire
 reads into a circuit, and runs it against the same file in GHDL on random
-inputs; every file it does not read must say "not supported yet" (`make test`
-does this when GHDL is installed).
+inputs; every file it does not read must say "not supported yet". With
+`--round-trip` it does the same for the VHDL Wire writes for every example
+(`make test` does both when GHDL is installed).
 
 ## Components and imports
 

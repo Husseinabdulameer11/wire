@@ -445,7 +445,7 @@ async function wire(args, mainPath, mainText) {
  * view you go to from it, and keeps what it made while the circuit does not
  * change, so going back gives exactly the text you left. A switch that would
  * lose part of the circuit (the drawing has no rom, Wire cannot read a
- * process back from VHDL yet) does not happen, and the page says why. */
+ * tri-state bus back from VHDL yet) does not happen, and the page says why. */
 let mode = "draw";             /* draw: the drawing; write: the code editor */
 let lang = "wire";             /* what the code editor holds: wire or vhdl */
 let dir = "";                  /* the example's folder, where its imports are */
@@ -995,7 +995,7 @@ function showLang() {
   for (const o of ex.querySelectorAll("option")) {
     if (!o.value) continue;
     o.disabled = lang === "vhdl" && !VHD[o.value];
-    o.title = o.disabled ? "Its VHDL uses what Wire does not read yet (a process, a type...)" : "";
+    o.title = o.disabled ? "Its VHDL uses what Wire does not read yet (a tri-state bus, more than 32 bits...)" : "";
   }
 }
 $("lang").onchange = () => go("write", $("lang").value);
@@ -1046,8 +1046,9 @@ sum  = p ^ cin
 cout = (a & b) | (p & cin)
 `;
 const STARTER_VHDL = `-- Write VHDL and the circuit is drawn as you type: assignments,
--- when ... else, with ... select, and entities used as chips with
--- port map (click a chip to open it). Processes are not supported yet.
+-- when ... else, with ... select, processes (clocked ones become
+-- flip-flops), and entities used as chips with port map (click a chip
+-- to open it).
 library ieee;
 use ieee.std_logic_1164.all;
 

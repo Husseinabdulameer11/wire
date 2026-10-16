@@ -115,6 +115,7 @@ test: $(WIRE)
 	   node tests/vhdl/cosim.js $(WIRE) || exit 1; \
 	   node tests/vhdl/cosim.js $(WIRE) --generated || exit 1; \
 	   node tests/vhdl/cosim.js $(WIRE) --vhdl-in || exit 1; \
+	   node tests/vhdl/cosim.js $(WIRE) --round-trip || exit 1; \
 	 else echo "wire: node not found, skipping the simulator tests (tests/sim, tests/vhdl)"; fi
 	@# installed and run from PATH (argv[0] is then just "wire"), it must still
 	@# find its standard library in ../share/wire/lib

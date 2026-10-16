@@ -1,7 +1,7 @@
 # VHDL, the part Wire reads (wire_vhdl_in.c turns it into Wire).
 # Case does not matter in VHDL, so every keyword is matched with 'i.
-# Processes are recognised, so the translator can say they are not
-# supported yet instead of giving a syntax error.
+# Processes are read as sequential statements (if, case, for, exit, :=,
+# <=); the translator turns them into registers and logic.
 
 design    <- unit* ;
 unit      <^ library / use / entity / arch ;
@@ -22,9 +22,17 @@ drange    <- expr dir expr ;
 dir       <= ('downto'i / 'to'i) ![A-Za-z0-9_] ;
 
 arch      <- ~ARCHITECTURE ident ~OF ident ~IS adecl* ~BEGIN cstmt* ~END ~ARCHITECTURE? ident? ~';' ;
-adecl     <^ signal / constant / compdecl / other ;
+adecl     <^ signal / constant / typedecl / compdecl / funcdecl / other ;
 signal    <- ~SIGNAL idlist ~':' type (~':=' expr)? ~';' ;
 constant  <- ~CONSTANT idlist ~':' type ~':=' expr ~';' ;
+# type state is (idle, run);   type mem is array (0 to 15) of std_logic_vector(7 downto 0);
+typedecl  <- ~TYPE ident ~IS (enumdef / arraydef) ~';' ;
+enumdef   <- ~'(' ident (~',' ident)* ~')' ;
+arraydef  <- ~ARRAY ~'(' drange ~')' ~OF type ;
+# function x8(e : std_logic) return std_logic_vector is begin return (7 downto 0 => e); end function;
+funcdecl  <- ~(PURE / IMPURE)? ~FUNCTION ident fparams? ~RETURN type ~IS pdecls ~BEGIN sstmt* ~END ~FUNCTION? ident? ~';' ;
+fparams   <- ~'(' fparam (~';' fparam)* ~')' ;
+fparam    <- ~(CONSTANT / SIGNAL)? idlist ~':' ~IN? type ;
 compdecl  <- ~COMPONENT ident ~IS? generics? ports? ~END ~COMPONENT ident? ~';' ;
 # type, subtype, alias, attribute, function...: recognised, then refused
 other     <- subprog / otherkw (!';' .)* ~';' ;
@@ -37,10 +45,27 @@ endsub    <= 'end'i ![A-Za-z0-9_] [ \t\r\n]* !(('if'i / 'loop'i / 'case'i / 'rec
 
 # ---- concurrent statements ---------------------------------------------
 cstmt     <^ process / generate / inst / selassign / condassign / assert ;
-label     <- ident ~':' ;
-process   <- label? ~POSTPONED? PROCESS pbody ident? ~';' ;
-pbody     <= (!endproc .)* endproc ;
-endproc   <= 'end'i [ \t\r\n]+ ('postponed'i [ \t\r\n]+)? 'process'i ![A-Za-z0-9_] ;
+label     <- ident ~':' !'=' ;
+process   <- label? ~POSTPONED? PROCESS sens? ~IS? pdecls ~BEGIN sstmt* ~END ~POSTPONED? ~PROCESS ident? ~';' ;
+sens      <- ~'(' (ALL / name (~',' name)*) ~')' ;
+pdecls    <- (variable / constant / typedecl / funcdecl / other)* ;
+variable  <- ~SHARED? ~VARIABLE idlist ~':' type (~':=' expr)? ~';' ;
+
+# ---- sequential statements (inside a process) --------------------------
+sstmt     <^ ifst / casest / loopst / exitst / nullst / waitst / retst / vassign / sassign / assert ;
+retst     <- ~RETURN expr ~';' ;
+sassign   <- target ~'<=' wave ~';' ;
+vassign   <- target ~':=' expr ~';' ;
+ifst      <- label? ~IF expr ~THEN sbody elsifp* elsep? ~END ~IF ident? ~';' ;
+elsifp    <- ~ELSIF expr ~THEN sbody ;
+elsep     <- ~ELSE sbody ;
+sbody     <- sstmt* ;
+casest    <- label? ~CASE expr ~IS casew+ ~END ~CASE ident? ~';' ;
+casew     <- ~WHEN choices ~'=>' sbody ;
+loopst    <- label? ~FOR ident ~IN drange ~LOOP sbody ~END ~LOOP ident? ~';' ;
+exitst    <- EXIT ident? (~WHEN expr)? ~';' ;
+nullst    <- NULL ~';' ;
+waitst    <- WAIT (!';' .)* ~';' ;
 # for i in 0 to 7 generate ... end generate;   if N > 4 generate ... end generate;
 generate  <- label (forgen / ifgen) ;
 forgen    <- ~FOR ident ~IN drange ~GENERATE gdecls? cstmt* ~END ~GENERATE ident? ~';' ;
@@ -61,11 +86,11 @@ lastwhen  <- ~WHEN expr ;
 selassign <- label? ~WITH expr ~SELECT target ~'<=' selarm (~',' selarm)* ~';' ;
 selarm    <- wave ~WHEN choices ;
 choices   <- choice (~'|' choice)* ;
-choice    <^ OTHERS / expr ;
+choice    <^ OTHERS / drange / expr ;
 wave      <^ expr after? ;
 after     <- ~AFTER (!(WHEN / ELSE / ';' / ',') .)* ;
 
-target    <- ident (~'(' (drange / expr) ~')')? ;
+target    <- ident (~'(' (drange / expr) ~')')* ;
 
 # ---- expressions, loosest first (VHDL's own order) ---------------------
 expr      <^ relation (logop relation)* ;
@@ -123,6 +148,17 @@ IN        <= 'in'i ![A-Za-z0-9_] ;
 GENERATE  <= 'generate'i ![A-Za-z0-9_] ;
 IF        <= 'if'i ![A-Za-z0-9_] ;
 ASSERT    <= 'assert'i ![A-Za-z0-9_] ;
+TYPE      <= 'type'i ![A-Za-z0-9_] ;
+ARRAY     <= 'array'i ![A-Za-z0-9_] ;
+VARIABLE  <= 'variable'i ![A-Za-z0-9_] ;
+SHARED    <= 'shared'i ![A-Za-z0-9_] ;
+THEN      <= 'then'i ![A-Za-z0-9_] ;
+ELSIF     <= 'elsif'i ![A-Za-z0-9_] ;
+CASE      <= 'case'i ![A-Za-z0-9_] ;
+LOOP      <= 'loop'i ![A-Za-z0-9_] ;
+EXIT      <= 'exit'i ![A-Za-z0-9_] ;
+NULL      <= 'null'i ![A-Za-z0-9_] ;
+WAIT      <= 'wait'i ![A-Za-z0-9_] ;
 OPEN      <= 'open'i ![A-Za-z0-9_] ;
 WHEN      <= 'when'i ![A-Za-z0-9_] ;
 ELSE      <= 'else'i ![A-Za-z0-9_] ;
@@ -132,6 +168,10 @@ OTHERS    <= 'others'i ![A-Za-z0-9_] ;
 AFTER     <= 'after'i ![A-Za-z0-9_] ;
 NOT       <= 'not'i ![A-Za-z0-9_] ;
 ABS       <= 'abs'i ![A-Za-z0-9_] ;
+FUNCTION  <= 'function'i ![A-Za-z0-9_] ;
+RETURN    <= 'return'i ![A-Za-z0-9_] ;
+PURE      <= 'pure'i ![A-Za-z0-9_] ;
+IMPURE    <= 'impure'i ![A-Za-z0-9_] ;
 
 keyword   <= ('abs'i / 'access'i / 'after'i / 'alias'i / 'all'i / 'and'i / 'architecture'i
              / 'array'i / 'assert'i / 'attribute'i / 'begin'i / 'block'i / 'body'i

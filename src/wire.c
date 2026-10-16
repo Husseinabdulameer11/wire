@@ -2331,6 +2331,7 @@ int main(int argc, char **argv)
         vhdl_in_len = len;
         text = vhdl_to_wire(vhdl_in, vhdl_in_len, src_name, &len);
         if (!vhdl_file) vhdl_file = src_name;   /* the VHDL panel shows the file itself */
+        if (getenv("WIRE_SHOW_WIRE")) vhdl_print_wire(stderr, text);   /* the Wire, before it is checked */
     } else if (to_wire) { fprintf(stderr, "wire: --to-wire is for .vhd files; %s is Wire already\n", src_name); return 2; }
 
     gram_arena_init(&arena, mem, sizeof mem);

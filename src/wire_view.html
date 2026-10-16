@@ -866,6 +866,11 @@ function routeFree(V) {
   const seg = (net, d) => segs.set(net, (segs.get(net) || "") + d);
   junctions = [];
   let under = 0;
+  /* vertical trunks already drawn: two wires never share one, or they would
+   * look joined (a and b both feeding two gates got one trunk, and looked
+   * like one wire) */
+  const trunks = [];
+  const clash = (x, lo, hi, net) => trunks.some(t => t.net !== net && Math.abs(t.x - x) < 16 && lo <= t.hi + 6 && hi >= t.lo - 6);
   V.drv.forEach((d, net) => {
     const rs = V.rdr.get(net) || [];
     if (!rs.length) return;
@@ -875,9 +880,17 @@ function routeFree(V) {
     const ends = rs.map(r => { const t = V.items[r.node], ip = t.g.ins[r.port]; return { x: t.x + ip.x, y: t.y + ip.y, t }; });
     const ahead = ends.filter(p => p.x >= x1 + 20), behind = ends.filter(p => p.x < x1 + 20);
     if (ahead.length) {
-      const tx = x1 + Math.max(10, Math.round(Math.min(...ahead.map(p => p.x - x1)) / 20) * 10);
-      seg(net, `M${x1} ${y1}H${tx}`);
       const ys = [y1, ...ahead.map(p => p.y)], lo = Math.min(...ys), hi = Math.max(...ys);
+      const first = Math.min(...ahead.map(p => p.x));
+      let tx = x1 + Math.max(10, Math.round((first - x1) / 20) * 10);
+      if (hi > lo && clash(tx, lo, hi, net)) {   /* the nearest free track between the two parts */
+        for (let k = 1; k < 40; k++) {
+          const c = tx + (k % 2 ? -1 : 1) * Math.ceil(k / 2) * 10;
+          if (c >= x1 + 10 && c <= first - 10 && !clash(c, lo, hi, net)) { tx = c; break; }
+        }
+      }
+      if (hi > lo) trunks.push({ x: tx, lo, hi, net });
+      seg(net, `M${x1} ${y1}H${tx}`);
       if (hi > lo) seg(net, `M${tx} ${lo}V${hi}`);
       ahead.forEach(p => seg(net, `M${tx} ${p.y}H${p.x}`));
       /* a dot where three or more pieces meet on the trunk */
@@ -1150,7 +1163,9 @@ function addPins(n) {
   const mk = (p, dir, i) => {
     const c = el("circle", { class: "pin-hit", cx: p.x, cy: p.y, r: 9 }, n.el);
     c.dataset.pin = dir + ":" + i;
-    el("circle", { class: "pin-dot", cx: p.x, cy: p.y, r: 3.2 }, n.el);
+    /* a small square, not a circle: a circle at a gate's output reads as the
+     * bubble of NAND or XNOR */
+    el("rect", { class: "pin-dot", x: p.x - 3, y: p.y - 3, width: 6, height: 6, rx: 1 }, n.el);
   };
   n.g.ins.forEach((p, i) => mk(p, "in", i));
   n.g.outs.forEach((p, i) => mk(p, "out", i));

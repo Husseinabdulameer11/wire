@@ -9,6 +9,9 @@
  * what Wire does not read yet must say so ("not supported yet"); any other
  * error fails.
  *
+ * --round-trip reads the VHDL Wire writes (wire --to-vhdl) back with Wire,
+ * for the same circuits as --generated, and runs that against GHDL.
+ *
  * --generated checks the VHDL Wire writes itself (wire --to-vhdl) instead of
  * the .vhd files, for every example and every circuit in tests/sim. It also
  * reads it with GHDL as strict VHDL-93 (what Vivado uses by default) and,
@@ -39,13 +42,14 @@ const WireSim = require("../../src/wire_sim.js");
 const args = process.argv.slice(2);
 const wire = args[0];
 if (!wire) { console.error("usage: node tests/vhdl/cosim.js build/wire [file.wire ...] [--steps N] [--keep]"); process.exit(2); }
-let STEPS = 300, KEEP = false, GEN = false, VIN = false;
+let STEPS = 300, KEEP = false, GEN = false, VIN = false, ROUND = false;
 const files = [];
 for (let i = 1; i < args.length; i++) {
   if (args[i] === "--steps") STEPS = +args[++i];
   else if (args[i] === "--keep") KEEP = true;
   else if (args[i] === "--generated") GEN = true;
   else if (args[i] === "--vhdl-in") VIN = true;
+  else if (args[i] === "--round-trip") { ROUND = true; GEN = true; }
   else files.push(args[i]);
 }
 const root = path.join(__dirname, "..", "..");
@@ -64,6 +68,19 @@ if (!files.length) {
 }
 const ghdl = spawnSync("ghdl", ["--version"]).status === 0;
 if (!ghdl) { console.log("cosim: ghdl not found, skipping the VHDL checks"); process.exit(0); }
+if (ROUND) {
+  /* the VHDL Wire writes, read back by Wire: each in a folder of its own,
+   * next to a copy of its .wire for the # test: options */
+  const list = files.splice(0);
+  for (const f of list) {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "wirert-")), top = path.basename(f, ".wire");
+    const r = spawnSync(wire, ["--to-vhdl", "-o", path.join(d, top + ".vhd"), f], { encoding: "utf8" });
+    if (r.status !== 0) { console.log(`FAIL ${f}\n  ${(r.stderr || "").trim()}`); process.exit(1); }
+    fs.copyFileSync(f, path.join(d, top + ".wire"));
+    files.push(path.join(d, top + ".vhd"));
+  }
+  GEN = false; VIN = true;
+}
 const canSynth = GEN && /synth/i.test(spawnSync("ghdl", ["--help"], { encoding: "utf8" }).stdout || "");
 let synthNotes = 0;
 
@@ -275,6 +292,7 @@ end sim;
 }
 if (failed) { console.log(`${failed} of ${files.length} ${VIN ? "VHDL files are not read right" : GEN ? "circuits differ from the VHDL Wire made" : "examples differ from their VHDL"}`); process.exit(1); }
 const ran = files.length - skipped;
+if (ROUND) { console.log(`all ${ran} circuits come back the same from the VHDL Wire writes for them${notYet ? `; ${notYet} use what Wire does not read yet` : ""}`); process.exit(0); }
 if (VIN) { console.log(`all ${ran} VHDL files Wire reads agree with GHDL${notYet ? `; ${notYet} use what is not supported yet` : ""}`); process.exit(0); }
 console.log(GEN ? `all ${ran} circuits agree with the VHDL Wire made for them${skipped ? ` (${skipped} skipped)` : ""}` +
                   (canSynth ? `; GHDL synthesizes all of it${synthNotes ? ` but ${synthNotes} with an internal tri-state bus (GHDL cannot; Vivado makes it logic)` : ""}` : "")
