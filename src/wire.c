@@ -72,12 +72,15 @@ static int file_of(const gram_node *at)
 
 /* ---- errors ------------------------------------------------------------ */
 
+static int vhdl_line(int wline);
+
 static void fail(const gram_node *at, const char *f, ...)
 {
     va_list ap;
     size_t line = 0, col = 0;
     File *fl = &files[file_of(at)];
     if (at) gram_locate(fl->text, fl->len, (size_t)(at->text - fl->text), &line, &col);
+    if (at && vhdl_in && fl == &files[0]) line = (size_t)vhdl_line((int)line);
     fprintf(stderr, "%s:", fl->name);
     if (at) fprintf(stderr, "%lu:%lu:", (unsigned long)line, (unsigned long)col);
     fputs(" error: ", stderr);
@@ -95,6 +98,7 @@ static int line_of(const gram_node *at)
     if (!at) return 0;
     fl = &files[file_of(at)];
     gram_locate(fl->text, fl->len, (size_t)(at->text - fl->text), &line, NULL);
+    if (vhdl_in && fl == &files[0]) return vhdl_line((int)line);
     return (int)line;
 }
 

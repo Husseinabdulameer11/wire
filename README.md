@@ -365,9 +365,16 @@ VHDL panels show your VHDL, and clicking a part finds its line in it). It
 reads the part of VHDL that is wiring, the same subset Vivado turns into
 gates:
 
-- **One entity and its architecture.** Ports and signals of `std_logic`,
+- **Entities and their architectures.** Ports and signals of `std_logic`,
   `std_logic_vector`, `unsigned`, `signed` and `boolean`, `downto` or `to`;
-  integer generics (with their default values) and constants.
+  integer generics and constants.
+- **Chips from chips.** Every entity but the top one becomes a chip (a Wire
+  component), and `port map` (named or by position, `entity work.x` or a
+  component) places it, so a full adder can be built from half adders and an
+  adder from full adders, as deep as you like. Click a chip on the page to go
+  inside. The top entity is the one no other entity uses. A `generic map`
+  with other values makes a copy of the chip for them (`ripple_n8`), and
+  `for ... generate` and `if ... generate` are unrolled (`fa_0`, `fa_1`...).
 - **Concurrent statements:** assignments (`<=`), `when ... else` and
   `with ... select`, each becoming gates, multiplexers, adders and
   comparators.
@@ -378,19 +385,22 @@ gates:
   constant (`shift_left`, `shift_right`, `sll`, `srl`, `sra`, `rol`, `ror`).
 
 Not yet: processes (so no flip-flops written as `if rising_edge(clk)`),
-`generate`, component instances, more than one entity in a file, integer
-signals and `type` declarations. A file that uses one says so, at its line:
+integer signals, `type` declarations and connecting part of a port
+(`x(0) => a`). A file that uses one says so, at its line:
 
 ```
 counter.vhd:14:3: error: processes are not supported yet. For now Wire reads
-concurrent VHDL: assignments (<=), when ... else and with ... select
+concurrent VHDL: assignments (<=), when ... else, with ... select, port map
+and generate
 ```
 
 VHDL's own rules are checked too, with the messages in VHDL's words: widths
 must match (`the target is 4 bits, but the value is 8 bits`), `unsigned` is
 not `std_logic_vector` without a conversion, `and` and `or` need parentheses
-when mixed, a `with ... select` must cover every value, and a `when` without
-an `else` is refused (it would be a latch).
+when mixed, a `with ... select` must cover every value, a `when` without an
+`else` is refused (it would be a latch), every input of a chip must be
+connected (or have a default), and each entity needs its own `library ieee;
+use ...` lines, as Vivado wants.
 
 **How it is checked:** `node tests/vhdl/cosim.js build/wire --vhdl-in` takes
 every `.vhd` file under `examples/` and `tests/vhdl_in/`, turns each one Wire

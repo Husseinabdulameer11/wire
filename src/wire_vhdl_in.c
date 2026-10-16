@@ -5,7 +5,7 @@
  *   wire adder.vhd               writes adder.html
  *   wire --to-wire adder.vhd     prints the Wire it was turned into
  *
- * What it reads: one entity and its architecture, with generics (their
+ * What it reads: entities and their architectures, with generics (their
  * default values), std_logic, std_logic_vector, unsigned and signed ports
  * and signals, integer and vector constants, and the concurrent statements:
  * assignments, when/else and with/select. Expressions: and or xor nand nor
@@ -13,8 +13,12 @@
  * indexes and slices, aggregates like (others => '0'), the conversions
  * unsigned() signed() std_logic_vector() to_unsigned() to_signed() resize(),
  * shift_left() shift_right() and sll srl sla sra rol ror by a constant.
- * Processes, generate loops and component instances are recognised and
- * refused with a message, not a syntax error.
+ * Every entity but the top one becomes a Wire component (a chip), and
+ * port map places it, so chips can be built from chips. The top entity is
+ * the one no other entity uses (the last one, if there are several).
+ * for ... generate and if ... generate are unrolled (labels and signals
+ * inside get _0, _1 ... on the end). Processes are recognised and refused
+ * with a message, not a syntax error.
  *
  * The Wire keeps the VHDL's lines: each statement lands on the line (and
  * near the column) it came from, so every error Wire finds later, and every
@@ -24,7 +28,7 @@
 enum { T_SL, T_BOOL, T_SLV, T_UNS, T_SGN, T_STR, T_INT };
 static const char *vi_tyname[] = { "std_logic", "boolean", "std_logic_vector", "unsigned", "signed",
                                    "a literal", "integer" };
-enum { VK_IN, VK_OUT, VK_SIG, VK_CONST, VK_GEN };
+enum { VK_IN, VK_OUT, VK_SIG, VK_CONST, VK_GEN, VK_LABEL };
 
 typedef struct {
     const char *name;            /* as declared (points into the VHDL) */
@@ -35,7 +39,18 @@ typedef struct {
     long ival;                   /* an integer constant or generic */
     unsigned long bits;          /* a vector constant */
     const gram_node *at;
+    gram_node *def;              /* a port's default value (:= '0'), or NULL */
 } VSym;
+
+/* an entity, its architecture and its ports (as seen from outside) */
+typedef struct {
+    gram_node *ent, *arch;
+    int used, top, done, ctx;
+    char *wname;                 /* its name in Wire */
+    VSym *ports, *gens;          /* gens: the generics, with their values */
+    int nports, ngens;
+    long *over;                  /* a copy made for a generic map: the value of each generic */
+} VEnt;
 
 /* an expression, as Wire text, with what VHDL knows about it */
 typedef struct {
@@ -54,8 +69,19 @@ static const char *vi_file;
 static VSym *vi_syms;
 static int vi_nsyms, vi_cap;
 static int vi_slv_num;           /* 1: std_logic_unsigned is used, 2: std_logic_signed */
+/* what the use clauses before an entity make visible (in it and its architecture) */
+enum { CTX_1164 = 1, CTX_NUM = 2, CTX_UNS = 4, CTX_SGN = 8 };
+static int vi_ctx;
 static VBuf *vi_lines;           /* the Wire, one buffer per line of the VHDL */
 static int vi_nlines;
+static VEnt **vi_ents;           /* the entities, then the copies made for generic maps */
+static int vi_nents, vi_nbase;
+static VBuf vi_extra;            /* the Wire of those copies, after the VHDL's last line */
+static int vi_to_extra;          /* vi_emitp writes there, a statement a line */
+static int *vi_xline, vi_nx;     /* the VHDL line each of those lines comes from */
+static const long *vi_over;      /* while a copy is read: its generics' values */
+static VEnt *vi_cur;             /* the entity being turned into Wire */
+static char vi_suffix[128];      /* inside generate: _3 (or _3_1 nested) for names declared there */
 
 #define VT(n) (int)(n)->len, (n)->text
 
@@ -156,8 +182,8 @@ static VSym *vi_declare(gram_node *id, int kind)
     s->nlen = (int)id->len;
     s->kind = kind;
     s->at = id;
-    if (kind != VK_CONST && kind != VK_GEN) {
-        char *w = vi_fmt("%.*s", VT(id));
+    if (kind != VK_CONST && kind != VK_GEN) {   /* signals, ports and labels get a Wire name */
+        char *w = vi_fmt("%.*s%s", VT(id), vi_suffix);
         while (vi_wire_word(w, (int)strlen(w)) || vi_wname_used(w)) {
             char *w2 = vi_fmt("%s_", w);
             free(w);
@@ -171,17 +197,23 @@ static VSym *vi_declare(gram_node *id, int kind)
 
 /* ---- output: Wire on the VHDL's lines ---------------------------------- */
 
-static void vi_emit(const gram_node *at, const char *f, ...)
+static void vi_emitp(const char *at, const char *f, ...)
 {
     va_list ap;
     size_t line = 1, col = 1;
     char tmp[256], *s;
     int n;
     VBuf *b;
-    gram_locate(vi_src, vi_len, (size_t)(at->text - vi_src), &line, &col);
+    gram_locate(vi_src, vi_len, (size_t)(at - vi_src), &line, &col);
     if ((int)line > vi_nlines) line = (size_t)vi_nlines;
     b = &vi_lines[line];
-    if (b->n == 0) { size_t i; for (i = 1; i < col; i++) vb_add(b, " ", 1); }
+    if (vi_to_extra) {
+        b = &vi_extra;
+        vb_add(b, "\n", 1);
+        vi_xline = (int *)realloc(vi_xline, (size_t)(vi_nx + 1) * sizeof *vi_xline);
+        vi_xline[vi_nx++] = (int)line;
+    }
+    else if (b->n == 0) { size_t i; for (i = 1; i < col; i++) vb_add(b, " ", 1); }
     else vb_add(b, "; ", 2);
     va_start(ap, f);
     n = vsnprintf(tmp, sizeof tmp, f, ap);
@@ -194,6 +226,7 @@ static void vi_emit(const gram_node *at, const char *f, ...)
     vb_add(b, s, (size_t)n);
     free(s);
 }
+#define vi_emit(node, ...) vi_emitp((node)->text, __VA_ARGS__)
 
 /* ---- constant integers (generics, ranges, indexes) --------------------- */
 
@@ -306,6 +339,13 @@ static long vi_const_int(const gram_node *n, const char *what)
 static void vi_type(gram_node *t, VSym *s, int allow_int)
 {
     gram_node *id = t->child, *r = id->next;
+    if ((vi_is(id, "std_logic") || vi_is(id, "std_ulogic") || vi_is(id, "std_logic_vector") || vi_is(id, "std_ulogic_vector"))
+        && !(vi_ctx & CTX_1164))
+        vi_fail(id, "%.*s is not visible here: put library ieee; use ieee.std_logic_1164.all; before this entity "
+                    "(each entity needs its own)", VT(id));
+    if ((vi_is(id, "unsigned") || vi_is(id, "signed")) && !(vi_ctx & CTX_NUM))
+        vi_fail(id, "%.*s is not visible here: put use ieee.numeric_std.all; before this entity (each entity needs its own)",
+                VT(id));
     if (vi_is(id, "std_logic") || vi_is(id, "std_ulogic") || vi_is(id, "bit")) {
         if (r) vi_fail(r, "%.*s is one bit and has no range", VT(id));
         s->ty = T_SL; s->w = 1;
@@ -564,12 +604,35 @@ static VX vi_call(gram_node *n, int want)
             vi_fail(args, "'%.*s is about clocks, which belong in a process (not supported yet)", VT(args->child));
         vi_fail(args, "Wire does not know the attribute '%.*s here", VT(args->child));
     }
+    if (args->rule == VHDL_R_qual) {   /* unsigned'("1001"): the value, as that type */
+        int to = vi_is(id, "unsigned") ? T_UNS : vi_is(id, "signed") ? T_SGN
+               : vi_is(id, "std_logic_vector") || vi_is(id, "std_ulogic_vector") ? T_SLV
+               : vi_is(id, "std_logic") || vi_is(id, "std_ulogic") ? T_SL : -1;
+        if (args->next) vi_fail(args->next, "one thing at a time, please");
+        if (to < 0) vi_fail(id, "Wire does not know the type %.*s", VT(id));
+        x = vi_gen(args->child, want);
+        if ((to == T_SL) != (x.ty == T_SL || (x.ty == T_STR && x.w == 1 && args->child->rule == VHDL_R_chr)))
+            vi_fail(args->child, "this is not a %.*s", VT(id));
+        if (x.ty == T_INT) vi_fail(args->child, "an integer is not a %.*s", VT(id));
+        x.ty = to;
+        return x;
+    }
     if (args->next) vi_fail(args->next, "one index or slice at a time, please");
+    if (s && s->kind == VK_LABEL) vi_fail(id, "%.*s is the label of an instance, not a signal", VT(id));
     if (s && s->kind != VK_GEN && !(s->kind == VK_CONST && s->ty == T_INT)) {
         if (vi_nargs(args) != 1) vi_fail(args, "%.*s takes one index or slice", VT(id));
         return vi_index(s, id, args->child);
     }
     if (s) vi_fail(id, "%.*s is an integer; it has no bits to pick", VT(id));
+    {   /* numeric_std's functions need its use clause, as in Vivado */
+        static const char *num[] = { "unsigned", "signed", "to_unsigned", "to_signed", "resize", "shift_left", "shift_right",
+                                     "rotate_left", "rotate_right", "conv_std_logic_vector", "conv_unsigned", "conv_signed", NULL };
+        int j;
+        for (j = 0; num[j]; j++)
+            if (vi_is(id, num[j]) && !(vi_ctx & CTX_NUM))
+                vi_fail(id, "%.*s is not visible here: put use ieee.numeric_std.all; before this entity (each entity "
+                            "needs its own)", VT(id));
+    }
     if (vi_is(id, "unsigned") || vi_is(id, "signed") || vi_is(id, "std_logic_vector") || vi_is(id, "std_ulogic_vector")) {
         int to = vi_is(id, "unsigned") ? T_UNS : vi_is(id, "signed") ? T_SGN : T_SLV;
         if (vi_nargs(args) != 1) vi_fail(args, "%.*s() takes one value", VT(id));
@@ -995,6 +1058,7 @@ static VX vi_gen(gram_node *n, int want)
             if (vi_is(n, "true") || vi_is(n, "false")) return vi_const(vi_is(n, "true"), 1, T_BOOL);
             vi_fail(n, "there is no signal, port or constant called %.*s", VT(n));
         }
+        if (s->kind == VK_LABEL) vi_fail(n, "%.*s is the label of an instance, not a signal", VT(n));
         if (s->ty == T_INT) { x.ty = T_INT; x.cst = 1; x.iv = s->ival; x.s = vi_fmt("%ld", s->ival); x.atom = 2; return x; }
         if (s->kind == VK_CONST) return vi_const(s->bits, s->w, s->ty);
         return vi_mk(s->wname, s->ty, s->w, 2);
@@ -1044,6 +1108,12 @@ static VX vi_gen(gram_node *n, int want)
 
 /* ---- statements -------------------------------------------------------------- */
 
+static void vi_inst(gram_node *st);
+static void vi_generate(gram_node *st);
+static VEnt *vi_copy(VEnt *e, long *val, gram_node *at);
+static void vi_decls(gram_node *first);
+static void vi_ports(gram_node *ports, int is_generic, int emit);
+
 typedef struct { char *s; int ty, w; VSym *sym; } VTarget;
 
 static VTarget vi_target(gram_node *t)
@@ -1054,6 +1124,7 @@ static VTarget vi_target(gram_node *t)
     if (!s) vi_fail(id, "there is no signal or port called %.*s", VT(id));
     if (s->kind == VK_IN) vi_fail(id, "%.*s is an input of the entity, so it cannot be given a value here", VT(id));
     if (s->kind == VK_CONST || s->kind == VK_GEN) vi_fail(id, "%.*s is a constant", VT(id));
+    if (s->kind == VK_LABEL) vi_fail(id, "%.*s is the label of an instance, not a signal", VT(id));
     r.sym = s;
     if (!id->next) { r.s = s->wname; r.ty = s->ty; r.w = s->w; return r; }
     {
@@ -1224,6 +1295,338 @@ static void vi_selassign(gram_node *st)
     }
 }
 
+static VEnt *vi_ent_named(const gram_node *n)   /* work.full_adder or full_adder */
+{
+    const char *p = n->text, *e = n->text + n->len, *dot;
+    int i;
+    for (dot = p; dot < e; dot++) if (*dot == '.') p = dot + 1;
+    for (i = 0; i < vi_nbase; i++) {
+        const gram_node *id = vi_ents[i]->ent->child;
+        size_t j;
+        if (id->len != (size_t)(e - p)) continue;
+        for (j = 0; j < id->len; j++) if (vi_lower(id->text[j]) != vi_lower(p[j])) break;
+        if (j == id->len) return vi_ents[i];
+    }
+    return NULL;
+}
+
+static gram_node *vi_inst_name(gram_node *st)   /* the entity an instance places */
+{
+    return st->child->next;
+}
+
+/* the port's width and type, for a value or a target */
+static void vi_port_fits(const VSym *p, const VEnt *e, int ty, int w, gram_node *at, int is_out)
+{
+    const char *en = vi_fmt("%.*s", VT(e->ent->child));
+    if (ty == T_INT) vi_fail(at, "port %.*s of %s is %s; an integer cannot go there", p->nlen, p->name, en, vi_tyname[p->ty]);
+    if ((p->ty == T_SL || p->ty == T_BOOL) != (ty == T_SL || ty == T_BOOL))
+        vi_fail(at, "port %.*s of %s is %s, but this is %s", p->nlen, p->name, en,
+                p->ty == T_SL || p->ty == T_BOOL ? "1 bit (std_logic)" : vi_fmt("a vector of %d bits", p->w),
+                ty == T_SL || ty == T_BOOL ? "1 bit (std_logic)" : vi_fmt("a vector of %d bits", w));
+    if (w != p->w)
+        vi_fail(at, "port %.*s of %s is %d bit%s, but this is %d bit%s", p->nlen, p->name, en,
+                p->w, p->w == 1 ? "" : "s", w, w == 1 ? "" : "s");
+    if (ty != T_STR && vi_vec(ty) && vi_vec(p->ty) && ty != p->ty)
+        vi_fail(at, "port %.*s of %s is %s, but this is %s: convert it with %s(...)", p->nlen, p->name, en,
+                vi_tyname[p->ty], vi_tyname[ty], is_out ? vi_tyname[ty] : vi_tyname[p->ty]);
+}
+
+/* fa: entity work.full_adder port map(a => x, b => y, cin => c, s => s0, cout => c1);
+ * becomes  fa = full_adder(a = x, b = y, cin = c); s0 = fa.s; c1 = fa.cout */
+static void vi_inst(gram_node *st)
+{
+    gram_node *label = st->child->child, *en = vi_inst_name(st), *pm = vi_kid(st, VHDL_R_pmap), *gm = vi_kid(st, VHDL_R_gmap), *as;
+    VEnt *e = vi_ent_named(en);
+    VSym *inst;
+    gram_node **actual;
+    int i, pos = 0, named = 0;
+    VBuf call = { 0, 0, 0 }, outs = { 0, 0, 0 };
+    if (!e) vi_fail(en, "there is no entity called %.*s in this file", VT(en));
+    if (e == vi_cur) vi_fail(en, "%.*s cannot be used inside itself", VT(e->ent->child));
+    if (gm) {   /* other values than the defaults: a copy of the entity made for them */
+        long *val = (long *)calloc((size_t)e->ngens + 1, sizeof *val);
+        int differ = 0;
+        for (i = 0; i < e->ngens; i++) val[i] = e->gens[i].ival;
+        for (as = gm->child; as; as = as->next) {
+            gram_node *f = as->child->next ? as->child : NULL, *v = f ? f->next : as->child;
+            int g = -1;
+            if (f) {
+                for (i = 0; i < e->ngens; i++)
+                    if (e->gens[i].nlen == (int)f->child->len && vi_is(f->child, vi_fmt("%.*s", e->gens[i].nlen, e->gens[i].name)))
+                        g = i;
+                if (g < 0) vi_fail(f, "%.*s has no generic called %.*s", VT(e->ent->child), VT(f->child));
+            } else {
+                if (pos >= e->ngens) vi_fail(v, "%.*s has only %d generics", VT(e->ent->child), e->ngens);
+                g = pos++;
+            }
+            if (v->rule == VHDL_R_OPEN) continue;
+            if (!vi_ceval(v, &val[g])) vi_fail(v, "a generic's value must be a constant");
+            if (val[g] != e->gens[g].ival) differ = 1;
+        }
+        pos = 0;
+        if (differ) e = vi_copy(e, val, st);
+    }
+    actual = (gram_node **)calloc((size_t)e->nports + 1, sizeof *actual);
+    for (as = pm->child; as; as = as->next) {
+        gram_node *f = as->child->next ? as->child : NULL, *v = f ? f->next : as->child;
+        if (f) {
+            named = 1;
+            if (f->child->next) vi_fail(f, "connecting part of a port (%.*s(...) =>) is not supported yet", VT(f->child));
+            for (i = 0; i < e->nports; i++)
+                if (e->ports[i].nlen == (int)f->child->len && vi_is(f->child, vi_fmt("%.*s", e->ports[i].nlen, e->ports[i].name))) break;
+            if (i == e->nports) vi_fail(f, "%.*s has no port called %.*s", VT(e->ent->child), VT(f->child));
+        } else {
+            if (named) vi_fail(v, "put the ports without a name (positional) before the named ones");
+            if (pos >= e->nports) vi_fail(v, "%.*s has only %d ports", VT(e->ent->child), e->nports);
+            i = pos++;
+        }
+        if (actual[i]) vi_fail(as, "port %.*s is connected twice", e->ports[i].nlen, e->ports[i].name);
+        actual[i] = v;
+    }
+    inst = vi_declare(label, VK_LABEL);
+    vbf(&call, "%s = %s(", inst->wname, e->wname);
+    for (i = 0; i < e->nports; i++) {
+        VSym *p = &e->ports[i];
+        gram_node *v = actual[i];
+        if (p->kind == VK_IN) {
+            VX x;
+            if (!v || v->rule == VHDL_R_OPEN) {
+                if (!p->def) vi_fail(st, "input %.*s of %.*s is not connected (and has no default value)", p->nlen, p->name, VT(e->ent->child));
+                x = vi_const(p->bits, p->w, p->ty == T_SL ? T_SL : T_STR);   /* worked out in the entity */
+            } else x = vi_gen(v, p->w);
+            vi_port_fits(p, e, x.ty, x.w, v ? v : st, 0);
+            vbf(&call, "%s%s = %s", call.s[call.n - 1] == '(' ? "" : ", ", p->wname, x.s);
+        } else {
+            VTarget t;
+            if (!v || v->rule == VHDL_R_OPEN) continue;
+            if (v->rule != VHDL_R_ident && v->rule != VHDL_R_name)
+                vi_fail(v, "output %.*s of %.*s must go to a signal (or open)", p->nlen, p->name, VT(e->ent->child));
+            {   /* the signal as a target: x, x(3), x(7 downto 4) */
+                gram_node *id = v->rule == VHDL_R_ident ? v : v->child;
+                VSym *s = vi_find(id);
+                if (!s || s->kind > VK_SIG) vi_fail(id, "%.*s is not a signal or port", VT(id));
+                if (s->kind == VK_IN) vi_fail(id, "%.*s is an input, so it cannot be driven by %.*s", VT(id), VT(label));
+                if (v->rule == VHDL_R_name) {
+                    gram_node *args = id->next;
+                    if (args->rule != VHDL_R_args || args->next || vi_nargs(args) != 1)
+                        vi_fail(v, "output %.*s of %.*s must go to a signal, a bit or a slice", p->nlen, p->name, VT(e->ent->child));
+                    {
+                        VX x = vi_index(s, id, args->child);
+                        t.s = x.s; t.ty = x.ty; t.w = x.w;
+                    }
+                } else { t.s = s->wname; t.ty = s->ty; t.w = s->w; }
+            }
+            vi_port_fits(p, e, t.ty, t.w, v, 1);
+            vbf(&outs, "; %s = %s.%s", t.s, inst->wname, p->wname);
+        }
+    }
+    vb_add(&call, ")", 1);
+    vi_emit(label, "%s%s", call.s, outs.n ? outs.s : "");
+}
+
+static void vi_statement(gram_node *st);
+
+/* an entity's ports and generics, as instances see them (with vi_over's values, for a copy) */
+static void vi_set_ctx(int ctx)
+{
+    vi_ctx = ctx;
+    vi_slv_num = ctx & CTX_SGN ? 2 : ctx & CTX_UNS ? 1 : 0;
+}
+
+static void vi_ent_ports(VEnt *e)
+{
+    int k;
+    const long *saved = vi_over;
+    int savectx = vi_ctx;
+    vi_set_ctx(e->ctx);
+    vi_over = e->over;
+    vi_nsyms = 0;
+    vi_ports(vi_kid(e->ent, VHDL_R_generics), 1, 0);
+    vi_ports(vi_kid(e->ent, VHDL_R_ports), 0, 0);
+    e->nports = e->ngens = 0;
+    for (k = 0; k < vi_nsyms; k++) if (vi_syms[k].kind == VK_IN || vi_syms[k].kind == VK_OUT) e->nports++;
+    e->gens = (VSym *)calloc((size_t)vi_nsyms + 1, sizeof *e->gens);
+    for (k = 0; k < vi_nsyms; k++) if (vi_syms[k].kind == VK_GEN) e->gens[e->ngens++] = vi_syms[k];
+    e->ports = (VSym *)calloc((size_t)e->nports + 1, sizeof *e->ports);
+    e->nports = 0;
+    for (k = 0; k < vi_nsyms; k++)
+        if (vi_syms[k].kind == VK_IN || vi_syms[k].kind == VK_OUT) {
+            VSym *p = &e->ports[e->nports++];
+            *p = vi_syms[k];
+            if ((int)strlen(p->wname) >= NAMEW && !e->top)
+                vi_fail(p->at, "port names of an entity used as a chip are at most %d characters", NAMEW - 1);
+            if (p->def) {   /* a default is a constant of the entity: work it out here */
+                VX x = vi_gen(p->def, p->w);
+                if (!x.cst) vi_fail(p->def, "a port's default must be a constant");
+                p->bits = x.v;
+            }
+        }
+    if (!e->top && !e->nports) vi_fail(e->ent->child, "%.*s has no ports, so it cannot be used as a chip", VT(e->ent->child));
+    vi_over = saved;
+    vi_set_ctx(savectx);
+}
+
+static int vi_wname_taken(const char *w)   /* a component name already in use (or a part of Wire) */
+{
+    static const char *parts[] = { "and", "or", "nand", "nor", "xor", "xnor", "not", "buf", "mux", "demux", "decoder",
+                                   "encoder", "add", "compare", "dff", "reg", "tff", "jkff", "counter", "tri", "rom",
+                                   "ram", NULL };
+    int i;
+    for (i = 0; parts[i]; i++) if (!strcmp(parts[i], w)) return 1;
+    if (vi_wire_word(w, (int)strlen(w))) return 1;
+    for (i = 0; i < vi_nents; i++) if (vi_ents[i]->wname && !strcmp(vi_ents[i]->wname, w)) return 1;
+    return 0;
+}
+
+static char *vi_unique(char *w)
+{
+    while (vi_wname_taken(w)) w = vi_fmt("%s_", w);
+    return w;
+}
+
+/* e with other generics: one copy per set of values, named like add_w_carry_n8 */
+static VEnt *vi_copy(VEnt *e, long *val, gram_node *at)
+{
+    VEnt *c;
+    int i, k, nsave = vi_nsyms;
+    VSym *saved;
+    char suf[sizeof vi_suffix];
+    VBuf name = { 0, 0, 0 };
+    for (i = vi_nbase; i < vi_nents; i++) {
+        c = vi_ents[i];
+        if (c->ent != e->ent) continue;
+        for (k = 0; k < e->ngens && c->over[k] == val[k]; k++) {}
+        if (k == e->ngens) return c;
+    }
+    if (vi_nents - vi_nbase >= 64) vi_fail(at, "too many different generic maps (at most 64)");
+    c = (VEnt *)calloc(1, sizeof *c);
+    c->ent = e->ent; c->arch = e->arch; c->used = 1; c->over = val; c->ctx = e->ctx;
+    vbf(&name, "%.*s", VT(e->ent->child));
+    for (k = 0; k < e->ngens; k++)
+        if (val[k] != e->gens[k].ival) {
+            int j;
+            vb_add(&name, "_", 1);
+            for (j = 0; j < e->gens[k].nlen; j++) { char ch = (char)vi_lower(e->gens[k].name[j]); vb_add(&name, &ch, 1); }
+            vbf(&name, "%s%ld", val[k] < 0 ? "m" : "", val[k] < 0 ? -val[k] : val[k]);
+        }
+    c->wname = vi_unique(name.s);
+    vi_ents = (VEnt **)realloc(vi_ents, (size_t)(vi_nents + 1) * sizeof *vi_ents);
+    vi_ents[vi_nents++] = c;
+    /* its ports, without losing the names of the entity being read now */
+    saved = (VSym *)malloc((size_t)(nsave + 1) * sizeof *saved);
+    memcpy(saved, vi_syms, (size_t)nsave * sizeof *saved);
+    memcpy(suf, vi_suffix, sizeof suf);
+    vi_suffix[0] = 0;
+    vi_ent_ports(c);
+    memcpy(vi_syms, saved, (size_t)nsave * sizeof *saved);
+    vi_nsyms = nsave;
+    memcpy(vi_suffix, suf, sizeof suf);
+    free(saved);
+    return c;
+}
+
+/* one entity as Wire: the top as the circuit, the others as components */
+static void vi_ent_emit(VEnt *e)
+{
+    gram_node *k;
+    vi_cur = e;
+    vi_set_ctx(e->ctx);
+    vi_over = e->over;
+    vi_to_extra = e->over != NULL;
+    vi_nsyms = 0;
+    vi_suffix[0] = 0;
+    if (e->top) vi_emit(e->ent, "circuit \"%.*s\"", VT(e->ent->child));
+    vi_ports(vi_kid(e->ent, VHDL_R_generics), 1, 0);
+    vi_ports(vi_kid(e->ent, VHDL_R_ports), 0, e->top);
+    if (!e->top) {
+        VBuf h = { 0, 0, 0 };
+        int j, o;
+        vbf(&h, "component %s(", e->wname);
+        for (o = 0; o < 2; o++) {
+            int first = 1;
+            if (o) vb_add(&h, ") -> (", 6);
+            for (j = 0; j < e->nports; j++) {
+                VSym *p = &e->ports[j];
+                if ((p->kind == VK_OUT) != o) continue;
+                vbf(&h, "%s%s", first ? "" : ", ", p->wname);
+                if (vi_vec(p->ty)) vbf(&h, "[%d]", p->w);
+                first = 0;
+            }
+        }
+        vb_add(&h, ") {", 3);
+        vi_emit(e->ent, "%s", h.s);
+    }
+    vi_decls(e->arch->child->next->next);
+    for (k = e->arch->child->next->next; k; k = k->next) {
+        if (k->rule == VHDL_R_signal || k->rule == VHDL_R_constant || k->rule == VHDL_R_compdecl
+            || k->rule == VHDL_R_other || k->rule == VHDL_R_ident)
+            continue;
+        vi_statement(k);
+    }
+    if (!e->top) vi_emitp(e->arch->text + e->arch->len - 1, "}");
+    e->done = 1;
+    vi_over = NULL;
+    vi_to_extra = 0;
+}
+
+/* instances inside generates count too */
+static void vi_mark_used(gram_node *first)
+{
+    gram_node *k;
+    for (k = first; k; k = k->next) {
+        if (k->rule == VHDL_R_inst) {
+            VEnt *e = vi_ent_named(vi_inst_name(k));
+            if (e) e->used = 1;
+        } else if (k->rule == VHDL_R_generate) {
+            gram_node *g = k->child->next, *b = g->child->next;
+            if (g->rule == VHDL_R_forgen) b = b->next;
+            if (b && b->rule == VHDL_R_gdecls) b = b->next;
+            vi_mark_used(b);
+        }
+    }
+}
+
+/* the statements of a generate, once for each value (for) or once or not at all (if) */
+static void vi_generate(gram_node *st)
+{
+    gram_node *g = st->child->next, *body, *k;
+    long from, to, i, step;
+    char saved[sizeof vi_suffix];
+    if (g->rule == VHDL_R_ifgen) {
+        VX c = vi_gen(g->child, 1);
+        if (!c.cst || c.w != 1) vi_fail(g->child, "the condition of if ... generate must be a constant");
+        if (!c.v) return;
+        from = to = 0; step = 1; body = g->child->next;
+    } else {
+        gram_node *r = g->child->next;
+        from = vi_const_int(r->child, "the range of a generate");
+        to = vi_const_int(r->child->next->next, "the range of a generate");
+        step = vi_is(r->child->next, "downto") ? -1 : 1;
+        if ((to - from) * step < 0) return;   /* an empty range */
+        if ((to - from) * step > 1023) vi_fail(r, "this generate makes more than 1024 copies");
+        body = r->next;
+    }
+    memcpy(saved, vi_suffix, sizeof saved);
+    for (i = from; ; i += step) {
+        int mark = vi_nsyms;
+        if (g->rule == VHDL_R_forgen) {
+            VSym *v;
+            size_t n = strlen(saved);
+            snprintf(vi_suffix + n, sizeof vi_suffix - n, "_%ld", i < 0 ? -i : i);
+            v = vi_declare(g->child, VK_CONST);
+            v->ty = T_INT;
+            v->ival = i;
+        }
+        k = body;
+        if (k && k->rule == VHDL_R_gdecls) { vi_decls(k->child); k = k->next; }
+        for (; k; k = k->next) if (k->rule != VHDL_R_ident) vi_statement(k);
+        vi_nsyms = mark;   /* the loop's names go out of scope */
+        memcpy(vi_suffix, saved, sizeof saved);
+        if (i == to) break;
+    }
+}
+
 static void vi_statement(gram_node *st)
 {
     switch (st->rule) {
@@ -1233,14 +1636,10 @@ static void vi_statement(gram_node *st)
     case VHDL_R_process:
         vi_fail(vi_kid(st, VHDL_R_PROCESS) ? vi_kid(st, VHDL_R_PROCESS) : st,
                 "processes are not supported yet. For now Wire reads concurrent VHDL: assignments (<=), "
-                "when ... else and with ... select");
+                "when ... else, with ... select, port map and generate");
         break;
-    case VHDL_R_generate:
-        vi_fail(st->child->next, "generate is not supported yet; write the statements out one by one");
-        break;
-    case VHDL_R_inst:
-        vi_fail(st, "component instances (port map) are not supported yet; put everything in one entity");
-        break;
+    case VHDL_R_generate: vi_generate(st); break;
+    case VHDL_R_inst: vi_inst(st); break;
     default:
         vi_fail(st, "this kind of statement is not supported yet");
     }
@@ -1248,7 +1647,7 @@ static void vi_statement(gram_node *st)
 
 /* ---- the design ---------------------------------------------------------------- */
 
-static void vi_ports(gram_node *ports, int is_generic)
+static void vi_ports(gram_node *ports, int is_generic, int emit)
 {
     gram_node *d;
     for (d = ports ? ports->child : NULL; d; d = d->next) {
@@ -1265,8 +1664,11 @@ static void vi_ports(gram_node *ports, int is_generic)
                               VT(ids->child));
             for (id = ids->child; id; id = id->next) {
                 VSym *s = vi_declare(id, VK_GEN);
+                int k = 0, j;
                 s->ty = T_INT;
                 s->ival = vi_const_int(def, "a generic's default");
+                for (j = 0; j < vi_nsyms - 1; j++) if (vi_syms[j].kind == VK_GEN) k++;
+                if (vi_over) s->ival = vi_over[k];   /* a copy for a generic map */
             }
             continue;
         }
@@ -1277,17 +1679,18 @@ static void vi_ports(gram_node *ports, int is_generic)
         for (id = ids->child; id; id = id->next) {
             VSym *s = vi_declare(id, out ? VK_OUT : VK_IN);
             s->ty = proto.ty; s->w = proto.w; s->left = proto.left; s->right = proto.right; s->down = proto.down;
+            s->def = def;
             if (s->w > 1 || vi_vec(s->ty)) vbf(&b, "%s%s[%d]", b.n ? ", " : "", s->wname, s->w);
             else vbf(&b, "%s%s", b.n ? ", " : "", s->wname);
         }
-        vi_emit(ids, "%s %s", out ? "output" : "input", b.s);
+        if (emit) vi_emit(ids, "%s %s", out ? "output" : "input", b.s);
     }
 }
 
-static void vi_decls(gram_node *arch)
+static void vi_decls(gram_node *first)   /* signal and constant declarations, from first on */
 {
     gram_node *d;
-    for (d = arch->child->next->next; d; d = d->next) {
+    for (d = first; d; d = d->next) {
         gram_node *id;
         VSym proto;
         if (d->rule == VHDL_R_signal) {
@@ -1360,9 +1763,9 @@ static void vi_syntax(const gram_error *e)
     for (i = 0; i < e->nexpected; i++) if (!vi_operator(e->expected[i])) ops = 0;   /* operators only when nothing else fits */
     for (i = 0; i < e->nexpected; i++) {
         const char *x = e->expected[i], *say = NULL;
-        if (!ops && vi_operator(x)) continue;
         char low[32];
         int j, k;
+        if (!ops && vi_operator(x)) continue;
         for (j = 0; names[j][0]; j++) if (!strcmp(x, names[j][0])) say = names[j][1];
         if (!say) {   /* a keyword token (WHEN) in lower case, a literal as it is */
             for (k = 0; x[k] && k < 31; k++) low[k] = (char)vi_lower(x[k]);
@@ -1378,13 +1781,16 @@ static void vi_syntax(const gram_error *e)
     exit(1);
 }
 
+static gram_node *arch_of(gram_node *arch) { return arch->child->next; }   /* architecture a OF e */
+
 /* the Wire, on the VHDL's lines; *len gets its length */
 static char *vhdl_to_wire(const char *text, size_t len, const char *file, size_t *outlen)
 {
     gram_arena a;
     gram_error err;
     gram_grammar *g;
-    gram_node *design, *u, *ent = NULL, *arch = NULL, *k;
+    gram_node *design, *u, *k;
+    int ctx = 0;
     size_t asz = ((size_t)1 << 22) + len * 96, i;
     void *buf = malloc(asz);
     VBuf out = { 0, 0, 0 };
@@ -1410,48 +1816,77 @@ static char *vhdl_to_wire(const char *text, size_t len, const char *file, size_t
                 char low[256];
                 for (j = 0; j < k->len && j < sizeof low - 1; j++) low[j] = (char)vi_lower(k->text[j]);
                 low[j] = 0;
-                if (strstr(low, "std_logic_unsigned")) vi_slv_num = 1;
-                if (strstr(low, "std_logic_signed")) vi_slv_num = 2;
+                if (strstr(low, "std_logic_1164")) ctx |= CTX_1164;
+                if (strstr(low, "numeric_std") || strstr(low, "std_logic_arith")) ctx |= CTX_NUM;
+                if (strstr(low, "std_logic_unsigned")) ctx |= CTX_UNS;
+                if (strstr(low, "std_logic_signed")) ctx |= CTX_SGN;
             }
         } else if (u->rule == VHDL_R_entity) {
-            if (ent) vi_fail(u->child, "a second entity (%.*s) is not supported yet: Wire reads one entity per file "
-                                       "for now", VT(u->child));
-            ent = u;
+            gram_node *last = NULL;
+            if (vi_ent_named(u->child)) vi_fail(u->child, "there are two entities called %.*s", VT(u->child));
+            for (k = u->child->next; k; k = k->next) last = k;
+            if (last && last->rule == VHDL_R_ident && !vi_is(last, vi_fmt("%.*s", VT(u->child))))
+                vi_fail(last, "the entity is called %.*s, but it ends with end %.*s", VT(u->child), VT(last));
+            if (vi_nents && !vi_ents[vi_nents - 1]->arch)
+                vi_fail(u->child, "%.*s has no architecture before the next entity; put each architecture right "
+                                  "after its entity", VT(vi_ents[vi_nents - 1]->ent->child));
+            vi_ents = (VEnt **)realloc(vi_ents, (size_t)(vi_nents + 1) * sizeof *vi_ents);
+            vi_ents[vi_nents] = (VEnt *)calloc(1, sizeof **vi_ents);
+            vi_ents[vi_nents]->ctx = ctx;   /* the use clauses before it are for it (and its architecture) */
+            ctx = 0;
+            vi_ents[vi_nents++]->ent = u;
+            vi_nbase = vi_nents;
         } else if (u->rule == VHDL_R_arch) {
-            if (arch) vi_fail(u->child, "a second architecture is not supported yet: Wire reads one per file for now");
-            arch = u;
+            VEnt *e = vi_ent_named(arch_of(u));
+            if (!e) vi_fail(arch_of(u), "this architecture is of %.*s, but there is no entity called that before it",
+                            VT(arch_of(u)));
+            if (e != vi_ents[vi_nents - 1]) vi_fail(u->child, "put each architecture right after its entity");
+            if (e->arch) vi_fail(u->child, "a second architecture of %.*s is not supported yet", VT(e->ent->child));
+            e->arch = u;
+            e->ctx |= ctx;
+            ctx = 0;
         }
     }
-    if (!ent) vi_fail(NULL, "there is no entity in this file");
-    if (!arch) vi_fail(ent->child, "%.*s has no architecture", VT(ent->child));
-    if (!vi_is(arch->child->next, vi_fmt("%.*s", VT(ent->child))))
-        vi_fail(arch->child->next, "this architecture is of %.*s, but the entity is %.*s", VT(arch->child->next), VT(ent->child));
+    if (!vi_nents) vi_fail(NULL, "there is no entity in this file");
+    if (!vi_ents[vi_nents - 1]->arch) vi_fail(vi_ents[vi_nents - 1]->ent->child, "%.*s has no architecture",
+                                              VT(vi_ents[vi_nents - 1]->ent->child));
+
+    /* which entities are placed by others; the top is one nobody places (the last, if several) */
+    for (ln = 0; ln < vi_nbase; ln++) vi_mark_used(vi_ents[ln]->arch->child->next->next);
     {
-        gram_node *last = NULL;
-        for (k = ent->child->next; k; k = k->next) last = k;
-        if (last && last->rule == VHDL_R_ident && !vi_is(last, vi_fmt("%.*s", VT(ent->child))))
-            vi_fail(last, "the entity is called %.*s, but it ends with end %.*s", VT(ent->child), VT(last));
+        int t = -1;
+        for (ln = 0; ln < vi_nbase; ln++) if (!vi_ents[ln]->used) t = ln;
+        if (t < 0) vi_fail(vi_ents[vi_nbase - 1]->ent->child, "every entity is used by another one, so none is the top");
+        vi_ents[t]->top = 1;
+    }
+    for (ln = 0; ln < vi_nbase; ln++) {
+        VEnt *e = vi_ents[ln];
+        e->wname = vi_unique(vi_fmt("%.*s", VT(e->ent->child)));
+        vi_ent_ports(e);
     }
 
-    vi_emit(ent, "circuit \"%.*s\"", VT(ent->child));
-    vi_ports(vi_kid(ent, VHDL_R_generics), 1);
-    vi_ports(vi_kid(ent, VHDL_R_ports), 0);
-    vi_decls(arch);
-    for (k = arch->child->next->next; k; k = k->next) {
-        if (k->rule == VHDL_R_signal || k->rule == VHDL_R_constant || k->rule == VHDL_R_compdecl
-            || k->rule == VHDL_R_other || k->rule == VHDL_R_ident)
-            continue;
-        vi_statement(k);
-    }
+    /* the entities on their own lines; then the copies for generic maps (which
+     * can make more copies) after the last line */
+    for (ln = 0; ln < vi_nbase; ln++) vi_ent_emit(vi_ents[ln]);
+    for (ln = vi_nbase; ln < vi_nents; ln++) vi_ent_emit(vi_ents[ln]);
 
     for (ln = 1; ln <= vi_nlines; ln++) {
         if (vi_lines[ln].n) vb_add(&out, vi_lines[ln].s, vi_lines[ln].n);
         if (ln < vi_nlines) vb_add(&out, "\n", 1);
     }
+    if (vi_extra.n) vb_add(&out, vi_extra.s, vi_extra.n);
     if (!out.s) vb_add(&out, "", 0);
     free(buf);
     *outlen = out.n;
     return out.s;
+}
+
+/* the VHDL line a line of the Wire comes from (the same, except in the copies
+ * made for generic maps, which come after the VHDL's last line) */
+static int vhdl_line(int wline)
+{
+    int k = wline - vi_nlines - 1;
+    return k >= 0 && k < vi_nx ? vi_xline[k] : wline;
 }
 
 /* the same Wire without the empty lines and the padding, one statement a line */

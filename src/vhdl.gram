@@ -1,7 +1,7 @@
 # VHDL, the part Wire reads (wire_vhdl_in.c turns it into Wire).
 # Case does not matter in VHDL, so every keyword is matched with 'i.
-# Processes, generate loops and component instances are recognised, so the
-# translator can say they are not supported yet instead of a syntax error.
+# Processes are recognised, so the translator can say they are not
+# supported yet instead of giving a syntax error.
 
 design    <- unit* ;
 unit      <^ library / use / entity / arch ;
@@ -32,7 +32,8 @@ otherkw   <= ('type'i / 'subtype'i / 'alias'i / 'attribute'i
              / 'shared'i / 'variable'i / 'file'i) ![A-Za-z0-9_] ;
 subprog   <= ('pure'i [ \t\r\n]+ / 'impure'i [ \t\r\n]+)? ('function'i / 'procedure'i) ![A-Za-z0-9_]
              (!endsub .)* endsub [^;]* ';' ;
-endsub    <= 'end'i [ \t\r\n]+ ('function'i / 'procedure'i) ![A-Za-z0-9_] ;
+# the end of a function: the first end that is not end if, end loop or end case
+endsub    <= 'end'i ![A-Za-z0-9_] [ \t\r\n]* !(('if'i / 'loop'i / 'case'i / 'record'i / 'units'i) ![A-Za-z0-9_]) ;
 
 # ---- concurrent statements ---------------------------------------------
 cstmt     <^ process / generate / inst / selassign / condassign / assert ;
@@ -40,9 +41,11 @@ label     <- ident ~':' ;
 process   <- label? ~POSTPONED? PROCESS pbody ident? ~';' ;
 pbody     <= (!endproc .)* endproc ;
 endproc   <= 'end'i [ \t\r\n]+ ('postponed'i [ \t\r\n]+)? 'process'i ![A-Za-z0-9_] ;
-generate  <- label (FOR / IF) gbody ident? ~';' ;
-gbody     <= (!endgen .)* endgen ;
-endgen    <= 'end'i [ \t\r\n]+ 'generate'i ![A-Za-z0-9_] ;
+# for i in 0 to 7 generate ... end generate;   if N > 4 generate ... end generate;
+generate  <- label (forgen / ifgen) ;
+forgen    <- ~FOR ident ~IN drange ~GENERATE gdecls? cstmt* ~END ~GENERATE ident? ~';' ;
+ifgen     <- ~IF expr ~GENERATE gdecls? cstmt* ~END ~GENERATE ident? ~';' ;
+gdecls    <- adecl* ~BEGIN ;
 assert    <- label? ASSERT (!';' .)* ~';' ;
 
 inst      <- label (~ENTITY selname (~'(' ident ~')')? / ~COMPONENT? ident) gmap? pmap ~';' ;
@@ -82,7 +85,8 @@ absx      <- ~ABS primary ;
 primary   <^ ~'(' expr ~')' / aggregate / chr / bitstr / str / number / name ;
 aggregate <- ~'(' agel (~',' agel)* ~')' ;
 agel      <- (choices ~'=>')? expr ;
-name      <^ ident (args / attr)* ;
+name      <^ ident (args / qual / attr)* ;
+qual      <- ~'\'' (~'(' expr ~')' / aggregate) ;      # unsigned'("1001"), unsigned'(0 => x)
 args      <- ~'(' arg (~',' arg)* ~')' ;
 arg       <^ drange / named / expr ;
 named     <- ident ~'=>' expr ;
@@ -115,6 +119,8 @@ COMPONENT <= 'component'i ![A-Za-z0-9_] ;
 POSTPONED <= 'postponed'i ![A-Za-z0-9_] ;
 PROCESS   <= 'process'i ![A-Za-z0-9_] ;
 FOR       <= 'for'i ![A-Za-z0-9_] ;
+IN        <= 'in'i ![A-Za-z0-9_] ;
+GENERATE  <= 'generate'i ![A-Za-z0-9_] ;
 IF        <= 'if'i ![A-Za-z0-9_] ;
 ASSERT    <= 'assert'i ![A-Za-z0-9_] ;
 OPEN      <= 'open'i ![A-Za-z0-9_] ;

@@ -188,7 +188,7 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
     <button id="mode-write" aria-pressed="false" title="Write the circuit in Wire or in VHDL">Write</button>
   </div>
   <div class="file lang" id="langbox" hidden>
-    <select id="lang" aria-label="Write in" title="Write the circuit in Wire, or in VHDL (assignments, when/else, with/select)">
+    <select id="lang" aria-label="Write in" title="Write the circuit in Wire, or in VHDL (assignments, when/else, with/select, port map)">
       <option value="wire">Wire</option><option value="vhdl">VHDL</option>
     </select>
   </div>
@@ -857,7 +857,7 @@ function showLang() {
   for (const o of ex.querySelectorAll("option")) {
     if (!o.value) continue;
     o.disabled = lang === "vhdl" && !VHD[o.value];
-    o.title = o.disabled ? "Its VHDL uses what Wire does not read yet (a process, a component...)" : "";
+    o.title = o.disabled ? "Its VHDL uses what Wire does not read yet (a process, a type...)" : "";
   }
 }
 function setLang(l) {
@@ -913,9 +913,22 @@ p    = a ^ b
 sum  = p ^ cin
 cout = (a & b) | (p & cin)
 `;
-const STARTER_VHDL = `-- Write VHDL and the circuit is drawn as you type. Wire reads one
--- entity with assignments, when ... else and with ... select
--- (processes are not supported yet). Click the inputs to try it.
+const STARTER_VHDL = `-- Write VHDL and the circuit is drawn as you type: assignments,
+-- when ... else, with ... select, and entities used as chips with
+-- port map (click a chip to open it). Processes are not supported yet.
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity half_adder is
+  port(a, b : in std_logic; s, c : out std_logic);
+end half_adder;
+
+architecture rtl of half_adder is
+begin
+  s <= a xor b;
+  c <= a and b;
+end rtl;
+
 library ieee;
 use ieee.std_logic_1164.all;
 
@@ -925,11 +938,11 @@ entity my_circuit is
 end my_circuit;
 
 architecture rtl of my_circuit is
-  signal p : std_logic;
+  signal s1, c1, c2 : std_logic;
 begin
-  p    <= a xor b;
-  sum  <= p xor cin;
-  cout <= (a and b) or (p and cin);
+  h1: entity work.half_adder port map(a => a, b => b, s => s1, c => c1);
+  h2: entity work.half_adder port map(a => s1, b => cin, s => sum, c => c2);
+  cout <= c1 or c2;
 end rtl;
 `;
 $("new").onclick = () => {
