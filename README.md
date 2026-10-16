@@ -89,6 +89,12 @@ Nothing is installed and nothing leaves the browser.
   examples whose VHDL Wire reads open as VHDL there, and **Save .wire**
   gives the Wire your VHDL turned into.
 
+Draw, Wire and VHDL are three views of **one circuit**. Change it in one,
+switch, and the other view is made from it (going back without changing
+anything gives you exactly what you left). A switch that would lose part of
+the circuit does not happen, and the page says why: the drawing has no chips,
+slices, rom or ram yet, and Wire cannot read flip-flops back from VHDL yet.
+
 **Save .vhd** gives the circuit in VHDL for Vivado, **Save .wire** keeps it,
 and **Copy link** makes a link that opens the same circuit for someone else.
 On a phone, the parts (or code) and the circuit are two tabs: tap a part,

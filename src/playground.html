@@ -140,6 +140,7 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
 
 #msg { border-top: 1px solid var(--line); padding: 9px 16px 10px; font-size: 14px; min-height: 42px; max-height: 34vh; overflow: auto; }
 #msg.err { color: var(--bad); background: var(--bad-soft); }
+#msg .note { margin-top: 6px; color: var(--bad); }
 #msg pre { margin: 0; font: 12.5px/1.5 "IBM Plex Mono", ui-monospace, monospace; white-space: pre-wrap; }
 #msg button { min-height: 0; padding: 0; font-weight: 600; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 #msg button:hover { background: none; }
@@ -438,14 +439,22 @@ async function wire(args, mainPath, mainText) {
   return { code, out, err, read };
 }
 
-/* ======================================================= the two documents */
+/* ================================================ one circuit, three views
+ * The drawing, the Wire and the VHDL are three ways of seeing ONE circuit.
+ * The view you edited last holds the circuit (source); switching makes the
+ * view you go to from it, and keeps what it made while the circuit does not
+ * change, so going back gives exactly the text you left. A switch that would
+ * lose part of the circuit (the drawing has no rom, Wire cannot read a
+ * process back from VHDL yet) does not happen, and the page says why. */
 let mode = "draw";             /* draw: the drawing; write: the code editor */
 let lang = "wire";             /* what the code editor holds: wire or vhdl */
 let dir = "";                  /* the example's folder, where its imports are */
-let dirty = false;             /* the code was edited since it was loaded */
-/* the code of the other language, kept while you switch: { text, dir, dirty } */
-const other = { wire: null, vhdl: null };
-const STORE = "wire-playground-2";
+let dirty = false;             /* the circuit was changed since it was loaded */
+const views = { draw: null, wire: null, vhdl: null };   /* draw: a drawing; wire, vhdl: { text, dir } */
+let source = "draw";           /* the view that holds the circuit */
+const STORE = "wire-playground-3";
+const viewKey = () => mode === "draw" ? "draw" : lang;
+const VIEW_NAMES = { draw: "Draw", wire: "Wire", vhdl: "VHDL" };
 const vhdlNow = () => mode === "write" && lang === "vhdl";
 const fileName = () => ($("name").value.replace(/[^A-Za-z0-9_]/g, "") || "my_circuit");
 const ext = () => vhdlNow() ? ".vhd" : ".wire";
@@ -460,14 +469,23 @@ function bookArgs() {
   return [...first, ...BOOKS.filter(b => !first.includes(b))].flatMap(b => [
     "--book-url", new URL(b.url, location.href).href, "--book-name", b.name, ...(b.topics ? ["--topics", "/r/" + b.topics] : [])]);
 }
+/* what is on screen, into its view */
+function syncView() { views[viewKey()] = mode === "draw" ? clone(model) : { text: src.value, dir }; }
+/* the circuit was changed in the view on screen: the other views are out of date */
+function edited() {
+  syncView();
+  source = viewKey();
+  for (const k of Object.keys(views)) if (k !== source) views[k] = null;
+  dirty = true;
+}
 function persist() {
-  const doc = { dir, text: src.value, dirty };
-  const docs = { wire: lang === "wire" ? doc : other.wire, vhdl: lang === "vhdl" ? doc : other.vhdl };
-  try { localStorage.setItem(STORE, JSON.stringify({ mode, lang, name: $("name").value, draw: model, write: docs.wire || { dir: "", text: STARTER_CODE }, vhdl: docs.vhdl })); } catch (e) {}
+  syncView();
+  try { localStorage.setItem(STORE, JSON.stringify({ mode, lang, name: $("name").value, views, source, dirty })); } catch (e) {}
 }
 
 /* ============================================================== compiling */
 let runSeq = 0, timer = 0, errLine = 0;
+let pendingNote = "";          /* said once, under the next "it works" (why a switch went elsewhere) */
 function schedule(ms = 350) { clearTimeout(timer); timer = setTimeout(() => compile(), ms); }
 
 /* revertTo: in drawing mode, a change that breaks the circuit is undone */
@@ -490,6 +508,13 @@ async function compile(revertTo) {
     h.textContent = mode === "draw" ? (narrow() ? "Try it under Circuit." : "Click the inputs to try it.")
                                     : (narrow() ? "Open Circuit to try it." : "Click the inputs on the right to try it.");
     msg.append(h);
+    if (pendingNote) {
+      const n = document.createElement("div");
+      n.className = "note";
+      n.textContent = pendingNote;
+      msg.append(n);
+      pendingNote = "";
+    }
     show(r.read("/out.html"));
   } else if (mode === "draw" && revertTo) {
     /* that change cannot work: put the drawing back and say why */
@@ -556,6 +581,7 @@ function change(fn) {
   fn(model);
   undoStack.push(before);
   if (undoStack.length > 200) undoStack.shift();
+  edited();
   persist();
   showGen();
   showProps();
@@ -564,7 +590,7 @@ function change(fn) {
 function undo() {
   if (!undoStack.length) return;
   model = undoStack.pop();
-  persist(); showGen(); showProps(); compile();
+  edited(); persist(); showGen(); showProps(); compile();
 }
 
 /* what the circuit page tells us (window.parent.wireCanvas) */
@@ -739,14 +765,7 @@ $("tidy").onclick = () => {
   /* the circuit page lays it out in columns and tells us where it put things */
   try { frames[front].contentWindow.document.getElementById("tidy").click(); } catch (e) {}
 };
-$("tocode").onclick = () => {
-  if (lang === "vhdl") { other.vhdl = { text: src.value, dir, dirty }; lang = "wire"; const d = other.wire; if (d) { src.value = d.text; dir = d.dir; dirty = d.dirty; } }
-  if (dirty && src.value.trim() && !confirm("Replace the code in the editor with this drawing's Wire?")) return;
-  src.value = genCode(model);
-  dir = "";
-  dirty = true;
-  setMode("write");
-};
+$("tocode").onclick = () => go("write", "wire");
 
 /* ======================================================== writing: editor */
 const KW = "circuit|import|component|input|output|wire|led|seg7|hex|button|clock|bus|keypad";
@@ -806,7 +825,7 @@ function goLine(line, col) {
   src.scrollTop = Math.max(0, (line - 4) * lh);
   sync();
 }
-src.addEventListener("input", () => { dirty = true; paint(); persist(); schedule(); });
+src.addEventListener("input", () => { edited(); paint(); persist(); schedule(); });
 src.addEventListener("scroll", sync);
 src.addEventListener("keydown", e => {
   /* Tab indents (Escape first to move on with Tab); Enter keeps the indent */
@@ -843,8 +862,127 @@ function setMode(m) {
   persist();
   schedule(0);
 }
-$("mode-draw").onclick = () => { if (mode !== "draw") { $("example").value = ""; setMode("draw"); } };
-$("mode-write").onclick = () => { if (mode !== "write") setMode("write"); };
+$("mode-draw").onclick = () => go("draw");
+$("mode-write").onclick = () => go("write", lang);
+
+/* ---- switching views: the one you go to is made from the circuit */
+const pathFor = (key, d) => (d ? d + "/" : "") + fileName() + (key === "vhdl" ? ".vhd" : ".wire");
+const firstError = (r, path) => (r.err.trim().split("\n").find(l => /error/.test(l)) || r.err.trim().split("\n")[0] || `exit ${r.code}`)
+  .split(path + ":").join("line ");
+/* the parts the drawing cannot show, in words */
+const NOT_DRAWN = { split: "slices or joins of a bus", merge: "slices or joins of a bus", rom: "a rom", ram: "a ram",
+  tri: "a tri-state driver", bus: "a bus", seg7: "a 7-segment display", keypad: "a keypad", tff: "a T flip-flop",
+  jkff: "a JK flip-flop", demux: "a demux", decoder: "a decoder", encoder: "an encoder", buf: "a buffer" };
+/* a netlist (wire --json) as a drawing; lay: where the page draws each node now */
+function netlistToModel(D, lay) {
+  if (D.insts.length > 1) return { why: "it uses chips (components), and the drawing has none yet" };
+  const N = D.nodes, drv = new Map();
+  N.forEach((n, i) => n.out.forEach((net, p) => drv.set(net, { i, p })));
+  for (const n of N) {
+    if (n.kind === "const") { if (n.value) return { why: "it uses a fixed value other than 0, which the drawing cannot show" }; continue; }
+    if (!KINDS[n.kind]) return { why: `the drawing cannot show ${NOT_DRAWN[n.kind] || n.kind}` };
+    if (n.kind === "counter" && n.inNames.some(x => !["clk", "en", "rst"].includes(x))) return { why: "the drawing's counter has no load, d or down" };
+    if (n.kind === "led" && D.nets[n.in[0]].w !== 1) return { why: "an LED in the drawing is one bit" };
+  }
+  /* names: inputs and outputs keep theirs, the rest too when they can */
+  const used = new Set(), names = new Map();
+  const ok = s => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s) && !RESERVED.has(s) && !used.has(s.toLowerCase());
+  const order = N.map((n, i) => i).filter(i => N[i].kind !== "const")
+    .sort((a, b) => (SOURCE.has(N[b].kind) || SINK.has(N[b].kind)) - (SOURCE.has(N[a].kind) || SINK.has(N[a].kind)));
+  for (const i of order) {
+    const n = N[i];
+    let name = n.name || (n.out.length ? D.nets[n.out[0]].name : "");   /* p = a ^ b: the gate is p */
+    if (!ok(name)) {
+      const base = KINDS[n.kind].prefix || (n.kind === "input" ? "in" : n.kind === "output" ? "out" : n.kind);
+      for (let k = 1; ; k++) if (ok(base + k)) { name = base + k; break; }
+    }
+    used.add(name.toLowerCase());
+    names.set(i, name);
+  }
+  const parts = [], links = [], id = i => i + 1;
+  let row = 0;
+  for (const i of order) {
+    const n = N[i], p = { id: id(i), kind: n.kind, name: names.get(i), x: 0, y: 0 };
+    const at = lay && lay[i];
+    if (at) { p.x = at[0]; p.y = at[1]; } else { p.x = SOURCE.has(n.kind) ? 0 : SINK.has(n.kind) ? 400 : 200; p.y = 70 * row++; }
+    if (n.kind === "input") p.bits = D.nets[n.out[0]].w;
+    if (n.kind === "output") p.bits = D.nets[n.in[0]].w;
+    if (n.kind === "counter") p.bits = n.bits || D.nets[n.out[0]].w;
+    if (GATE_NAMES[n.kind]) p.n = n.in.length;
+    if (n.kind === "mux") p.n = n.in.length - 1;
+    if (n.kind === "add") p.cin = n.inNames.includes("cin");
+    if (n.kind === "dff" || n.kind === "counter") { p.en = n.inNames.includes("en"); p.rst = n.inNames.includes("rst"); }
+    parts.push(p);
+    n.in.forEach((net, k) => {
+      const d = drv.get(net);
+      if (!d || N[d.i].kind === "const") return;   /* a 0, or nothing: the pin stays unwired */
+      links.push({ from: { id: id(d.i), pin: N[d.i].outNames[d.p] }, to: { id: p.id, pin: GATE_NAMES[n.kind] ? String(k) : n.inNames[k] } });
+    });
+  }
+  return { model: { title: D.title || "My circuit", next: N.length + 1, parts, links } };
+}
+async function makeView(to) {
+  if (to === "draw") {
+    /* from the view on screen: the page shows it laid out, so the parts stay where they are */
+    const from = viewKey(), t = views[from], path = pathFor(from, t.dir);
+    const r = await wire(["--json", path], path, t.text);
+    if (r.code !== 0) return { why: "fix the error first (" + firstError(r, path) + ")" };
+    let lay = null;
+    try { lay = frames[front].contentWindow.wireLayout(); } catch (e) {}
+    const m = netlistToModel(JSON.parse(r.out), lay);
+    if (m.why) return m;
+    const p2 = pathFor("wire", ""), c = await wire(["--check", p2], p2, genCode(m.model));
+    if (c.code !== 0) return { why: "the drawing cannot show it (" + firstError(c, p2) + ")" };
+    return { value: m.model };
+  }
+  /* a text view: from the view that holds the circuit, which reads best */
+  const from = source, t = from === "draw" ? { text: genCode(views.draw), dir: "" } : views[from];
+  const path = pathFor(from === "draw" ? "wire" : from, t.dir);
+  if (to === "wire") {
+    if (from === "draw") return { value: t };
+    const r = await wire(["--to-wire", path], path, t.text);
+    if (r.code !== 0) return { why: "fix the error first (" + firstError(r, path) + ")" };
+    return { value: { text: r.out, dir: "" } };
+  }
+  const r = await wire(["--to-vhdl", "-o", "/out.vhd", path], path, t.text);
+  if (r.code !== 0) return { why: "fix the error first (" + firstError(r, path) + ")" };
+  const v = r.read("/out.vhd"), vp = pathFor("vhdl", ""), c = await wire(["--check", vp], vp, v);
+  if (c.code !== 0) return { why: "Wire cannot read this circuit back from VHDL yet (" + firstError(c, vp).replace(/^line \d+:\d+: error: /, "").split(/[.;:] /)[0] + "). Save .vhd still gives you its VHDL." };
+  return { value: { text: v, dir: "" } };
+}
+let switching = false;
+async function go(m, l = lang) {
+  const to = m === "draw" ? "draw" : l;
+  if (switching || to === viewKey()) { showLang(); return; }
+  switching = true;
+  try {
+    syncView();
+    const made = !views[to];
+    if (made) {
+      msg.className = ""; msg.textContent = `Making the ${VIEW_NAMES[to]} view…`;
+      let r;
+      try { r = await makeView(to); } catch (e) { r = { why: String(e.message || e) }; }
+      if (r.why) {
+        showLang();
+        if (mode === "draw" && to === "vhdl") {   /* Write was asked for: Wire can show any drawing */
+          switching = false;
+          pendingNote = `Opened as Wire, not VHDL: ${r.why}`;
+          await go("write", "wire");
+          return;
+        }
+        msg.className = "err";
+        msg.textContent = `Still in ${VIEW_NAMES[viewKey()]}: ${r.why}`;
+        return;
+      }
+      views[to] = r.value;
+    }
+    mode = m;
+    if (m === "write") lang = l;
+    if (to === "draw") { model = clone(views.draw); if (made) undoStack = []; selectedName = null; }
+    else { src.value = views[to].text; dir = views[to].dir; errLine = 0; src.scrollTop = 0; }
+    setMode(m);
+  } finally { switching = false; }
+}
 
 /* Wire or VHDL in the editor; each keeps its own code while you switch */
 function showLang() {
@@ -860,18 +998,7 @@ function showLang() {
     o.title = o.disabled ? "Its VHDL uses what Wire does not read yet (a process, a type...)" : "";
   }
 }
-function setLang(l) {
-  if (l === lang) return;
-  other[lang] = { text: src.value, dir, dirty };
-  lang = l;
-  const d = other[l] || { text: l === "vhdl" ? STARTER_VHDL : STARTER_CODE, dir: "", dirty: false };
-  src.value = d.text; dir = d.dir; dirty = d.dirty;
-  ex.value = "";
-  errLine = 0;
-  src.scrollTop = 0;
-  setMode("write");
-}
-$("lang").onchange = () => setLang($("lang").value);
+$("lang").onchange = () => go("write", $("lang").value);
 
 const ex = $("example");
 const VHD = {};                 /* example -> its .vhd, when Wire reads it */
@@ -883,7 +1010,12 @@ for (const s of EXAMPLES) {
   ex.append(g);
 }
 const fitName = () => { $("name").style.width = Math.max(4, $("name").value.length + 1) + "ch"; };
-function loadCode(text, name, d) {
+/* new code becomes the circuit; the other views are made from it when you switch */
+function loadCode(key, text, name, d) {
+  for (const k of Object.keys(views)) views[k] = null;
+  views[key] = { text, dir: d };
+  source = key;
+  mode = "write"; lang = key;
   src.value = text;
   $("name").value = name; fitName();
   dir = d;
@@ -895,9 +1027,9 @@ function loadCode(text, name, d) {
 ex.addEventListener("change", () => {
   const p = ex.value;
   if (!p) return;
-  if (mode === "write" && dirty && !confirm("Replace your code with the example? Your changes to it are not kept.")) { ex.value = ""; return; }
-  const f = lang === "vhdl" && VHD[p] ? VHD[p] : p;
-  loadCode(FILES[f], p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, ""), p.slice(0, p.lastIndexOf("/")));
+  if (dirty && !confirm("Replace your circuit with the example? Your changes to it are not kept.")) { ex.value = ""; return; }
+  const v = lang === "vhdl" && VHD[p];
+  loadCode(v ? "vhdl" : "wire", FILES[v ? VHD[p] : p], p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, ""), p.slice(0, p.lastIndexOf("/")));
 });
 
 const STARTER_CODE = `circuit "My circuit"
@@ -951,9 +1083,9 @@ $("new").onclick = () => {
     change(m => { const s = STARTER_DRAWING(); m.parts = []; m.links = []; m.next = s.next; });
     selectedName = null; showProps();
   } else {
-    if (dirty && !confirm("Start again? Your code is not kept.")) return;
+    if (dirty && !confirm("Start again? Your circuit is not kept.")) return;
     ex.value = "";
-    loadCode(lang === "vhdl" ? STARTER_VHDL : STARTER_CODE, "my_circuit", "");
+    loadCode(lang, lang === "vhdl" ? STARTER_VHDL : STARTER_CODE, "my_circuit", "");
   }
 };
 $("name").addEventListener("input", () => { fitName(); persist(); schedule(); });
@@ -1021,37 +1153,50 @@ addEventListener("keydown", e => {
 function validModel(m) { return m && Array.isArray(m.parts) && Array.isArray(m.links) && m.parts.every(p => KINDS[p.kind] && typeof p.name === "string"); }
 (function start() {
   const q = new URLSearchParams(location.hash.slice(1));
-  let saved = null;
+  const okText = v => v && typeof v.text === "string" ? { text: v.text, dir: typeof v.dir === "string" ? v.dir : "" } : null;
+  let saved = null, old = null;
   try { saved = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) {}
-  model = saved && validModel(saved.draw) ? saved.draw : STARTER_DRAWING();
-  if (!model.next) model.next = Math.max(0, ...model.parts.map(p => p.id)) + 1;
-  src.value = saved && saved.write && typeof saved.write.text === "string" ? saved.write.text : STARTER_CODE;
-  dir = saved && saved.write ? saved.write.dir || "" : "";
-  dirty = !!(saved && saved.write && saved.write.text && saved.write.text !== STARTER_CODE);
-  if (saved && saved.vhdl && typeof saved.vhdl.text === "string") other.vhdl = { text: saved.vhdl.text, dir: saved.vhdl.dir || "", dirty: !!saved.vhdl.dirty };
-  if (saved && saved.lang === "vhdl") {   /* what was in the editor was VHDL */
-    other.wire = { text: src.value, dir, dirty };
-    lang = "vhdl";
-    const d = other.vhdl || { text: STARTER_VHDL, dir: "", dirty: false };
-    src.value = d.text; dir = d.dir; dirty = d.dirty;
+  try { if (!saved) old = JSON.parse(localStorage.getItem("wire-playground-2") || "null"); } catch (e) {}
+  let m = "draw";
+  if (saved && saved.views) {
+    views.draw = validModel(saved.views.draw) ? saved.views.draw : null;
+    views.wire = okText(saved.views.wire);
+    views.vhdl = okText(saved.views.vhdl);
+    source = views[saved.source] ? saved.source : views.draw ? "draw" : views.wire ? "wire" : views.vhdl ? "vhdl" : "draw";
+    dirty = !!saved.dirty;
+    lang = saved.lang === "vhdl" ? "vhdl" : "wire";
+    m = saved.mode === "write" ? "write" : "draw";
+    if (!views[m === "draw" ? "draw" : lang]) { m = source === "draw" ? "draw" : "write"; if (source !== "draw") lang = source; }
+  } else if (old) {   /* the playground kept two circuits once: the one you were on is the circuit now */
+    const key = old.mode === "write" ? (old.lang === "vhdl" ? "vhdl" : "wire") : "draw";
+    if (key === "draw" && validModel(old.draw)) views.draw = old.draw;
+    else if (key !== "draw") views[key] = okText(key === "vhdl" ? old.vhdl : old.write);
+    source = views[key] ? key : "draw";
+    if (source !== "draw") { m = "write"; lang = source; }
+    dirty = true;
   }
-  $("name").value = saved && saved.name ? saved.name : "my_circuit";
-  let m = saved && saved.mode === "write" ? "write" : "draw";
+  if (saved && saved.name) $("name").value = saved.name; else if (old && old.name) $("name").value = old.name; else $("name").value = "my_circuit";
   if (q.get("m")) {
-    try { const d = JSON.parse(fromB64(q.get("m"))); if (validModel(d)) { model = d; m = "draw"; $("name").value = q.get("n") || "my_circuit"; } } catch (e) {}
+    try { const d = JSON.parse(fromB64(q.get("m"))); if (validModel(d)) {
+      views.draw = d; views.wire = views.vhdl = null; source = "draw"; m = "draw"; dirty = true; $("name").value = q.get("n") || "my_circuit"; } } catch (e) {}
   } else if (q.get("c")) {
     try {
       const text = fromB64(q.get("c")), l = q.get("l") === "vhdl" ? "vhdl" : "wire";
-      if (l !== lang) { other[lang] = { text: src.value, dir, dirty }; lang = l; }
-      src.value = text; dir = q.get("d") || ""; dirty = true; m = "write"; $("name").value = q.get("n") || "my_circuit";
+      views.draw = views.wire = views.vhdl = null;
+      views[l] = { text, dir: q.get("d") || "" }; source = l; lang = l; m = "write"; dirty = true; $("name").value = q.get("n") || "my_circuit";
     } catch (e) {}
   } else if (q.get("ex") && FILES[q.get("ex")]) {
     const p = q.get("ex");
-    if (lang === "vhdl") { other.vhdl = { text: src.value, dir, dirty }; lang = "wire"; }
+    views.draw = views.vhdl = null;
+    views.wire = { text: FILES[p], dir: p.slice(0, p.lastIndexOf("/")) };
+    source = "wire"; lang = "wire"; m = "write"; dirty = false;
     ex.value = p;
-    src.value = FILES[p]; dir = p.slice(0, p.lastIndexOf("/")); dirty = false; m = "write";
     $("name").value = p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, "");
   }
+  if (!views.draw && !views.wire && !views.vhdl) { views.draw = STARTER_DRAWING(); source = "draw"; m = "draw"; }
+  model = views.draw ? clone(views.draw) : STARTER_DRAWING();   /* not a view until you draw */
+  if (!model.next) model.next = Math.max(0, ...model.parts.map(p => p.id)) + 1;
+  if (m === "write") { src.value = views[lang].text; dir = views[lang].dir; }
   fitName();
   setMode(m);
 })();
