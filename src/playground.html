@@ -288,6 +288,7 @@ const KINDS = {
   output:  { label: "Output", group: "io", prefix: "", bits: 1 },
   led:     { label: "LED", group: "io", prefix: "led" },
   hex:     { label: "Hex digit", group: "io", prefix: "digit" },
+  seg7:    { label: "7-segment", group: "io", prefix: "disp" },
   and: { label: "AND", group: "gates", n: 2 }, or: { label: "OR", group: "gates", n: 2 },
   not: { label: "NOT", group: "gates" }, buf: { label: "Buffer", group: "gates" },
   nand: { label: "NAND", group: "gates", n: 2 }, nor: { label: "NOR", group: "gates", n: 2 },
@@ -300,6 +301,8 @@ const KINDS = {
   jkff:    { label: "JK flip-flop", group: "blocks", prefix: "jk" },
   decoder: { label: "Decoder", group: "blocks", prefix: "dec" },
   encoder: { label: "Encoder", group: "blocks", prefix: "enc" },
+  rom:     { label: "ROM", group: "blocks", prefix: "rom" },
+  ram:     { label: "RAM", group: "blocks", prefix: "ram" },
   counter: { label: "Counter", group: "blocks", prefix: "cnt", bits: 4 },
   const:   { label: "Constant", group: "buses", prefix: "k", bits: 4 },
   split:   { label: "Split", group: "buses", prefix: "split" },
@@ -316,7 +319,7 @@ function parseRanges(t) {
   });
   return rs.length && rs.every(r => r && r[0] >= r[1] && r[0] < 32) ? rs : null;
 }
-const SOURCE = new Set(["input", "button", "clock"]), SINK = new Set(["output", "led", "hex"]);
+const SOURCE = new Set(["input", "button", "clock"]), SINK = new Set(["output", "led", "hex", "seg7"]);
 const insOf = p => {
   const k = p.kind;
   if (SOURCE.has(k)) return [];
@@ -332,6 +335,8 @@ const insOf = p => {
   if (k === "counter") return ["clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : [])];
   if (k === "split") return ["in"];
   if (k === "const") return [];
+  if (k === "rom") return ["addr"];
+  if (k === "ram") return ["addr", "din", "we", "clk"];
   if (k === "join") return p.ranges.map((_, i) => String(i));
   if (k === "chip") return p.ins.map(x => x[0]);
   return [];
@@ -343,6 +348,7 @@ const outsOf = p => {
   if (k === "compare") return ["lt", "eq", "gt"];
   if (k === "dff" || k === "tff" || k === "jkff") return ["q", "nq"];
   if (k === "encoder") return ["out", "valid"];
+  if (k === "rom" || k === "ram") return ["q"];
   if (k === "counter") return ["q", "carry"];
   if (k === "split") return p.ranges.map((_, i) => String(i));
   if (k === "chip") return p.outs.map(x => x[0]);
@@ -370,6 +376,9 @@ const ICONS = {
   dff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="17" y="14">D</text>',
   counter: '<rect class="f" x="7" y="3" width="26" height="20" rx="2"/><text x="10" y="17">+1</text>',
   const: '<rect class="f" x="6" y="6" width="24" height="14" rx="2"/><text x="9" y="17">0x</text><path d="M30 13H36"/>',
+  seg7: '<rect class="f" x="11" y="2" width="18" height="22" rx="2"/><path d="M15 5H25M15 13H25M15 21H25M15 5V21M25 5V21" stroke-width="1.6"/><path d="M4 13H11"/>',
+  rom: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><text x="11" y="17" font-size="8">ROM</text><path d="M4 13H9M31 13H36"/>',
+  ram: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><text x="11" y="17" font-size="8">RAM</text><path d="M4 9H9M4 17H9M31 13H36"/>',
   buf: '<path d="M4 13H11"/><path class="f" d="M11 5L27 13L11 21Z"/><path d="M27 13H36"/>',
   tff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="17" y="14">T</text>',
   jkff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="15" y="14">JK</text>',
@@ -433,7 +442,7 @@ function genCode(m) {
   const lines = [`circuit "${(m.title || "My circuit").replace(/"/g, "'")}"`, "", "# drawn in the Wire playground", ""];
   if (m.defs) lines.push(m.defs.trim(), "");   /* the chips: imported or written out */
   /* declarations, one line per kind, in the order the parts were added */
-  const decl = { input: "input ", button: "button", clock: "clock ", output: "output", led: "led   ", hex: "hex   " };
+  const decl = { input: "input ", button: "button", clock: "clock ", output: "output", led: "led   ", hex: "hex   ", seg7: "seg7  " };
   for (const k of Object.keys(decl)) {
     const ps = m.parts.filter(p => p.kind === k);
     if (ps.length) lines.push(`${decl[k]} ${ps.map(p => p.name + w(p)).join(", ")}`);
@@ -458,6 +467,13 @@ function genCode(m) {
     else if (k === "compare") body.push(`${p.name} = compare(${from(p, "a")}, ${from(p, "b")})`);
     else if (k === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
     else if (k === "counter") body.push(`${p.name} = counter(${from(p, "clk")}, bits = ${p.bits || 4}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
+    else if (k === "rom" || k === "ram") {
+      /* an unwired address or data in reads 0, as wide as the memory's */
+      const pin = (name, w) => { const v = from(p, name); return v === "0" ? lit(0, w) : v; };
+      const data = (p.data || "").trim() ? `, data = "${p.data.trim()}"` : "";
+      if (k === "rom") body.push(`${p.name} = rom(${pin("addr", p.abits || 4)}, bits = ${p.bits || 8}${data || ', data = "00"'})`);
+      else body.push(`${p.name} = ram(${pin("addr", p.abits || 4)}, ${pin("din", p.bits || 8)}, ${from(p, "we")}, ${from(p, "clk")}${data})`);
+    }
     else if (k === "const") body.push(`${p.name} = ${lit(p.value || 0, p.bits || 1)}`);   /* the page finds it by this line */
     else if (k === "chip") body.push(`${p.name} = ${p.comp}(${p.ins.map(([n]) => `${n} = ${from(p, n)}`).join(", ")})`);
     else if (k === "split") {
@@ -675,6 +691,7 @@ window.wireCanvas = {
       if (KINDS[kind] && KINDS[kind].n) p.n = KINDS[kind].n;
       if (kind === "split") { p.bits = 8; p.ranges = [[7, 4], [3, 0]]; }
       if (kind === "join") p.ranges = [[1, 1], [0, 0]];
+      if (kind === "rom" || kind === "ram") { p.bits = 8; p.abits = 4; p.data = kind === "rom" ? "00" : ""; }
       m.parts.push(p);
       selectedName = p.name;
     });
@@ -850,6 +867,20 @@ function showProps() {
       if (!c.checked) m.links = m.links.filter(x => !(x.to.id === p.id && x.to.pin === key));
     }));
   };
+  if (k === "rom" || k === "ram") {
+    const b = field("Word bits", Object.assign(document.createElement("input"), { type: "number", min: 1, max: 32, value: p.bits || 8 }));
+    b.addEventListener("change", () => { const v = Math.max(1, Math.min(32, parseInt(b.value, 10) || 8)); if (v !== p.bits) change(() => { p.bits = v; }); });
+    const a = field("Address bits", Object.assign(document.createElement("input"), { type: "number", min: 1, max: 16, value: p.abits || 4 }));
+    a.title = "Used while nothing is wired to addr; otherwise what is wired in decides";
+    a.addEventListener("change", () => { const v = Math.max(1, Math.min(16, parseInt(a.value, 10) || 4)); if (v !== p.abits) change(() => { p.abits = v; }); });
+    const d = field("Contents", Object.assign(document.createElement("input"), { type: "text", spellcheck: false, value: p.data || "" }));
+    d.title = "The words from address 0, in hex, like 01 4F 12";
+    d.addEventListener("change", () => {
+      const t = d.value.trim().replace(/\s+/g, " ");
+      if (t && !/^[0-9a-f]+( [0-9a-f]+)*$/i.test(t)) { msg.className = "err"; msg.textContent = "Write the words in hex with spaces between them, like 01 4F 12."; d.value = p.data || ""; return; }
+      if (t !== (p.data || "")) change(() => { p.data = t; });
+    });
+  }
   if (k === "split" || k === "join") {
     /* split: the bus in and the bits each piece takes; join: each piece's bits, the top first */
     if (k === "split") {
@@ -1101,6 +1132,13 @@ function netlistToModel(D, lay, defs, dir) {
     if (k === "decoder") p.en = n.inNames.includes("en");
     if (k === "split") { p.bits = D.nets[n.in[0]].w; p.ranges = n.ranges.map(r => [r[0], r[1]]); }
     if (k === "const") { p.bits = D.nets[n.out[0]].w; p.value = n.value >>> 0; }
+    if (k === "rom" || k === "ram") {
+      /* the contents, as data = "..." from address 0 (a file's words come along) */
+      p.bits = n.bits; p.abits = n.abits;
+      const words = [];
+      for (const [at, ws] of n.init || []) ws.forEach((w, j) => { words[at + j] = w; });
+      p.data = Array.from(words, w => ((w || 0) >>> 0).toString(16).toUpperCase().padStart(2, "0")).join(" ");
+    }
     if (k === "join") {
       p.ranges = n.ranges.map(r => [r[0], r[1]]);
       n.in.forEach((net, j) => { const d = drv.get(net), c = constOf(net); if (c && c.value && !idOf.has(d.i)) (p.consts = p.consts || {})[j] = c.value; });
