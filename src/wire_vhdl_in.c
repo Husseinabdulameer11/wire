@@ -84,8 +84,13 @@ typedef struct {
     int cat;                     /* s is a {...} that more can be added to */
     int tid;                     /* an enumeration value: its type (vi_types index + 1) */
     char *m0, *m1, *ms;          /* s is mux(m0, m1, sel = ms) */
+    char *zx;                    /* s is zx (zxw bits) with 0s put on top: resize(x, n) */
+    int zxw;
+    char *csum;                  /* s is {csum.cout, csum}: an adder's sum with its carry on top */
 } VX;
 
+static const char *vi_bind_at;   /* where wires made for values are written: the process (or NULL) */
+static int vi_nbind;             /* how many such wires so far: v1_, v2_ ... */
 static const char *vi_src;       /* the VHDL */
 static size_t vi_len;
 static const char *vi_file;
@@ -576,6 +581,7 @@ static VX vi_resize(VX x, int w, int sgn)
     {
         VX r = vi_mk(b.s, x.ty, w, 2);
         r.cat = 1;
+        if (!sgn) { r.zx = x.s; r.zxw = x.w; }
         return r;
     }
 }
@@ -671,6 +677,7 @@ static char *vi_sl(const char *b, int hi, int lo)   /* b[hi:lo], or b[hi] for on
 
 /* f(...): a conversion, or a bit or slice of a signal */
 static gram_node *vi_find_func(const gram_node *id, int nargs);
+static int vi_bitrange(VSym *s, gram_node *id, gram_node *arg, int *hi, int *lo);
 static VX vi_func_call(gram_node *f, gram_node *id, gram_node *args);
 
 static VX vi_call(gram_node *n, int want)
@@ -715,6 +722,11 @@ static VX vi_call(gram_node *n, int want)
         if (vi_nargs(args) != 1) vi_fail(args, "%.*s takes one index or slice", VT(id));
         tmp.kind = v.cst ? VK_CONST : VK_SIG;
         tmp.bits = v.v;
+        if (v.csum && vi_vec(s->ty)) {   /* the sum or the carry, without a split */
+            int hi, lo, one = vi_bitrange(s, id, args->child, &hi, &lo);
+            if (!one && hi == v.w - 2 && lo == 0) return vi_mk(v.csum, s->ty, v.w - 1, 2);
+            if (one && hi == v.w - 1) return vi_mk(vi_fmt("%s.cout", v.csum), T_SL, 1, 2);
+        }
         tmp.wname = vi_wrap(&v, 2);
         return vi_index(&tmp, id, args->child);
     }
@@ -1176,6 +1188,25 @@ static VX vi_simple(gram_node *n, int want)
             vi_pair(&acc, &b, n->child, rn, sub ? "-" : "+", 1);
             if (acc.ty == T_INT) { acc.iv = sub ? acc.iv - b.iv : acc.iv + b.iv; acc.s = vi_fmt("%ld", acc.iv); continue; }
             if (acc.cst && b.cst) { acc = vi_const(sub ? acc.v - b.v : acc.v + b.v, acc.w, acc.ty); continue; }
+            if (!sub && vi_bind_at && acc.zx && b.zx && acc.zxw == acc.w - 1 && b.zxw == acc.w - 1) {
+                /* resize(a, n + 1) + b [+ c]: one adder, its carry the top bit */
+                gram_node *k2 = rn->next;
+                char *cin = NULL, *w;
+                int ty = acc.ty;
+                if (k2 && vi_is(k2, "+") && (k2->next->rule == VHDL_R_name || k2->next->rule == VHDL_R_ident)) {
+                    VX c = vi_gen(k2->next, acc.w), a2 = acc;
+                    vi_pair(&a2, &c, n->child, k2->next, "+", 1);
+                    if (c.zx && c.zxw == 1) { cin = c.zx; k = k2; }
+                    else if (c.cst && c.v <= 1) { cin = c.v ? "1" : NULL; k = k2; }
+                }
+                do w = vi_fmt("v%d_", ++vi_nbind); while (vi_wname_used(w));
+                vi_emitp(vi_bind_at, "wire %s[%d]", w, acc.w - 1);
+                vi_emitp(vi_bind_at, "%s = add(%s, %s%s%s)", w, acc.zx, b.zx, cin ? ", cin = " : "", cin ? cin : "");
+                acc = vi_mk(vi_fmt("{%s.cout, %s}", w, w), ty, acc.w, 2);
+                acc.cat = 1;
+                acc.csum = w;
+                continue;
+            }
             if (!sub) acc = vi_mk(vi_fmt("add(%s, %s)", acc.s, b.s), acc.ty, acc.w, 2);
             else if (b.cst) {
                 if (b.v == 0) continue;
@@ -1525,8 +1556,6 @@ static VX vi_mux2(VX d0, VX d1, VX c)
 
 /* a long value used more than once gets a wire of its own, so values that
  * build on each other (a loop, an if after an if) do not grow without end */
-static const char *vi_bind_at;   /* where those wires are written: the process */
-static int vi_nbind;
 
 static void vi_bind(VX *x)
 {
@@ -1539,6 +1568,7 @@ static void vi_bind(VX *x)
     x->atom = 2;
     x->cat = 0;
     x->m0 = x->m1 = x->ms = NULL;
+    x->zx = x->csum = NULL;
 }
 
 static void vi_condassign(gram_node *st)

@@ -923,12 +923,14 @@ function netlistToModel(D, lay) {
 }
 async function makeView(to) {
   if (to === "draw") {
-    /* from the view on screen: the page shows it laid out, so the parts stay where they are */
-    const from = viewKey(), t = views[from], path = pathFor(from, t.dir);
+    /* from the Wire when there is one for this circuit: VHDL read back has the
+     * slices and joins of its vectors, which the Wire it came from may not.
+     * From the view on screen, the parts stay where the page shows them. */
+    const from = views.wire ? "wire" : viewKey(), t = views[from], path = pathFor(from, t.dir);
     const r = await wire(["--json", path], path, t.text);
     if (r.code !== 0) return { why: "fix the error first (" + firstError(r, path) + ")" };
     let lay = null;
-    try { lay = frames[front].contentWindow.wireLayout(); } catch (e) {}
+    if (from === viewKey()) try { lay = frames[front].contentWindow.wireLayout(); } catch (e) {}
     const m = netlistToModel(JSON.parse(r.out), lay);
     if (m.why) return m;
     const p2 = pathFor("wire", ""), c = await wire(["--check", p2], p2, genCode(m.model));
