@@ -548,7 +548,7 @@ function circuitText(m, sh, title, chips) {
 function genCode(m) {
   const all = [];
   for (const c of Object.keys(m.chips || {})) for (const d of [...chipsUsed(m, m.chips[c]), c]) if (!all.includes(d)) all.push(d);
-  return circuitText(m, m, m.title, all);
+  return circuitText(m, m, fileName(), all);   /* the circuit is called what the name box says */
 }
 /* what the page shows: the sheet on screen, as a circuit you can try */
 function canvasCode(m) {
@@ -882,10 +882,10 @@ function showSheets() {
     b.textContent = label; b.title = title || ""; b.setAttribute("aria-current", cur ? "true" : "false");
     b.onclick = fn; box.append(b); return b;
   };
-  btn(model.title && model.title !== "My circuit" ? model.title : "Main circuit", !model.at, () => goSheet(null), "The circuit itself");
+  btn(fileName(), !model.at, () => goSheet(null), "The circuit itself; its name is the one in the box at the top");
   for (const c of Object.keys(model.chips || {})) btn(c, model.at === c, () => goSheet(c, [c]), `Open the chip ${c} to change its inside`);
   btn("+ New chip", false, newChip, "Make a chip: draw its inside, its inputs and outputs are its pins").className = "add";
-  btn("Rename", false, renameSheet, model.at ? `Give the chip ${model.at} another name` : "Give the circuit another title").className = "add";
+  btn("Rename", false, renameSheet, model.at ? `Give the chip ${model.at} another name` : "Give the circuit another name").className = "add";
   /* inside a chip only inputs and outputs talk to the outside */
   for (const k of ["button", "clock", "led", "hex", "seg7"]) {
     const b = document.querySelector(`.parts button[data-kind="${k}"]`);
@@ -895,7 +895,7 @@ function showSheets() {
   if (!model.at) return;
   const path = model.path && model.path.length ? model.path : [model.at];
   const back = document.createElement("button");
-  back.textContent = "Main circuit"; back.onclick = () => goSheet(null);
+  back.textContent = fileName(); back.onclick = () => goSheet(null);
   crumbs.append(back);
   path.forEach((c, i) => {
     crumbs.append(" › ");
@@ -933,9 +933,9 @@ function newChip() {
 /* the sheet on screen gets another name: the circuit its title, a chip its
  * name everywhere it is used */
 function renameSheet() {
-  if (!model.at) {
-    const t = (prompt("Title of the circuit:", model.title || "My circuit") || "").trim();
-    if (t && t !== model.title) change(m => { m.title = t; });
+  if (!model.at) {   /* the circuit's name is the name box at the top */
+    const t = (prompt("Name of the circuit (letters, digits and _):", fileName()) || "").trim().replace(/[^A-Za-z0-9_]/g, "");
+    if (t && t !== fileName()) { $("name").value = t; fitName(); persist(); showGen(); schedule(0); }
     return;
   }
   const old = model.at, name = (prompt(`New name for the chip ${old}:`, old) || "").trim();
@@ -1570,7 +1570,7 @@ $("new").onclick = () => {
     loadCode(lang, lang === "vhdl" ? STARTER_VHDL : STARTER_CODE, "my_circuit", "");
   }
 };
-$("name").addEventListener("input", () => { fitName(); persist(); schedule(); });
+$("name").addEventListener("input", () => { fitName(); persist(); if (mode === "draw") showGen(); schedule(); });
 $("name").addEventListener("change", () => { $("name").value = fileName(); fitName(); persist(); schedule(0); });
 
 /* ================================================== saving and sharing */
