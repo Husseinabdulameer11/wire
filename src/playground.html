@@ -458,8 +458,11 @@ function genCode(m) {
     if (GATE_NAMES[k]) body.push(`${p.name} = ${k}(${insOf(p).map(pin => from(p, pin)).join(", ")})`);
     else if (k === "not") body.push(`${p.name} = not(${from(p, "in")})`);
     else if (k === "buf") body.push(`${p.name} = buf(${from(p, "in")})`);
-    else if (k === "encoder") body.push(`${p.name} = encoder(${from(p, "in")})`);
-    else if (k === "decoder") body.push(`${p.name} = decoder(${from(p, "sel")}${p.en ? opt("en", "en") : ""})`);
+    else if (k === "encoder" || k === "decoder") {
+      /* nothing wired in: a 0 as wide as the part's input, which sets its size */
+      const pin = k === "encoder" ? "in" : "sel", v = from(p, pin), x = v === "0" ? lit(0, p.bits || (k === "encoder" ? 4 : 2)) : v;
+      body.push(k === "encoder" ? `${p.name} = encoder(${x})` : `${p.name} = decoder(${x}${p.en ? opt("en", "en") : ""})`);
+    }
     else if (k === "tff") body.push(`${p.name} = tff(${from(p, "t")}, ${from(p, "clk")}${p.rst ? opt("rst", "rst") : ""})`);
     else if (k === "jkff") body.push(`${p.name} = jkff(${from(p, "j")}, ${from(p, "k")}, ${from(p, "clk")}${p.rst ? opt("rst", "rst") : ""})`);
     else if (k === "mux") body.push(`${p.name} = mux(${insOf(p).slice(0, -1).map(pin => from(p, pin)).join(", ")}, sel = ${from(p, "sel")})`);
@@ -475,7 +478,7 @@ function genCode(m) {
       else body.push(`${p.name} = ram(${pin("addr", p.abits || 4)}, ${pin("din", p.bits || 8)}, ${from(p, "we")}, ${from(p, "clk")}${data})`);
     }
     else if (k === "const") body.push(`${p.name} = ${lit(p.value || 0, p.bits || 1)}`);   /* the page finds it by this line */
-    else if (k === "chip") body.push(`${p.name} = ${p.comp}(${p.ins.map(([n]) => `${n} = ${from(p, n)}`).join(", ")})`);
+    else if (k === "chip") body.push(`${p.name} = ${p.comp}(${p.ins.map(([n, w]) => { const v = from(p, n); return `${n} = ${v === "0" ? lit(0, w) : v}`; }).join(", ")})`);
     else if (k === "split") {
       /* one line per piece, the first first: the page finds the split by it */
       let src = from(p, "in");
@@ -691,6 +694,8 @@ window.wireCanvas = {
       if (KINDS[kind] && KINDS[kind].n) p.n = KINDS[kind].n;
       if (kind === "split") { p.bits = 8; p.ranges = [[7, 4], [3, 0]]; }
       if (kind === "join") p.ranges = [[1, 1], [0, 0]];
+      if (kind === "decoder") p.bits = 2;
+      if (kind === "encoder") p.bits = 4;
       if (kind === "rom" || kind === "ram") { p.bits = 8; p.abits = 4; p.data = kind === "rom" ? "00" : ""; }
       m.parts.push(p);
       selectedName = p.name;
@@ -867,6 +872,13 @@ function showProps() {
       if (!c.checked) m.links = m.links.filter(x => !(x.to.id === p.id && x.to.pin === key));
     }));
   };
+  if (k === "decoder" || k === "encoder") {
+    /* its size while nothing is wired in; then what is wired in decides */
+    const ok = k === "decoder" ? [1, 2, 3, 4, 5] : [2, 4, 8, 16, 32], sel = document.createElement("select");
+    ok.forEach(v => sel.append(new Option(k === "decoder" ? `${v} (${2 ** v} out)` : `${v} (${Math.log2(v)} out)`, String(v), false, v === (p.bits || ok[1]))));
+    field("Input bits", sel).title = "The size it has while nothing is wired in; wire an input of this many bits to it";
+    sel.addEventListener("change", () => change(() => { p.bits = +sel.value; }));
+  }
   if (k === "rom" || k === "ram") {
     const b = field("Word bits", Object.assign(document.createElement("input"), { type: "number", min: 1, max: 32, value: p.bits || 8 }));
     b.addEventListener("change", () => { const v = Math.max(1, Math.min(32, parseInt(b.value, 10) || 8)); if (v !== p.bits) change(() => { p.bits = v; }); });
@@ -1130,6 +1142,7 @@ function netlistToModel(D, lay, defs, dir) {
     if (k === "tff" || k === "jkff") p.rst = n.inNames.includes("rst");
     if (k === "dff") p.w = D.nets[n.out[0]].w;   /* in a loop its width must be written */
     if (k === "decoder") p.en = n.inNames.includes("en");
+    if (k === "decoder" || k === "encoder") p.bits = D.nets[n.in[0]].w;
     if (k === "split") { p.bits = D.nets[n.in[0]].w; p.ranges = n.ranges.map(r => [r[0], r[1]]); }
     if (k === "const") { p.bits = D.nets[n.out[0]].w; p.value = n.value >>> 0; }
     if (k === "rom" || k === "ram") {
