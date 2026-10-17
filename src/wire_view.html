@@ -1923,6 +1923,11 @@ function openView(id) {
     if (c === id) b.setAttribute("aria-current", "page"); else b.onclick = () => openView(c);
     nav.append(b);
   });
+  /* in the playground's drawing the path is shown once, next to its chips */
+  if (EDIT) {
+    nav.hidden = true;
+    hostCall("viewPath", chain.map(c => ({ id: c, name: instLabel(c), comp: D.insts[c].comp })));
+  }
   $("tb-view").textContent = id === 0 ? "the circuit" : `${instLabel(id)}${D.insts[id].name ? " (" + D.insts[id].comp + ")" : ""}, ${baseName((D.files || [])[viewFile(id)] ? D.files[viewFile(id)].name : D.file)}`;
   buildSource(viewFile(id));
   markSource(id === 0 ? 0 : D.insts[id].defLine);
@@ -2348,6 +2353,7 @@ addEventListener("keydown", e => {
 });
 /* where every part of the circuit is drawn now, by node: the playground uses
  * it to keep the layout when a written circuit becomes a drawing */
+window.wireGoView = id => openView(id);
 window.wireLayout = () => {
   const v = views.get(0);
   if (!v) return null;

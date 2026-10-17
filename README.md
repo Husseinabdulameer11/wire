@@ -85,8 +85,9 @@ Nothing is installed and nothing leaves the browser.
   inputs and outputs are its pins, and back in the main circuit it is in the
   palette under Chips; place two and an OR gate and you have a full adder.
   Click a chip twice to go inside and change it (every copy changes); the
-  path above the palette (`Main circuit › full_adder › half_adder`) takes
-  you back up. **Rename** renames the chip on screen (everywhere it is used),
+  list above the palette shows the hierarchy (the circuit, the chips it
+  uses, the chips they use) and one path (`adder › full_adder ›
+  half_adder`) takes you back up, also from an imported chip you look into. **Rename** renames the chip on screen (everywhere it is used),
   or on the main circuit its name, which is the name in the box at the top
   (the file name, the circuit's title and the first button are one name). Chips go as deep as you like, and in Wire and VHDL they are
   components and entities, so a hierarchy written in Wire opens as chips

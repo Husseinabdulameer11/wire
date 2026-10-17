@@ -817,6 +817,7 @@ window.wireCanvas = {
     persist();
   },
   selected(name) { selectedName = name; showProps(); },
+  viewPath(list) { pageView = list || []; showSheets(); },
   /* a chip clicked twice: a chip you drew opens here, to change its inside */
   openChip(comp) {
     if (!model.chips || !model.chips[comp]) return false;
@@ -866,6 +867,7 @@ function paletteButton(kind, label, icon, title) {
 }
 /* the sheets: the main circuit and each chip you drew; and where you are */
 function goSheet(name, path) {
+  pageView = [];
   model.at = name || null;
   model.path = name ? path : [];
   selectedName = null;
@@ -873,17 +875,46 @@ function goSheet(name, path) {
   persist(); showGen(); showProps(); showSheets();
   compile();
 }
+let pageView = [];             /* the chips opened inside the page (ones you cannot change), from the sheet on screen */
 function showSheets() {
   const box = $("sheets"), crumbs = $("crumbs");
   if (!box || !model) return;
   box.textContent = "";
-  const btn = (label, cur, fn, title) => {
+  const btn = (label, cur, fn, title, depth = 0) => {
     const b = document.createElement("button");
-    b.textContent = label; b.title = title || ""; b.setAttribute("aria-current", cur ? "true" : "false");
+    b.textContent = (depth ? "└ " : "") + label; b.title = title || ""; b.setAttribute("aria-current", cur ? "true" : "false");
+    if (depth) b.style.marginLeft = (depth - 1) * 18 + "px";
     b.onclick = fn; box.append(b); return b;
   };
+  const row = () => { const r = document.createElement("div"); r.style.flexBasis = "100%"; r.style.height = "0"; box.append(r); };
+  /* the hierarchy: the circuit, the chips it uses, the chips they use ... */
+  const shown = new Set();
+  const walk = (sh, path, depth) => {
+    const seen = new Set();
+    for (const p of sh.parts) {
+      if (p.kind !== "chip" || seen.has(p.comp)) continue;
+      seen.add(p.comp);
+      row();
+      if (model.chips && model.chips[p.comp]) {
+        shown.add(p.comp);
+        const here = [...path, p.comp], cur = model.at === p.comp && (model.path || []).join("/") === here.join("/");
+        btn(p.comp, cur, () => goSheet(p.comp, here), `Open ${p.comp} to change its inside`, depth);
+        if (depth < 12) walk(model.chips[p.comp], here, depth + 1);
+      } else {
+        const b = btn(p.comp + " ↗", false, () => {}, `${p.comp} comes from an import: click it twice in the circuit to look inside`, depth);
+        b.disabled = true;
+      }
+    }
+  };
   btn(fileName(), !model.at, () => goSheet(null), "The circuit itself; its name is the one in the box at the top");
-  for (const c of Object.keys(model.chips || {})) btn(c, model.at === c, () => goSheet(c, [c]), `Open the chip ${c} to change its inside`);
+  walk(model, [], 1);
+  const unused = Object.keys(model.chips || {}).filter(c => !shown.has(c));
+  if (unused.length) {
+    row();
+    const l = document.createElement("span"); l.className = "how"; l.style.margin = "0"; l.textContent = "Not used yet:"; box.append(l);
+    for (const c of unused) btn(c, model.at === c && (model.path || []).length <= 1, () => goSheet(c, [c]), `Open ${c} to change its inside; place it from Chips to use it`);
+  }
+  row();
   btn("+ New chip", false, newChip, "Make a chip: draw its inside, its inputs and outputs are its pins").className = "add";
   btn("Rename", false, renameSheet, model.at ? `Give the chip ${model.at} another name` : "Give the circuit another name").className = "add";
   /* inside a chip only inputs and outputs talk to the outside */
@@ -891,23 +922,29 @@ function showSheets() {
     const b = document.querySelector(`.parts button[data-kind="${k}"]`);
     if (b) b.hidden = !!model.at;
   }
+  /* where you are: one path, the chips you drew, then any chip opened inside the page */
   crumbs.textContent = "";
-  if (!model.at) return;
-  const path = model.path && model.path.length ? model.path : [model.at];
-  const back = document.createElement("button");
-  back.textContent = fileName(); back.onclick = () => goSheet(null);
-  crumbs.append(back);
-  path.forEach((c, i) => {
-    crumbs.append(" › ");
-    if (i === path.length - 1) { const b = document.createElement("b"); b.textContent = c; crumbs.append(b); return; }
-    const b = document.createElement("button");
-    b.textContent = c; b.onclick = () => goSheet(c, path.slice(0, i + 1));
-    crumbs.append(b);
+  if (!model.at && !pageView.length) return;
+  const path = model.at ? (model.path && model.path.length ? model.path : [model.at]) : [];
+  const goPage = id => { try { frames[front].contentWindow.wireGoView(id); } catch (e) {} };
+  const link = (label, fn) => { const b = document.createElement("button"); b.textContent = label; b.onclick = fn; crumbs.append(b); };
+  const here = (label) => { const b = document.createElement("b"); b.textContent = label; crumbs.append(b); };
+  const steps = [{ label: fileName(), go: () => pageView.length && !model.at ? goPage(0) : goSheet(null) },
+                 ...path.map((c, i) => ({ label: c, go: () => i === path.length - 1 ? goPage(0) : goSheet(c, path.slice(0, i + 1)) })),
+                 ...pageView.map(v => ({ label: v.name !== v.comp ? `${v.name} (${v.comp})` : v.comp, go: () => goPage(v.id) }))];
+  steps.forEach((st, i) => {
+    if (i) crumbs.append(" › ");
+    if (i === steps.length - 1) here(st.label); else link(st.label, st.go);
   });
-  const del = document.createElement("button");
-  del.textContent = "delete this chip"; del.style.marginLeft = "12px";
-  del.onclick = () => deleteChip(model.at);
-  crumbs.append(del);
+  if (pageView.length) {
+    const n = document.createElement("span"); n.className = "how"; n.style.margin = "0 0 0 8px";
+    n.textContent = "(imported: look only)"; crumbs.append(n);
+  } else {
+    const del = document.createElement("button");
+    del.textContent = "delete this chip"; del.style.marginLeft = "12px";
+    del.onclick = () => deleteChip(model.at);
+    crumbs.append(del);
+  }
 }
 function newChip() {
   const name = (prompt("Name of the new chip (letters, digits and _), like half_adder:") || "").trim();
