@@ -80,9 +80,15 @@ Nothing is installed and nothing leaves the browser.
   encoder, a rom and a ram with their contents, constants, and splits and
   joins for buses), drag from pin to pin to wire them, and click
   a part to rename it or change its width, its number of inputs, its pieces,
-  or whether it has an enable, a reset or a carry in. A circuit made of
-  chips keeps them: each is a box with its pins (click it twice to look inside),
-  and the circuit's chips are in the palette to place more of. It runs as you build it. A change that
+  or whether it has an enable, a reset or a carry in. **Chips** work as in
+  Logisim: **+ New chip** opens an empty sheet for one (`half_adder`), its
+  inputs and outputs are its pins, and back in the main circuit it is in the
+  palette under Chips; place two and an OR gate and you have a full adder.
+  Click a chip twice to go inside and change it (every copy changes); the
+  path above the palette (`Main circuit › full_adder › half_adder`) takes
+  you back up. Chips go as deep as you like, and in Wire and VHDL they are
+  components and entities, so a hierarchy written in Wire opens as chips
+  too (an imported chip stays a box). It runs as you build it. A change that
   cannot work (a 4-bit bus into a 1-bit gate) is undone, and the page says
   why. The drawing is written as Wire as you go (**Edit as code** carries on
   from it), so it simulates and turns into VHDL like any other circuit.

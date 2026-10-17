@@ -102,6 +102,12 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
 .parts button:hover { border-color: var(--hi); background: var(--hi-soft); }
 .parts button[aria-pressed="true"] { border-color: var(--hi); background: var(--hi-soft); color: var(--ink); box-shadow: inset 0 0 0 1px var(--hi); }
 .how { color: var(--ink-soft); font-size: 14px; margin: 10px 0 0; }
+#sheets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#sheets button { min-height: 0; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); font-size: 13.5px; font-weight: 500; }
+#sheets button[aria-current="true"] { border-color: var(--hi); background: var(--hi-soft); box-shadow: inset 0 0 0 1px var(--hi); }
+#sheets button.add { border-style: dashed; }
+#crumbs { font-size: 13.5px; color: var(--ink-soft); margin: 6px 0 0; }
+#crumbs button { min-height: 0; padding: 0; border: 0; background: none; color: var(--hi); font: inherit; text-decoration: underline; cursor: pointer; }
 .how b { color: var(--ink); font-weight: 600; }
 #props { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: var(--paper); }
 #props .title { font-weight: 600; margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
@@ -220,6 +226,9 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
 <main id="main" data-pane="side">
   <section id="side" aria-label="Parts and code">
     <div id="draw">
+      <h2>Circuit and chips</h2>
+      <div id="sheets"></div>
+      <div id="crumbs"></div>
       <h2>In and out</h2>
       <div class="parts" data-group="io"></div>
       <h2>Gates</h2>
@@ -320,7 +329,7 @@ function parseRanges(t) {
   return rs.length && rs.every(r => r && r[0] >= r[1] && r[0] < 32) ? rs : null;
 }
 const SOURCE = new Set(["input", "button", "clock"]), SINK = new Set(["output", "led", "hex", "seg7"]);
-const insOf = p => {
+const insOf = (p, m = model) => {
   const k = p.kind;
   if (SOURCE.has(k)) return [];
   if (SINK.has(k) || k === "not" || k === "buf" || k === "encoder") return ["in"];
@@ -338,10 +347,10 @@ const insOf = p => {
   if (k === "rom") return ["addr"];
   if (k === "ram") return ["addr", "din", "we", "clk"];
   if (k === "join") return p.ranges.map((_, i) => String(i));
-  if (k === "chip") return p.ins.map(x => x[0]);
+  if (k === "chip") return chipPins(m, p).ins.map(x => x[0]);
   return [];
 };
-const outsOf = p => {
+const outsOf = (p, m = model) => {
   const k = p.kind;
   if (SINK.has(k)) return [];
   if (k === "add") return ["sum", "cout"];
@@ -351,7 +360,7 @@ const outsOf = p => {
   if (k === "rom" || k === "ram") return ["q"];
   if (k === "counter") return ["q", "carry"];
   if (k === "split") return p.ranges.map((_, i) => String(i));
-  if (k === "chip") return p.outs.map(x => x[0]);
+  if (k === "chip") return chipPins(m, p).outs.map(x => x[0]);
   return ["out"];
 };
 
@@ -409,14 +418,14 @@ const STARTER_DRAWING = () => ({
     { from: { id: 3, pin: "out" }, to: { id: 4, pin: "in" } }
   ]
 });
-const partByName = name => model.parts.find(p => p.name === name);
-const partById = id => model.parts.find(p => p.id === id);
+const partByName = name => sheet(model).parts.find(p => p.name === name);
+const partById = id => sheet(model).parts.find(p => p.id === id);
 
 /* a fresh name: a, b, c... for inputs; y, z, out1... for outputs; and1,
  * ff1... for the rest */
 const RESERVED = new Set("input output wire led seg7 hex button clock bus keypad circuit import component and or nand nor xor xnor not buf mux demux decoder encoder add compare dff reg tff jkff counter tri rom ram".split(" "));
 function freshName(kind) {
-  const used = new Set(model.parts.map(p => p.name.toLowerCase()));
+  const used = new Set(sheet(model).parts.map(p => p.name.toLowerCase()));
   const free = n => !used.has(n.toLowerCase()) && !RESERVED.has(n);
   if (kind === "input") { for (const c of "abcdefghijklmnopqrstuvwx") if (free(c)) return c; }
   if (kind === "output") { for (const c of ["y", "z"]) if (free(c)) return c; }
@@ -425,37 +434,57 @@ function freshName(kind) {
 }
 
 /* the drawing as Wire */
-function genCode(m) {
-  const byId = new Map(m.parts.map(p => [p.id, p]));
-  const into = new Map(m.links.map(l => [l.to.id + ":" + l.to.pin, l]));
+/* ============================================== chips you draw: sheets
+ * The drawing is a main sheet and a sheet per chip you drew (m.chips[name]:
+ * { parts, links, next }); m.at is the sheet on screen, m.path how you got
+ * there. A chip's inputs and outputs are its pins. In Wire each drawn chip is
+ * a component block; chips from imports or written in Wire (m.defs, with
+ * their pins in m.comps) come along as they are. */
+const sheet = m => (m.at && m.chips && m.chips[m.at]) || m;
+function chipPins(m, p) {
+  const comp = typeof p === "string" ? p : p.comp, c = m.chips && m.chips[comp];
+  if (c) return { ins: c.parts.filter(q => q.kind === "input").map(q => [q.name, q.bits || 1]),
+                  outs: c.parts.filter(q => q.kind === "output").map(q => [q.name, q.bits || 1]) };
+  return (m.comps && m.comps[comp]) || (typeof p === "string" ? { ins: [], outs: [] } : { ins: p.ins || [], outs: p.outs || [] });
+}
+/* the drawn chips a sheet uses, and the ones they use, deepest first */
+function chipsUsed(m, sh, out = [], seen = new Set()) {
+  for (const p of sh.parts) {
+    if (p.kind !== "chip" || !m.chips || !m.chips[p.comp] || seen.has(p.comp)) continue;
+    seen.add(p.comp);
+    chipsUsed(m, m.chips[p.comp], out, seen);
+    out.push(p.comp);
+  }
+  return out;
+}
+/* does chip a use chip b (so b cannot hold a)? */
+const uses = (m, a, b) => a === b || chipsUsed(m, m.chips[a]).includes(b);
+const lit = (v, w) => "0b" + (v >>> 0).toString(2).padStart(w, "0").slice(-w);
+
+/* one sheet as Wire: its parts (body) and what its outputs are (sinks) */
+function sheetLines(m, sh) {
+  const byId = new Map(sh.parts.map(p => [p.id, p]));
+  /* a link from a pin a chip no longer has is dropped */
+  const into = new Map(sh.links.filter(l => { const f = byId.get(l.from.id); return f && outsOf(f, m).includes(l.from.pin); })
+                               .map(l => [l.to.id + ":" + l.to.pin, l]));
   const from = (p, pin) => {
     const l = into.get(p.id + ":" + pin), f = l && byId.get(l.from.id);
     if (!f) return "0";                          /* nothing wired: a 0 */
     if (f.kind === "split") return `${f.name}_${l.from.pin}`;
     if (f.kind === "join") return f.name;
     if (f.kind === "chip") return `${f.name}.${l.from.pin}`;
-    const outs = outsOf(f);
+    const outs = outsOf(f, m);
     return f.kind === "compare" || l.from.pin !== outs[0] ? `${f.name}.${l.from.pin}` : f.name;
   };
-  const lit = (v, w) => "0b" + (v >>> 0).toString(2).padStart(w, "0").slice(-w);
-  const w = p => (p.bits || 1) > 1 ? `[${p.bits}]` : "";
-  const lines = [`circuit "${(m.title || "My circuit").replace(/"/g, "'")}"`, "", "# drawn in the Wire playground", ""];
-  if (m.defs) lines.push(m.defs.trim(), "");   /* the chips: imported or written out */
-  /* declarations, one line per kind, in the order the parts were added */
-  const decl = { input: "input ", button: "button", clock: "clock ", output: "output", led: "led   ", hex: "hex   ", seg7: "seg7  " };
-  for (const k of Object.keys(decl)) {
-    const ps = m.parts.filter(p => p.kind === k);
-    if (ps.length) lines.push(`${decl[k]} ${ps.map(p => p.name + w(p)).join(", ")}`);
-  }
   const body = [];
-  const regs = m.parts.filter(p => p.kind === "dff" && p.w);
+  const regs = sh.parts.filter(p => p.kind === "dff" && p.w);
   if (regs.length) body.push(`wire ${regs.map(p => `${p.name}[${p.w}]`).join(", ")}`);
-  for (const p of m.parts) {
+  for (const p of sh.parts) {
     const k = p.kind, opt = (name, pin) => {
       const v = from(p, pin);
       return `, ${name} = ${v}`;
     };
-    if (GATE_NAMES[k]) body.push(`${p.name} = ${k}(${insOf(p).map(pin => from(p, pin)).join(", ")})`);
+    if (GATE_NAMES[k]) body.push(`${p.name} = ${k}(${insOf(p, m).map(pin => from(p, pin)).join(", ")})`);
     else if (k === "not") body.push(`${p.name} = not(${from(p, "in")})`);
     else if (k === "buf") body.push(`${p.name} = buf(${from(p, "in")})`);
     else if (k === "encoder" || k === "decoder") {
@@ -465,7 +494,7 @@ function genCode(m) {
     }
     else if (k === "tff") body.push(`${p.name} = tff(${from(p, "t")}, ${from(p, "clk")}${p.rst ? opt("rst", "rst") : ""})`);
     else if (k === "jkff") body.push(`${p.name} = jkff(${from(p, "j")}, ${from(p, "k")}, ${from(p, "clk")}${p.rst ? opt("rst", "rst") : ""})`);
-    else if (k === "mux") body.push(`${p.name} = mux(${insOf(p).slice(0, -1).map(pin => from(p, pin)).join(", ")}, sel = ${from(p, "sel")})`);
+    else if (k === "mux") body.push(`${p.name} = mux(${insOf(p, m).slice(0, -1).map(pin => from(p, pin)).join(", ")}, sel = ${from(p, "sel")})`);
     else if (k === "add") body.push(`${p.name} = add(${from(p, "a")}, ${from(p, "b")}${p.cin ? opt("cin", "cin") : ""})`);
     else if (k === "compare") body.push(`${p.name} = compare(${from(p, "a")}, ${from(p, "b")})`);
     else if (k === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
@@ -478,7 +507,7 @@ function genCode(m) {
       else body.push(`${p.name} = ram(${pin("addr", p.abits || 4)}, ${pin("din", p.bits || 8)}, ${from(p, "we")}, ${from(p, "clk")}${data})`);
     }
     else if (k === "const") body.push(`${p.name} = ${lit(p.value || 0, p.bits || 1)}`);   /* the page finds it by this line */
-    else if (k === "chip") body.push(`${p.name} = ${p.comp}(${p.ins.map(([n, w]) => { const v = from(p, n); return `${n} = ${v === "0" ? lit(0, w) : v}`; }).join(", ")})`);
+    else if (k === "chip") body.push(`${p.name} = ${p.comp}(${chipPins(m, p).ins.map(([n, w]) => { const v = from(p, n); return `${n} = ${v === "0" ? lit(0, w) : v}`; }).join(", ")})`);
     else if (k === "split") {
       /* one line per piece, the first first: the page finds the split by it */
       let src = from(p, "in");
@@ -491,10 +520,40 @@ function genCode(m) {
       }).join(", ")}}`);
     }
   }
+  const sinks = sh.parts.filter(p => SINK.has(p.kind)).map(p => `${p.name} = ${from(p, "in")}`);
+  return { body, sinks };
+}
+const DECL = { input: "input ", button: "button", clock: "clock ", output: "output", led: "led   ", hex: "hex   ", seg7: "seg7  " };
+const bitsOf = p => (p.bits || 1) > 1 ? `[${p.bits}]` : "";
+function componentText(m, name) {
+  const sh = m.chips[name], { ins, outs } = chipPins(m, name), { body, sinks } = sheetLines(m, sh);
+  const pins = l => l.map(([n, w]) => n + (w > 1 ? `[${w}]` : "")).join(", ");
+  return [`component ${name}(${pins(ins)}) -> (${pins(outs)}) {`, ...[...body, ...sinks].map(l => "    " + l), "}"].join("\n");
+}
+/* a sheet as a whole circuit: the chips it needs, its pins as inputs and outputs */
+function circuitText(m, sh, title, chips) {
+  const lines = [`circuit "${(title || "My circuit").replace(/"/g, "'")}"`, "", "# drawn in the Wire playground", ""];
+  if (m.defs) lines.push(m.defs.trim(), "");   /* the chips: imported or written out */
+  for (const c of chips) lines.push(componentText(m, c), "");
+  for (const k of Object.keys(DECL)) {
+    const ps = sh.parts.filter(p => p.kind === k);
+    if (ps.length) lines.push(`${DECL[k]} ${ps.map(p => p.name + bitsOf(p)).join(", ")}`);
+  }
+  const { body, sinks } = sheetLines(m, sh);
   if (body.length) lines.push("", ...body);
-  const sinks = m.parts.filter(p => SINK.has(p.kind));
-  if (sinks.length) lines.push("", ...sinks.map(p => `${p.name} = ${from(p, "in")}`));
+  if (sinks.length) lines.push("", ...sinks);
   return lines.join("\n") + "\n";
+}
+/* the whole drawing as Wire: every chip you drew, then the main sheet */
+function genCode(m) {
+  const all = [];
+  for (const c of Object.keys(m.chips || {})) for (const d of [...chipsUsed(m, m.chips[c]), c]) if (!all.includes(d)) all.push(d);
+  return circuitText(m, m, m.title, all);
+}
+/* what the page shows: the sheet on screen, as a circuit you can try */
+function canvasCode(m) {
+  const sh = sheet(m);
+  return sh === m ? genCode(m) : circuitText(m, sh, m.at, chipsUsed(m, sh));
 }
 
 /* ======================================== Wire, compiled to WebAssembly once */
@@ -547,7 +606,7 @@ const mainPath = () => {
   const d = mode === "write" ? dir : (model && model.dir) || "";
   return (d ? d + "/" : "") + fileName() + ext();
 };
-const sourceNow = () => mode === "draw" ? genCode(model) : src.value;
+const sourceNow = () => mode === "draw" ? genCode(model) : src.value;   /* the whole circuit */
 /* the Book panel: the pdfs by their full address (the circuit is shown from a
  * blob: page, where a name next to this page would not resolve), and a book
  * whose examples you opened first (Chu for examples/chu/...) */
@@ -578,11 +637,17 @@ function schedule(ms = 350) { clearTimeout(timer); timer = setTimeout(() => comp
 
 /* revertTo: in drawing mode, a change that breaks the circuit is undone */
 async function compile(revertTo) {
-  const seq = ++runSeq, path = mainPath(), text = sourceNow();
+  const seq = ++runSeq, path = mainPath(), text = mode === "draw" ? canvasCode(model) : src.value;
   let r;
   try { r = await wire([...bookArgs(), "-o", "/out.html", path], path, text); }
   catch (e) { return fatal(e); }
   if (seq !== runSeq) return;
+  if (r.code === 0 && mode === "draw" && revertTo && sheet(model) !== model) {
+    /* a change inside a chip must also work where the chip is used */
+    const f = await wire(["--check", path], path, genCode(model));
+    if (seq !== runSeq) return;
+    if (f.code !== 0) { r = { code: f.code, err: f.err, read: r.read, where: " (where the chip is used)" }; }
+  }
   if (r.code === 0) {
     errLine = 0;
     signal.className = "ok";
@@ -613,7 +678,7 @@ async function compile(revertTo) {
     showProps();
     signal.className = "ok";
     msg.className = "err";
-    msg.textContent = "Not done: " + r.err.trim().split("\n")[0].replace(/^.*?:\d+:\d+: (syntax )?error: /, "");
+    msg.textContent = "Not done: " + r.err.trim().split("\n")[0].replace(/^.*?:\d+:\d+: (syntax )?error: /, "") + (r.where || "");
     return;
   } else showError(r.err.trim() || `Wire stopped (exit ${r.code}).`, path);
   if (mode === "write") paint();
@@ -647,7 +712,9 @@ function show(html) {
   if (mode === "draw") {
     let keep = {};
     try { keep = frames[front].contentWindow.wireEditState ? frames[front].contentWindow.wireEditState() : {}; } catch (e) {}
-    const edit = { pos: Object.fromEntries(model.parts.map(p => [p.name, [p.x, p.y]])), view: keep.view || null, states: keep.states || {} };
+    const sh = sheet(model);
+    if (sh.tidy) keep = {};   /* a chip opened for the first time is laid out afresh */
+    const edit = { pos: sh.tidy ? {} : Object.fromEntries(sh.parts.map(p => [p.name, [p.x, p.y]])), view: keep.view || null, states: keep.states || {} };
     html = html.replace("<head>", () => "<head><script>window.WIRE_EDIT=" + JSON.stringify(edit).replace(/</g, "\\u003c") + "<\/script>");
   }
   const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
@@ -659,6 +726,10 @@ function show(html) {
     frontUrl = url;
     front = 1 - front;
     $("loading").hidden = true;
+    if (mode === "draw" && sheet(model).tidy) {   /* keep where the page put it */
+      delete sheet(model).tidy;
+      try { frames[front].contentWindow.document.getElementById("tidy").click(); } catch (e) {}
+    }
   };
   back.src = url;
 }
@@ -685,11 +756,20 @@ function undo() {
 window.wireCanvas = {
   add(kind, x, y) {
     const comp = kind.startsWith("chip:") ? kind.slice(5) : null;
-    if (comp ? !(model.comps && model.comps[comp]) : !KINDS[kind] || !KINDS[kind].group) return;
+    if (comp ? !((model.comps && model.comps[comp]) || (model.chips && model.chips[comp])) : !KINDS[kind] || !KINDS[kind].group) return;
+    if (comp && model.at && model.chips[comp] && uses(model, comp, model.at)) {
+      msg.className = "err"; msg.textContent = `${comp} cannot go inside ${model.at}: ${comp === model.at ? "a chip cannot hold itself" : `${comp} has ${model.at} inside it`}.`; return;
+    }
+    if (model.at && ["button", "clock", "led", "hex", "seg7"].includes(kind)) {
+      msg.className = "err";
+      msg.textContent = "A chip talks to the outside through its inputs and outputs: put buttons, clocks and lights in the main circuit (a clock comes in as an input).";
+      return;
+    }
     disarm();
     change(m => {
-      const p = comp ? { id: m.next++, kind: "chip", comp, name: freshName("chip"), x, y, ins: clone(m.comps[comp].ins), outs: clone(m.comps[comp].outs) }
-                     : { id: m.next++, kind, name: freshName(kind), x, y };
+      const sh = sheet(m), pins = comp && chipPins(m, comp);
+      const p = comp ? { id: sh.next++, kind: "chip", comp, name: freshName("chip"), x, y, ins: clone(pins.ins), outs: clone(pins.outs) }
+                     : { id: sh.next++, kind, name: freshName(kind), x, y };
       if (KINDS[kind] && KINDS[kind].bits) p.bits = KINDS[kind].bits;
       if (KINDS[kind] && KINDS[kind].n) p.n = KINDS[kind].n;
       if (kind === "split") { p.bits = 8; p.ranges = [[7, 4], [3, 0]]; }
@@ -697,7 +777,7 @@ window.wireCanvas = {
       if (kind === "decoder") p.bits = 2;
       if (kind === "encoder") p.bits = 4;
       if (kind === "rom" || kind === "ram") { p.bits = 8; p.abits = 4; p.data = kind === "rom" ? "00" : ""; }
-      m.parts.push(p);
+      sheet(m).parts.push(p);
       selectedName = p.name;
     });
   },
@@ -713,15 +793,16 @@ window.wireCanvas = {
     const fp = partByName(o.name), tp = partByName(i.name);
     if (!fp || !tp) return;
     change(m => {
-      m.links = m.links.filter(l => !(l.to.id === tp.id && l.to.pin === i.pin));
-      m.links.push({ from: { id: fp.id, pin: o.pin }, to: { id: tp.id, pin: i.pin } });
+      const sh = sheet(m);
+      sh.links = sh.links.filter(l => !(l.to.id === tp.id && l.to.pin === i.pin));
+      sh.links.push({ from: { id: fp.id, pin: o.pin }, to: { id: tp.id, pin: i.pin } });
       if (tp.kind === "dff" && i.pin === "d") delete tp.w;   /* its width now comes from what is wired in */
     });
   },
   disconnect(i) {
     const tp = partByName(i.name);
-    if (!tp || !model.links.some(l => l.to.id === tp.id && l.to.pin === i.pin)) return;
-    change(m => { m.links = m.links.filter(l => !(l.to.id === tp.id && l.to.pin === i.pin)); });
+    if (!tp || !sheet(model).links.some(l => l.to.id === tp.id && l.to.pin === i.pin)) return;
+    change(m => { const sh = sheet(m); sh.links = sh.links.filter(l => !(l.to.id === tp.id && l.to.pin === i.pin)); });
   },
   moved(name, x, y) {
     const p = partByName(name);
@@ -732,10 +813,17 @@ window.wireCanvas = {
   },
   movedAll(pos) {
     undoStack.push(clone(model));
-    model.parts.forEach(p => { if (pos[p.name]) { p.x = pos[p.name][0]; p.y = pos[p.name][1]; } });
+    sheet(model).parts.forEach(p => { if (pos[p.name]) { p.x = pos[p.name][0]; p.y = pos[p.name][1]; } });
     persist();
   },
   selected(name) { selectedName = name; showProps(); },
+  /* a chip clicked twice: a chip you drew opens here, to change its inside */
+  openChip(comp) {
+    if (!model.chips || !model.chips[comp]) return false;
+    const path = model.at ? (model.path && model.path.length ? model.path : [model.at]) : [];
+    setTimeout(() => goSheet(comp, [...path, comp]), 0);
+    return true;
+  },
   remove(name) { removePart(name); },
   undo() { undo(); },
   viewMoved() {}
@@ -744,8 +832,9 @@ function removePart(name) {
   const p = partByName(name);
   if (!p) return;
   change(m => {
-    m.parts = m.parts.filter(q => q.id !== p.id);
-    m.links = m.links.filter(l => l.from.id !== p.id && l.to.id !== p.id);
+    const sh = sheet(m);
+    sh.parts = sh.parts.filter(q => q.id !== p.id);
+    sh.links = sh.links.filter(l => l.from.id !== p.id && l.to.id !== p.id);
   });
   selectedName = null;
   showProps();
@@ -775,9 +864,84 @@ function paletteButton(kind, label, icon, title) {
   b.addEventListener("click", () => arm(kind));
   return b;
 }
-/* the circuit's own chips (the components it was made with), to place more of */
+/* the sheets: the main circuit and each chip you drew; and where you are */
+function goSheet(name, path) {
+  model.at = name || null;
+  model.path = name ? path : [];
+  selectedName = null;
+  disarm();
+  persist(); showGen(); showProps(); showSheets();
+  compile();
+}
+function showSheets() {
+  const box = $("sheets"), crumbs = $("crumbs");
+  if (!box || !model) return;
+  box.textContent = "";
+  const btn = (label, cur, fn, title) => {
+    const b = document.createElement("button");
+    b.textContent = label; b.title = title || ""; b.setAttribute("aria-current", cur ? "true" : "false");
+    b.onclick = fn; box.append(b); return b;
+  };
+  btn(model.title && model.title !== "My circuit" ? model.title : "Main circuit", !model.at, () => goSheet(null), "The circuit itself");
+  for (const c of Object.keys(model.chips || {})) btn(c, model.at === c, () => goSheet(c, [c]), `Open the chip ${c} to change its inside`);
+  btn("+ New chip", false, newChip, "Make a chip: draw its inside, its inputs and outputs are its pins").className = "add";
+  /* inside a chip only inputs and outputs talk to the outside */
+  for (const k of ["button", "clock", "led", "hex", "seg7"]) {
+    const b = document.querySelector(`.parts button[data-kind="${k}"]`);
+    if (b) b.hidden = !!model.at;
+  }
+  crumbs.textContent = "";
+  if (!model.at) return;
+  const path = model.path && model.path.length ? model.path : [model.at];
+  const back = document.createElement("button");
+  back.textContent = "Main circuit"; back.onclick = () => goSheet(null);
+  crumbs.append(back);
+  path.forEach((c, i) => {
+    crumbs.append(" › ");
+    if (i === path.length - 1) { const b = document.createElement("b"); b.textContent = c; crumbs.append(b); return; }
+    const b = document.createElement("button");
+    b.textContent = c; b.onclick = () => goSheet(c, path.slice(0, i + 1));
+    crumbs.append(b);
+  });
+  const del = document.createElement("button");
+  del.textContent = "delete this chip"; del.style.marginLeft = "12px";
+  del.onclick = () => deleteChip(model.at);
+  crumbs.append(del);
+}
+function newChip() {
+  const name = (prompt("Name of the new chip (letters, digits and _), like half_adder:") || "").trim();
+  if (!name) return;
+  const taken = n => (model.chips && model.chips[n]) || (model.comps && model.comps[n]);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || RESERVED.has(name) || taken(name)) {
+    msg.className = "err";
+    msg.textContent = taken(name) ? `There is already a chip called ${name}.` : `${name} cannot be a chip's name: use letters, digits and _, starting with a letter, and not a word of Wire.`;
+    return;
+  }
+  change(m => {
+    m.chips = m.chips || {};
+    /* a start: two inputs and an output, its pins */
+    m.chips[name] = { next: 4, parts: [
+      { id: 1, kind: "input", name: "a", x: 0, y: 0, bits: 1 },
+      { id: 2, kind: "input", name: "b", x: 0, y: 60, bits: 1 },
+      { id: 3, kind: "output", name: "y", x: 300, y: 30, bits: 1 }], links: [] };
+  });
+  goSheet(name, [name]);
+  msg.className = "";
+  msg.textContent = `Draw the inside of ${name}. Its inputs and outputs are its pins; rename them as you like. Then go back to the main circuit and place it from Chips.`;
+}
+function deleteChip(name) {
+  const where = [["the main circuit", model], ...Object.entries(model.chips || {})].filter(([n, sh]) => n !== name && sh.parts.some(p => p.kind === "chip" && p.comp === name));
+  if (where.length) { msg.className = "err"; msg.textContent = `${name} is used in ${where.map(w => w[0]).join(", ")}; delete it there first.`; return; }
+  if (!confirm(`Delete the chip ${name}? (Undo brings it back.)`)) return;
+  change(m => { delete m.chips[name]; m.at = null; m.path = []; });
+  selectedName = null; showSheets(); showProps();
+}
+
+/* the chips there are (yours and the circuit's own), to place */
 function showChips() {
-  const box = document.querySelector('.parts[data-group="chips"]'), names = Object.keys((model && model.comps) || {});
+  const box = document.querySelector('.parts[data-group="chips"]');
+  const names = [...Object.keys((model && model.chips) || {}), ...Object.keys((model && model.comps) || {})]
+    .filter((c, i, a) => a.indexOf(c) === i && !(model.at && model.chips && model.chips[c] && uses(model, c, model.at)));
   box.textContent = "";
   $("chips-h").hidden = !names.length;
   for (const c of names) box.append(paletteButton("chip:" + c, c, ICONS.chip, `Drag the chip ${c} onto the circuit, or click it and then the circuit`));
@@ -822,7 +986,7 @@ function showProps() {
       nm.value = p.name; return;
     }
     if (v === p.name) return;
-    if (model.parts.some(q => q !== p && q.name.toLowerCase() === v.toLowerCase())) {
+    if (sheet(model).parts.some(q => q !== p && q.name.toLowerCase() === v.toLowerCase())) {
       msg.className = "err"; msg.textContent = `There is already a part called ${v}.`; nm.value = p.name; return;
     }
     selectedName = v;
@@ -858,7 +1022,8 @@ function showProps() {
       change(m => {
         p.n = v;
         const keep = new Set(insOf(p));
-        m.links = m.links.filter(l => l.to.id !== p.id || keep.has(l.to.pin));
+        const sh = sheet(m);
+        sh.links = sh.links.filter(l => l.to.id !== p.id || keep.has(l.to.pin));
       });
     });
   }
@@ -869,7 +1034,7 @@ function showProps() {
     row.append(l);
     c.addEventListener("change", () => change(m => {
       p[key] = c.checked;
-      if (!c.checked) m.links = m.links.filter(x => !(x.to.id === p.id && x.to.pin === key));
+      if (!c.checked) { const sh = sheet(m); sh.links = sh.links.filter(x => !(x.to.id === p.id && x.to.pin === key)); }
     }));
   };
   if (k === "decoder" || k === "encoder") {
@@ -925,7 +1090,8 @@ function showProps() {
         p.ranges = rs;
         if (k === "join") delete p.consts;
         const keepIn = new Set(insOf(p)), keepOut = new Set(outsOf(p));
-        m.links = m.links.filter(l => (l.to.id !== p.id || keepIn.has(l.to.pin)) && (l.from.id !== p.id || keepOut.has(l.from.pin)));
+        const sh = sheet(m);
+        sh.links = sh.links.filter(l => (l.to.id !== p.id || keepIn.has(l.to.pin)) && (l.from.id !== p.id || keepOut.has(l.from.pin)));
       });
     });
   }
@@ -941,7 +1107,7 @@ function showProps() {
 }
 
 /* ---- the Wire the drawing makes */
-function showGen() { $("gen").innerHTML = highlight(genCode(model)); showChips(); }
+function showGen() { $("gen").innerHTML = highlight(genCode(model)); showChips(); showSheets(); }
 $("undo").onclick = undo;
 $("tidy").onclick = () => {
   /* the circuit page lays it out in columns and tells us where it put things */
@@ -1066,16 +1232,25 @@ function wireDefs(text) {
       if (/^\s*component\b/.test(line)) block = [];
     }
     for (const ch of code) { if (ch === "{") depth++; else if (ch === "}") depth--; }
-    if (block) { block.push(line); if (depth === 0 && /\}/.test(code)) { out.push(block.join("\n")); block = null; } }
+    if (block) {
+      block.push(line);
+      if (depth === 0 && /\}/.test(code)) {
+        const m = /^\s*component\s+([A-Za-z_]\w*)/.exec(block[0]);
+        out.push({ comp: m ? m[1] : null, text: block.join("\n") });
+        block = null;
+      }
+    }
   }
-  return out.join("\n\n");
+  return out.map(x => typeof x === "string" ? { comp: null, text: x } : x);
 }
 /* a netlist (wire --json) as a drawing; lay: where the page draws each node
  * (and chip) now; defs, dir: the chips' Wire and where its imports are */
-function netlistToModel(D, lay, defs, dir) {
-  const N = D.nodes, top = new Set(N.map((n, i) => i).filter(i => N[i].inst === 0));
-  const chips = D.insts.map((ins, c) => ({ ins, c })).filter(x => x.c > 0 && x.ins.parent === 0);
-  const kindOf = n => n.kind === "merge" ? "join" : n.kind;
+function buildSheet(D, scope, lay, comps) {
+  /* scope: the instance whose inside this is (0: the circuit); inside a chip
+   * its pins (pin_in, pin_out) are the sheet's inputs and outputs */
+  const N = D.nodes, top = new Set(N.map((n, i) => i).filter(i => N[i].inst === scope));
+  const chips = D.insts.map((ins, c) => ({ ins, c })).filter(x => x.c > 0 && x.ins.parent === scope);
+  const kindOf = n => n.kind === "merge" ? "join" : n.kind === "pin_in" ? "input" : n.kind === "pin_out" ? "output" : n.kind;
   /* who drives each net seen from the top: a part's pin, or a chip's */
   const drv = new Map();
   for (const i of top) N[i].out.forEach((net, p) => drv.set(net, { i, p }));
@@ -1091,6 +1266,7 @@ function netlistToModel(D, lay, defs, dir) {
     if (n.kind === "const") continue;
     if (!KINDS[kindOf(n)]) return { why: `the drawing cannot show ${NOT_DRAWN[n.kind] || n.kind}` };
     if (n.kind === "counter" && n.inNames.some(x => !["clk", "en", "rst"].includes(x))) return { why: "the drawing's counter has no load, d or down" };
+    if (scope && ["button", "clock", "led", "hex", "seg7", "keypad"].includes(n.kind)) return { why: "a chip with a button, clock or light inside" };
     if (n.kind === "led" && D.nets[n.in[0]].w !== 1) return { why: "an LED in the drawing is one bit" };
   }
   /* names: inputs, outputs and chips keep theirs, the rest too when they can */
@@ -1101,8 +1277,8 @@ function netlistToModel(D, lay, defs, dir) {
   const readers = net => [...top].filter(j => N[j].in.includes(net));
   const shown = i => N[i].kind !== "const" || (N[i].value && readers(N[i].out[0]).some(j => N[j].kind !== "merge"));
   const order = [...top].filter(shown)
-    .sort((a, b) => (SOURCE.has(N[b].kind) || SINK.has(N[b].kind)) - (SOURCE.has(N[a].kind) || SINK.has(N[a].kind)));
-  for (const i of order) if (SOURCE.has(N[i].kind) || SINK.has(N[i].kind)) keep(i, N[i].name);
+    .sort((a, b) => (SOURCE.has(kindOf(N[b])) || SINK.has(kindOf(N[b]))) - (SOURCE.has(kindOf(N[a])) || SINK.has(kindOf(N[a]))));
+  for (const i of order) if (SOURCE.has(kindOf(N[i])) || SINK.has(kindOf(N[i]))) keep(i, N[i].name);
   for (const { ins, c } of chips) keep("c" + c, ok(ins.name) ? ins.name : (() => { for (let k = 1; ; k++) if (ok("chip" + k)) return "chip" + k; })());
   for (const i of order) {
     if (names.has(i)) continue;
@@ -1127,7 +1303,7 @@ function netlistToModel(D, lay, defs, dir) {
     if (d.chip != null) { links.push({ from: { id: idOf.get("c" + d.chip), pin: d.pin }, to }); return; }
     if (N[d.i].kind === "const" && !idOf.has(d.i)) return;   /* a 0, or only in a join: the pin stays unwired */
     const f = N[d.i];
-    links.push({ from: { id: idOf.get(d.i), pin: f.kind === "split" ? String(d.p) : f.outNames[d.p] }, to });
+    links.push({ from: { id: idOf.get(d.i), pin: f.kind === "split" ? String(d.p) : f.kind === "pin_in" ? "out" : f.outNames[d.p] }, to });
   };
   for (const i of order) {
     const n = N[i], k = kindOf(n), p = { id: idOf.get(i), kind: k, name: names.get(i), x: 0, y: 0 };
@@ -1157,9 +1333,8 @@ function netlistToModel(D, lay, defs, dir) {
       n.in.forEach((net, j) => { const d = drv.get(net), c = constOf(net); if (c && c.value && !idOf.has(d.i)) (p.consts = p.consts || {})[j] = c.value; });
     }
     parts.push(p);
-    n.in.forEach((net, j) => linkTo(net, { id: p.id, pin: GATE_NAMES[k] || k === "join" ? String(j) : k === "split" ? "in" : n.inNames[j] }));
+    if (n.kind !== "pin_in") n.in.forEach((net, j) => linkTo(net, { id: p.id, pin: GATE_NAMES[k] || k === "join" ? String(j) : k === "split" ? "in" : k === "output" ? "in" : n.inNames[j] }));
   }
-  const comps = {};
   for (const cp of chipPins) {
     const ins = D.insts[cp.c], p = { id: idOf.get("c" + cp.c), kind: "chip", comp: ins.comp, name: names.get("c" + cp.c), x: 0, y: 0,
       ins: cp.ins.map(x => [x[0], x[1]]), outs: cp.outs.map(x => [x[0], x[1]]) };
@@ -1168,8 +1343,29 @@ function netlistToModel(D, lay, defs, dir) {
     cp.ins.forEach(x => linkTo(x[2], { id: p.id, pin: x[0] }));
     comps[ins.comp] = { ins: p.ins, outs: p.outs };
   }
-  if (chips.length && !defs) return { why: "Wire could not find where its chips are written" };
-  return { model: { title: D.title || "My circuit", next, parts, links, defs: chips.length ? defs : "", dir: chips.length ? dir : "", comps } };
+  return { parts, links, next };
+}
+/* a netlist (wire --json) as a drawing: the circuit, and a sheet for each
+ * chip written in this Wire (an imported chip stays a box, as it is) */
+function netlistToModel(D, lay, defs, dir) {
+  const comps = {}, main = buildSheet(D, 0, lay, comps);
+  if (main.why) return main;
+  const inline = new Set(defs.filter(d => d.comp).map(d => d.comp)), chips = {}, keepText = new Set();
+  for (let again = true; again; ) {
+    again = false;
+    for (const comp of Object.keys(comps)) {
+      if (chips[comp] || keepText.has(comp)) continue;
+      again = true;
+      const c = D.insts.findIndex((ins, i) => i > 0 && ins.comp === comp);
+      const sh = inline.has(comp) && c > 0 ? buildSheet(D, c, null, comps) : { why: "imported" };
+      if (sh.why) keepText.add(comp); else { sh.tidy = true; chips[comp] = sh; }
+    }
+  }
+  for (const c of Object.keys(chips)) delete comps[c];
+  const text = defs.filter(d => !d.comp || !chips[d.comp]).map(d => d.text).join("\n\n");
+  if (Object.keys(comps).length && !text) return { why: "Wire could not find where its chips are written" };
+  return { model: { title: D.title || "My circuit", next: main.next, parts: main.parts, links: main.links,
+                    defs: Object.keys(comps).length ? text : "", dir: Object.keys(comps).length ? dir : "", comps, chips, at: null, path: [] } };
 }
 async function makeView(to) {
   if (to === "draw") {
@@ -1338,8 +1534,9 @@ end rtl;
 `;
 $("new").onclick = () => {
   if (mode === "draw") {
-    if (model.parts.length > 0 && !confirm("Start a new drawing? This one is not kept (Undo brings it back).")) return;
-    change(m => { const s = STARTER_DRAWING(); m.parts = []; m.links = []; m.next = s.next; });
+    if ((model.parts.length > 0 || Object.keys(model.chips || {}).length) && !confirm("Start a new drawing? This one is not kept (Undo brings it back).")) return;
+    change(m => { const s = STARTER_DRAWING(); m.parts = []; m.links = []; m.next = s.next; m.chips = {}; m.at = null; m.path = []; m.defs = ""; m.comps = {}; m.dir = ""; });
+    showSheets();
     selectedName = null; showProps();
   } else {
     if (dirty && !confirm("Start again? Your circuit is not kept.")) return;
@@ -1409,7 +1606,13 @@ addEventListener("keydown", e => {
 
 /* ===================================== start: a shared link, what you had,
  * else a small drawing to begin from */
-function validModel(m) { return m && Array.isArray(m.parts) && Array.isArray(m.links) && m.parts.every(p => KINDS[p.kind] && typeof p.name === "string"); }
+const validSheet = m => m && Array.isArray(m.parts) && Array.isArray(m.links) && m.parts.every(p => KINDS[p.kind] && typeof p.name === "string");
+function validModel(m) {
+  if (!validSheet(m)) return false;
+  if (m.chips && (typeof m.chips !== "object" || !Object.values(m.chips).every(validSheet))) return false;
+  if (m.at && !(m.chips && m.chips[m.at])) { m.at = null; m.path = []; }
+  return true;
+}
 (function start() {
   const q = new URLSearchParams(location.hash.slice(1));
   const okText = v => v && typeof v.text === "string" ? { text: v.text, dir: typeof v.dir === "string" ? v.dir : "" } : null;

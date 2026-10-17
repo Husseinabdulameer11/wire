@@ -1438,6 +1438,7 @@ function click(n, target) {
   if (n.kind === "chip") {
     /* drawing: the first click picks the chip (to rename or delete it), the next opens it */
     if (editing() && selected !== n) { select(n); return; }
+    if (editing() && hostCall("openChip", n.comp)) return;   /* a chip drawn in the playground opens there */
     openView(n.inst); return;
   }
   if (n.kind === "input") {
