@@ -226,6 +226,10 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
       <div class="parts" data-group="gates"></div>
       <h2>Building blocks</h2>
       <div class="parts" data-group="blocks"></div>
+      <h2>Buses</h2>
+      <div class="parts" data-group="buses"></div>
+      <h2 id="chips-h" hidden>Chips</h2>
+      <div class="parts" data-group="chips"></div>
       <p class="how" id="how"><b>Drag a part</b> onto the circuit (or tap it, then tap the circuit). <b>Drag from pin to pin</b> to wire them; drag from an input pin to empty space to unwire it (an unwired input reads 0). Click a part to change it; <b>Delete</b> removes it.</p>
       <h2>Selected part</h2>
       <div id="props"><span class="how">Click a part in the circuit to rename it or change its size.</span></div>
@@ -285,26 +289,51 @@ const KINDS = {
   led:     { label: "LED", group: "io", prefix: "led" },
   hex:     { label: "Hex digit", group: "io", prefix: "digit" },
   and: { label: "AND", group: "gates", n: 2 }, or: { label: "OR", group: "gates", n: 2 },
-  not: { label: "NOT", group: "gates" },
+  not: { label: "NOT", group: "gates" }, buf: { label: "Buffer", group: "gates" },
   nand: { label: "NAND", group: "gates", n: 2 }, nor: { label: "NOR", group: "gates", n: 2 },
   xor: { label: "XOR", group: "gates", n: 2 }, xnor: { label: "XNOR", group: "gates", n: 2 },
   mux:     { label: "Mux", group: "blocks", n: 2 },
   add:     { label: "Adder", group: "blocks", prefix: "add" },
   compare: { label: "Compare", group: "blocks", prefix: "cmp" },
   dff:     { label: "D flip-flop", group: "blocks", prefix: "ff" },
-  counter: { label: "Counter", group: "blocks", prefix: "cnt", bits: 4 }
+  tff:     { label: "T flip-flop", group: "blocks", prefix: "tff" },
+  jkff:    { label: "JK flip-flop", group: "blocks", prefix: "jk" },
+  decoder: { label: "Decoder", group: "blocks", prefix: "dec" },
+  encoder: { label: "Encoder", group: "blocks", prefix: "enc" },
+  counter: { label: "Counter", group: "blocks", prefix: "cnt", bits: 4 },
+  const:   { label: "Constant", group: "buses", prefix: "k", bits: 4 },
+  split:   { label: "Split", group: "buses", prefix: "split" },
+  join:    { label: "Join", group: "buses", prefix: "join" },
+  chip:    { label: "Chip", prefix: "chip" }      /* from the palette's Chips: one of the circuit's components */
 };
+/* a bus range as text and back: [7, 4] is 7:4, [0, 0] is 0 */
+const rangeText = r => r[0] === r[1] ? String(r[0]) : `${r[0]}:${r[1]}`;
+const rangeW = r => r[0] - r[1] + 1;
+function parseRanges(t) {
+  const rs = t.split(",").map(x => x.trim()).filter(Boolean).map(x => {
+    const m = /^(\d+)(?:\s*:\s*(\d+))?$/.exec(x);
+    return m ? [+m[1], m[2] == null ? +m[1] : +m[2]] : null;
+  });
+  return rs.length && rs.every(r => r && r[0] >= r[1] && r[0] < 32) ? rs : null;
+}
 const SOURCE = new Set(["input", "button", "clock"]), SINK = new Set(["output", "led", "hex"]);
 const insOf = p => {
   const k = p.kind;
   if (SOURCE.has(k)) return [];
-  if (SINK.has(k) || k === "not") return ["in"];
+  if (SINK.has(k) || k === "not" || k === "buf" || k === "encoder") return ["in"];
+  if (k === "tff") return ["t", "clk", ...(p.rst ? ["rst"] : [])];
+  if (k === "jkff") return ["j", "k", "clk", ...(p.rst ? ["rst"] : [])];
+  if (k === "decoder") return ["sel", ...(p.en ? ["en"] : [])];
   if (GATE_NAMES[k]) return Array.from({ length: p.n || 2 }, (_, i) => String(i));
   if (k === "mux") return [...Array.from({ length: p.n || 2 }, (_, i) => "d" + i), "sel"];
   if (k === "add") return p.cin ? ["a", "b", "cin"] : ["a", "b"];
   if (k === "compare") return ["a", "b"];
   if (k === "dff") return ["d", "clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : [])];
   if (k === "counter") return ["clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : [])];
+  if (k === "split") return ["in"];
+  if (k === "const") return [];
+  if (k === "join") return p.ranges.map((_, i) => String(i));
+  if (k === "chip") return p.ins.map(x => x[0]);
   return [];
 };
 const outsOf = p => {
@@ -312,8 +341,11 @@ const outsOf = p => {
   if (SINK.has(k)) return [];
   if (k === "add") return ["sum", "cout"];
   if (k === "compare") return ["lt", "eq", "gt"];
-  if (k === "dff") return ["q", "nq"];
+  if (k === "dff" || k === "tff" || k === "jkff") return ["q", "nq"];
+  if (k === "encoder") return ["out", "valid"];
   if (k === "counter") return ["q", "carry"];
+  if (k === "split") return p.ranges.map((_, i) => String(i));
+  if (k === "chip") return p.outs.map(x => x[0]);
   return ["out"];
 };
 
@@ -336,7 +368,16 @@ const ICONS = {
   add: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M15 13H25M20 8V18"/>',
   compare: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M15 10H25M15 16H25"/>',
   dff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="17" y="14">D</text>',
-  counter: '<rect class="f" x="7" y="3" width="26" height="20" rx="2"/><text x="10" y="17">+1</text>'
+  counter: '<rect class="f" x="7" y="3" width="26" height="20" rx="2"/><text x="10" y="17">+1</text>',
+  const: '<rect class="f" x="6" y="6" width="24" height="14" rx="2"/><text x="9" y="17">0x</text><path d="M30 13H36"/>',
+  buf: '<path d="M4 13H11"/><path class="f" d="M11 5L27 13L11 21Z"/><path d="M27 13H36"/>',
+  tff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="17" y="14">T</text>',
+  jkff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="15" y="14">JK</text>',
+  decoder: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M4 13H9M31 7H36M31 11H36M31 15H36M31 19H36"/>',
+  encoder: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M4 7H9M4 11H9M4 15H9M4 19H9M31 13H36"/>',
+  split: '<path d="M4 13H16" stroke-width="3"/><path class="f" d="M16 4H19V22H16Z"/><path d="M19 8H34M19 18H34"/>',
+  join: '<path d="M6 8H21M6 18H21"/><path class="f" d="M21 4H24V22H21Z"/><path d="M24 13H36" stroke-width="3"/>',
+  chip: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M17 3A3 3 0 0 0 23 3"/><path d="M4 9H9M4 17H9M31 13H36"/>'
 };
 
 /* ============================================================ the drawing
@@ -381,11 +422,16 @@ function genCode(m) {
   const from = (p, pin) => {
     const l = into.get(p.id + ":" + pin), f = l && byId.get(l.from.id);
     if (!f) return "0";                          /* nothing wired: a 0 */
+    if (f.kind === "split") return `${f.name}_${l.from.pin}`;
+    if (f.kind === "join") return f.name;
+    if (f.kind === "chip") return `${f.name}.${l.from.pin}`;
     const outs = outsOf(f);
     return f.kind === "compare" || l.from.pin !== outs[0] ? `${f.name}.${l.from.pin}` : f.name;
   };
+  const lit = (v, w) => "0b" + (v >>> 0).toString(2).padStart(w, "0").slice(-w);
   const w = p => (p.bits || 1) > 1 ? `[${p.bits}]` : "";
   const lines = [`circuit "${(m.title || "My circuit").replace(/"/g, "'")}"`, "", "# drawn in the Wire playground", ""];
+  if (m.defs) lines.push(m.defs.trim(), "");   /* the chips: imported or written out */
   /* declarations, one line per kind, in the order the parts were added */
   const decl = { input: "input ", button: "button", clock: "clock ", output: "output", led: "led   ", hex: "hex   " };
   for (const k of Object.keys(decl)) {
@@ -393,6 +439,8 @@ function genCode(m) {
     if (ps.length) lines.push(`${decl[k]} ${ps.map(p => p.name + w(p)).join(", ")}`);
   }
   const body = [];
+  const regs = m.parts.filter(p => p.kind === "dff" && p.w);
+  if (regs.length) body.push(`wire ${regs.map(p => `${p.name}[${p.w}]`).join(", ")}`);
   for (const p of m.parts) {
     const k = p.kind, opt = (name, pin) => {
       const v = from(p, pin);
@@ -400,11 +448,29 @@ function genCode(m) {
     };
     if (GATE_NAMES[k]) body.push(`${p.name} = ${k}(${insOf(p).map(pin => from(p, pin)).join(", ")})`);
     else if (k === "not") body.push(`${p.name} = not(${from(p, "in")})`);
+    else if (k === "buf") body.push(`${p.name} = buf(${from(p, "in")})`);
+    else if (k === "encoder") body.push(`${p.name} = encoder(${from(p, "in")})`);
+    else if (k === "decoder") body.push(`${p.name} = decoder(${from(p, "sel")}${p.en ? opt("en", "en") : ""})`);
+    else if (k === "tff") body.push(`${p.name} = tff(${from(p, "t")}, ${from(p, "clk")}${p.rst ? opt("rst", "rst") : ""})`);
+    else if (k === "jkff") body.push(`${p.name} = jkff(${from(p, "j")}, ${from(p, "k")}, ${from(p, "clk")}${p.rst ? opt("rst", "rst") : ""})`);
     else if (k === "mux") body.push(`${p.name} = mux(${insOf(p).slice(0, -1).map(pin => from(p, pin)).join(", ")}, sel = ${from(p, "sel")})`);
     else if (k === "add") body.push(`${p.name} = add(${from(p, "a")}, ${from(p, "b")}${p.cin ? opt("cin", "cin") : ""})`);
     else if (k === "compare") body.push(`${p.name} = compare(${from(p, "a")}, ${from(p, "b")})`);
     else if (k === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
     else if (k === "counter") body.push(`${p.name} = counter(${from(p, "clk")}, bits = ${p.bits || 4}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
+    else if (k === "const") body.push(`${p.name} = ${lit(p.value || 0, p.bits || 1)}`);   /* the page finds it by this line */
+    else if (k === "chip") body.push(`${p.name} = ${p.comp}(${p.ins.map(([n]) => `${n} = ${from(p, n)}`).join(", ")})`);
+    else if (k === "split") {
+      /* one line per piece, the first first: the page finds the split by it */
+      let src = from(p, "in");
+      if (src === "0") { body.push(`wire ${p.name}_in[${p.bits}]`, `${p.name}_in = ${lit(0, p.bits)}`); src = `${p.name}_in`; }
+      p.ranges.forEach((r, i) => body.push(`${p.name}_${i} = ${src}[${rangeText(r)}]`));
+    } else if (k === "join") {
+      body.push(`${p.name} = {${p.ranges.map((r, i) => {
+        const v = from(p, String(i));
+        return v === "0" ? lit((p.consts && p.consts[i]) || 0, rangeW(r)) : v;
+      }).join(", ")}}`);
+    }
   }
   if (body.length) lines.push("", ...body);
   const sinks = m.parts.filter(p => SINK.has(p.kind));
@@ -458,7 +524,10 @@ const VIEW_NAMES = { draw: "Draw", wire: "Wire", vhdl: "VHDL" };
 const vhdlNow = () => mode === "write" && lang === "vhdl";
 const fileName = () => ($("name").value.replace(/[^A-Za-z0-9_]/g, "") || "my_circuit");
 const ext = () => vhdlNow() ? ".vhd" : ".wire";
-const mainPath = () => (mode === "write" && dir ? dir + "/" : "") + fileName() + ext();
+const mainPath = () => {
+  const d = mode === "write" ? dir : (model && model.dir) || "";
+  return (d ? d + "/" : "") + fileName() + ext();
+};
 const sourceNow = () => mode === "draw" ? genCode(model) : src.value;
 /* the Book panel: the pdfs by their full address (the circuit is shown from a
  * blob: page, where a name next to this page would not resolve), and a book
@@ -596,12 +665,16 @@ function undo() {
 /* what the circuit page tells us (window.parent.wireCanvas) */
 window.wireCanvas = {
   add(kind, x, y) {
-    if (!KINDS[kind]) return;
+    const comp = kind.startsWith("chip:") ? kind.slice(5) : null;
+    if (comp ? !(model.comps && model.comps[comp]) : !KINDS[kind] || !KINDS[kind].group) return;
     disarm();
     change(m => {
-      const p = { id: m.next++, kind, name: freshName(kind), x, y };
-      if (KINDS[kind].bits) p.bits = KINDS[kind].bits;
-      if (KINDS[kind].n) p.n = KINDS[kind].n;
+      const p = comp ? { id: m.next++, kind: "chip", comp, name: freshName("chip"), x, y, ins: clone(m.comps[comp].ins), outs: clone(m.comps[comp].outs) }
+                     : { id: m.next++, kind, name: freshName(kind), x, y };
+      if (KINDS[kind] && KINDS[kind].bits) p.bits = KINDS[kind].bits;
+      if (KINDS[kind] && KINDS[kind].n) p.n = KINDS[kind].n;
+      if (kind === "split") { p.bits = 8; p.ranges = [[7, 4], [3, 0]]; }
+      if (kind === "join") p.ranges = [[1, 1], [0, 0]];
       m.parts.push(p);
       selectedName = p.name;
     });
@@ -620,6 +693,7 @@ window.wireCanvas = {
     change(m => {
       m.links = m.links.filter(l => !(l.to.id === tp.id && l.to.pin === i.pin));
       m.links.push({ from: { id: fp.id, pin: o.pin }, to: { id: tp.id, pin: i.pin } });
+      if (tp.kind === "dff" && i.pin === "d") delete tp.w;   /* its width now comes from what is wired in */
     });
   },
   disconnect(i) {
@@ -661,22 +735,35 @@ function arm(kind) {
   document.querySelectorAll(".parts button").forEach(b => b.setAttribute("aria-pressed", b.dataset.kind === armed));
   if (armed) {
     msg.className = "";
-    const what = GATE_NAMES[armed] || armed === "not" ? `${KINDS[armed].label} gate` : KINDS[armed].label.toLowerCase();
+    const what = armed.startsWith("chip:") ? `chip ${armed.slice(5)}` : GATE_NAMES[armed] || armed === "not" ? `${KINDS[armed].label} gate` : KINDS[armed].label.toLowerCase();
     msg.textContent = `Now ${narrow() ? "tap" : "click"} the circuit where the ${what} goes.`;
     if (narrow()) pane("circuit");
   }
 }
 function disarm() { if (armed) arm(armed); }
-for (const [kind, k] of Object.entries(KINDS)) {
+function paletteButton(kind, label, icon, title) {
   const b = document.createElement("button");
   b.dataset.kind = kind;
   b.draggable = true;
   b.setAttribute("aria-pressed", "false");
-  b.title = `Drag the ${k.label.toLowerCase()} onto the circuit, or click it and then the circuit`;
-  b.innerHTML = `<svg viewBox="0 0 40 26" aria-hidden="true">${ICONS[kind]}</svg><span>${k.label}</span>`;
+  b.title = title;
+  b.innerHTML = `<svg viewBox="0 0 40 26" aria-hidden="true">${icon}</svg><span></span>`;
+  b.querySelector("span").textContent = label;
   b.addEventListener("dragstart", e => { e.dataTransfer.setData("text/x-wire-part", kind); e.dataTransfer.effectAllowed = "copy"; });
   b.addEventListener("click", () => arm(kind));
-  document.querySelector(`.parts[data-group="${k.group}"]`).append(b);
+  return b;
+}
+/* the circuit's own chips (the components it was made with), to place more of */
+function showChips() {
+  const box = document.querySelector('.parts[data-group="chips"]'), names = Object.keys((model && model.comps) || {});
+  box.textContent = "";
+  $("chips-h").hidden = !names.length;
+  for (const c of names) box.append(paletteButton("chip:" + c, c, ICONS.chip, `Drag the chip ${c} onto the circuit, or click it and then the circuit`));
+}
+for (const [kind, k] of Object.entries(KINDS)) {
+  if (!k.group) continue;
+  document.querySelector(`.parts[data-group="${k.group}"]`).append(
+    paletteButton(kind, k.label, ICONS[kind], `Drag the ${k.label.toLowerCase()} onto the circuit, or click it and then the circuit`));
 }
 
 /* ---- the selected part */
@@ -696,7 +783,7 @@ function showProps() {
   title.className = "title";
   title.innerHTML = `<span></span>`;
   title.prepend(p.name + " ");
-  title.querySelector("span").textContent = kind.label + (GATE_NAMES[k] || k === "not" ? " gate" : "");
+  title.querySelector("span").textContent = k === "chip" ? `chip ${p.comp}` : kind.label + (GATE_NAMES[k] || k === "not" ? " gate" : "");
   box.append(title);
   const row = document.createElement("div");
   row.className = "row";
@@ -719,11 +806,25 @@ function showProps() {
     selectedName = v;
     change(() => { p.name = v; });
   });
-  if (k === "input" || k === "output" || k === "counter") {
+  if (k === "const") {
+    const v = field("Value", Object.assign(document.createElement("input"), { type: "text", spellcheck: false, value: "0x" + (p.value >>> 0).toString(16).toUpperCase() }));
+    v.title = "A number: 12, 0xC or 0b1100";
+    v.addEventListener("change", () => {
+      const t = v.value.trim().replace(/_/g, "");
+      const n = /^0x[0-9a-f]+$/i.test(t) ? parseInt(t.slice(2), 16) : /^0b[01]+$/i.test(t) ? parseInt(t.slice(2), 2) : /^\d+$/.test(t) ? parseInt(t, 10) : NaN;
+      const bits = p.bits || 1;
+      if (!(n >= 0) || (bits < 32 && n >= 2 ** bits)) {
+        msg.className = "err"; msg.textContent = `Write a number that fits in ${bits} bits, like 12, 0xC or 0b1100.`;
+        v.value = "0x" + (p.value >>> 0).toString(16).toUpperCase(); return;
+      }
+      if (n !== p.value) change(() => { p.value = n; });
+    });
+  }
+  if (k === "input" || k === "output" || k === "counter" || k === "const") {
     const b = field("Bits", Object.assign(document.createElement("input"), { type: "number", min: 1, max: 32, value: p.bits || 1 }));
     b.addEventListener("change", () => {
       const v = Math.max(1, Math.min(32, parseInt(b.value, 10) || 1));
-      if (v !== (p.bits || 1)) change(() => { p.bits = v; });
+      if (v !== (p.bits || 1)) change(() => { p.bits = v; if (k === "const" && v < 32) p.value = (p.value || 0) % 2 ** v; });
     });
   }
   if (GATE_NAMES[k] || k === "mux") {
@@ -749,7 +850,45 @@ function showProps() {
       if (!c.checked) m.links = m.links.filter(x => !(x.to.id === p.id && x.to.pin === key));
     }));
   };
+  if (k === "split" || k === "join") {
+    /* split: the bus in and the bits each piece takes; join: each piece's bits, the top first */
+    if (k === "split") {
+      const b = field("Bits in", Object.assign(document.createElement("input"), { type: "number", min: 2, max: 32, value: p.bits }));
+      b.addEventListener("change", () => {
+        const v = Math.max(2, Math.min(32, parseInt(b.value, 10) || 2));
+        if (v === p.bits) return;
+        if (p.ranges.some(r => r[0] >= v)) { msg.className = "err"; msg.textContent = `A piece takes a bit above ${v - 1}; change the pieces first.`; b.value = p.bits; return; }
+        change(() => { p.bits = v; });
+      });
+    }
+    const t = field(k === "split" ? "Pieces" : "Pieces (bits, top first)", Object.assign(document.createElement("input"), {
+      type: "text", spellcheck: false, value: k === "split" ? p.ranges.map(rangeText).join(", ") : p.ranges.map(rangeW).join(", ") }));
+    t.title = k === "split" ? "The bits each output takes, like 7:4, 3:0 or 0" : "How many bits each input brings, the top one first, like 1, 4";
+    t.addEventListener("change", () => {
+      let rs;
+      if (k === "split") rs = parseRanges(t.value);
+      else {
+        const ws = t.value.split(",").map(x => parseInt(x, 10));
+        let hi = ws.reduce((a, w) => a + w, 0) - 1;
+        rs = ws.length >= 2 && ws.every(w => w >= 1) && hi < 32 ? ws.map(w => { const r = [hi, hi - w + 1]; hi -= w; return r; }) : null;
+      }
+      if (!rs || (k === "split" && rs.some(r => r[0] >= p.bits))) {
+        msg.className = "err";
+        msg.textContent = k === "split" ? `Write the pieces as bit ranges of the ${p.bits} bits, like 7:4, 3:0` : "Write how many bits each input brings, at least two, like 1, 4";
+        t.value = k === "split" ? p.ranges.map(rangeText).join(", ") : p.ranges.map(rangeW).join(", ");
+        return;
+      }
+      change(m => {
+        p.ranges = rs;
+        if (k === "join") delete p.consts;
+        const keepIn = new Set(insOf(p)), keepOut = new Set(outsOf(p));
+        m.links = m.links.filter(l => (l.to.id !== p.id || keepIn.has(l.to.pin)) && (l.from.id !== p.id || keepOut.has(l.from.pin)));
+      });
+    });
+  }
   if (k === "dff" || k === "counter") { tick("Enable input", "en"); tick("Reset input", "rst"); }
+  if (k === "tff" || k === "jkff") tick("Reset input", "rst");
+  if (k === "decoder") tick("Enable input", "en");
   if (k === "add") tick("Carry in", "cin");
   const del = document.createElement("button");
   del.className = "del";
@@ -759,7 +898,7 @@ function showProps() {
 }
 
 /* ---- the Wire the drawing makes */
-function showGen() { $("gen").innerHTML = highlight(genCode(model)); }
+function showGen() { $("gen").innerHTML = highlight(genCode(model)); showChips(); }
 $("undo").onclick = undo;
 $("tidy").onclick = () => {
   /* the circuit page lays it out in columns and tells us where it put things */
@@ -873,53 +1012,113 @@ const firstError = (r, path) => (r.err.trim().split("\n").find(l => /error/.test
 const NOT_DRAWN = { split: "slices or joins of a bus", merge: "slices or joins of a bus", rom: "a rom", ram: "a ram",
   tri: "a tri-state driver", bus: "a bus", seg7: "a 7-segment display", keypad: "a keypad", tff: "a T flip-flop",
   jkff: "a JK flip-flop", demux: "a demux", decoder: "a decoder", encoder: "an encoder", buf: "a buffer" };
-/* a netlist (wire --json) as a drawing; lay: where the page draws each node now */
-function netlistToModel(D, lay) {
-  if (D.insts.length > 1) return { why: "it uses chips (components), and the drawing has none yet" };
-  const N = D.nodes, drv = new Map();
-  N.forEach((n, i) => n.out.forEach((net, p) => drv.set(net, { i, p })));
-  for (const n of N) {
-    if (n.kind === "const") { if (n.value) return { why: "it uses a fixed value other than 0, which the drawing cannot show" }; continue; }
-    if (!KINDS[n.kind]) return { why: `the drawing cannot show ${NOT_DRAWN[n.kind] || n.kind}` };
+/* the chips of a Wire text: its imports and component blocks, as written */
+function wireDefs(text) {
+  const out = [], lines = text.split("\n");
+  let depth = 0, block = null;
+  for (const line of lines) {
+    const code = line.replace(/"[^"\n]*"/g, '""').replace(/(#|\/\/).*$/, "");
+    if (!block && depth === 0) {
+      if (/^\s*import\s+"/.test(line)) { out.push(line.trim()); continue; }
+      if (/^\s*component\b/.test(line)) block = [];
+    }
+    for (const ch of code) { if (ch === "{") depth++; else if (ch === "}") depth--; }
+    if (block) { block.push(line); if (depth === 0 && /\}/.test(code)) { out.push(block.join("\n")); block = null; } }
+  }
+  return out.join("\n\n");
+}
+/* a netlist (wire --json) as a drawing; lay: where the page draws each node
+ * (and chip) now; defs, dir: the chips' Wire and where its imports are */
+function netlistToModel(D, lay, defs, dir) {
+  const N = D.nodes, top = new Set(N.map((n, i) => i).filter(i => N[i].inst === 0));
+  const chips = D.insts.map((ins, c) => ({ ins, c })).filter(x => x.c > 0 && x.ins.parent === 0);
+  const kindOf = n => n.kind === "merge" ? "join" : n.kind;
+  /* who drives each net seen from the top: a part's pin, or a chip's */
+  const drv = new Map();
+  for (const i of top) N[i].out.forEach((net, p) => drv.set(net, { i, p }));
+  const chipPins = chips.map(({ c }) => {
+    const pins = N.map((n, j) => ({ n, j })).filter(x => x.n.inst === c);
+    const pi = pins.filter(x => x.n.kind === "pin_in"), po = pins.filter(x => x.n.kind === "pin_out");
+    po.forEach(x => drv.set(x.n.out[0], { chip: c, pin: x.n.name }));
+    return { c, ins: pi.map(x => [x.n.name, D.nets[x.n.out[0]].w, x.n.in[0]]), outs: po.map(x => [x.n.name, D.nets[x.n.in[0]].w]) };
+  });
+  const constOf = net => { const d = drv.get(net); return d && d.i != null && N[d.i].kind === "const" ? N[d.i] : null; };
+  for (const i of top) {
+    const n = N[i];
+    if (n.kind === "const") continue;
+    if (!KINDS[kindOf(n)]) return { why: `the drawing cannot show ${NOT_DRAWN[n.kind] || n.kind}` };
     if (n.kind === "counter" && n.inNames.some(x => !["clk", "en", "rst"].includes(x))) return { why: "the drawing's counter has no load, d or down" };
     if (n.kind === "led" && D.nets[n.in[0]].w !== 1) return { why: "an LED in the drawing is one bit" };
   }
-  /* names: inputs and outputs keep theirs, the rest too when they can */
+  /* names: inputs, outputs and chips keep theirs, the rest too when they can */
   const used = new Set(), names = new Map();
   const ok = s => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s) && !RESERVED.has(s) && !used.has(s.toLowerCase());
-  const order = N.map((n, i) => i).filter(i => N[i].kind !== "const")
+  const keep = (key, name) => { used.add(name.toLowerCase()); names.set(key, name); };
+  /* a fixed value: a constant part, unless it is a 0 (an unwired pin) or only a join reads it */
+  const readers = net => [...top].filter(j => N[j].in.includes(net));
+  const shown = i => N[i].kind !== "const" || (N[i].value && readers(N[i].out[0]).some(j => N[j].kind !== "merge"));
+  const order = [...top].filter(shown)
     .sort((a, b) => (SOURCE.has(N[b].kind) || SINK.has(N[b].kind)) - (SOURCE.has(N[a].kind) || SINK.has(N[a].kind)));
+  for (const i of order) if (SOURCE.has(N[i].kind) || SINK.has(N[i].kind)) keep(i, N[i].name);
+  for (const { ins, c } of chips) keep("c" + c, ok(ins.name) ? ins.name : (() => { for (let k = 1; ; k++) if (ok("chip" + k)) return "chip" + k; })());
   for (const i of order) {
-    const n = N[i];
-    let name = n.name || (n.out.length ? D.nets[n.out[0]].name : "");   /* p = a ^ b: the gate is p */
+    if (names.has(i)) continue;
+    const n = N[i], k = kindOf(n);
+    let name = n.kind === "split" || n.kind === "merge" ? "" : n.name || (n.out.length ? D.nets[n.out[0]].name : "");
     if (!ok(name)) {
-      const base = KINDS[n.kind].prefix || (n.kind === "input" ? "in" : n.kind === "output" ? "out" : n.kind);
-      for (let k = 1; ; k++) if (ok(base + k)) { name = base + k; break; }
+      const base = KINDS[k].prefix || k;
+      for (let j = 1; ; j++) if (ok(base + j)) { name = base + j; break; }
     }
-    used.add(name.toLowerCase());
-    names.set(i, name);
+    keep(i, name);
   }
-  const parts = [], links = [], id = i => i + 1;
-  let row = 0;
+  const parts = [], links = [], idOf = new Map();
+  let next = 1, row = 0;
+  const place = (p, at, src, sink) => {
+    if (at) { p.x = at[0]; p.y = at[1]; } else { p.x = src ? 0 : sink ? 400 : 200; p.y = 70 * row++; }
+  };
+  for (const i of order) { idOf.set(i, next++); }
+  for (const { c } of chips) idOf.set("c" + c, next++);
+  const linkTo = (net, to) => {
+    const d = drv.get(net);
+    if (!d) return;
+    if (d.chip != null) { links.push({ from: { id: idOf.get("c" + d.chip), pin: d.pin }, to }); return; }
+    if (N[d.i].kind === "const" && !idOf.has(d.i)) return;   /* a 0, or only in a join: the pin stays unwired */
+    const f = N[d.i];
+    links.push({ from: { id: idOf.get(d.i), pin: f.kind === "split" ? String(d.p) : f.outNames[d.p] }, to });
+  };
   for (const i of order) {
-    const n = N[i], p = { id: id(i), kind: n.kind, name: names.get(i), x: 0, y: 0 };
-    const at = lay && lay[i];
-    if (at) { p.x = at[0]; p.y = at[1]; } else { p.x = SOURCE.has(n.kind) ? 0 : SINK.has(n.kind) ? 400 : 200; p.y = 70 * row++; }
-    if (n.kind === "input") p.bits = D.nets[n.out[0]].w;
-    if (n.kind === "output") p.bits = D.nets[n.in[0]].w;
-    if (n.kind === "counter") p.bits = n.bits || D.nets[n.out[0]].w;
-    if (GATE_NAMES[n.kind]) p.n = n.in.length;
-    if (n.kind === "mux") p.n = n.in.length - 1;
-    if (n.kind === "add") p.cin = n.inNames.includes("cin");
-    if (n.kind === "dff" || n.kind === "counter") { p.en = n.inNames.includes("en"); p.rst = n.inNames.includes("rst"); }
+    const n = N[i], k = kindOf(n), p = { id: idOf.get(i), kind: k, name: names.get(i), x: 0, y: 0 };
+    place(p, lay && lay[i], SOURCE.has(k), SINK.has(k));
+    if (k === "input") p.bits = D.nets[n.out[0]].w;
+    if (k === "output") p.bits = D.nets[n.in[0]].w;
+    if (k === "counter") p.bits = n.bits || D.nets[n.out[0]].w;
+    if (GATE_NAMES[k]) p.n = n.in.length;
+    if (k === "mux") p.n = n.in.length - 1;
+    if (k === "add") p.cin = n.inNames.includes("cin");
+    if (k === "dff" || k === "counter") { p.en = n.inNames.includes("en"); p.rst = n.inNames.includes("rst"); }
+    if (k === "tff" || k === "jkff") p.rst = n.inNames.includes("rst");
+    if (k === "dff") p.w = D.nets[n.out[0]].w;   /* in a loop its width must be written */
+    if (k === "decoder") p.en = n.inNames.includes("en");
+    if (k === "split") { p.bits = D.nets[n.in[0]].w; p.ranges = n.ranges.map(r => [r[0], r[1]]); }
+    if (k === "const") { p.bits = D.nets[n.out[0]].w; p.value = n.value >>> 0; }
+    if (k === "join") {
+      p.ranges = n.ranges.map(r => [r[0], r[1]]);
+      n.in.forEach((net, j) => { const d = drv.get(net), c = constOf(net); if (c && c.value && !idOf.has(d.i)) (p.consts = p.consts || {})[j] = c.value; });
+    }
     parts.push(p);
-    n.in.forEach((net, k) => {
-      const d = drv.get(net);
-      if (!d || N[d.i].kind === "const") return;   /* a 0, or nothing: the pin stays unwired */
-      links.push({ from: { id: id(d.i), pin: N[d.i].outNames[d.p] }, to: { id: p.id, pin: GATE_NAMES[n.kind] ? String(k) : n.inNames[k] } });
-    });
+    n.in.forEach((net, j) => linkTo(net, { id: p.id, pin: GATE_NAMES[k] || k === "join" ? String(j) : k === "split" ? "in" : n.inNames[j] }));
   }
-  return { model: { title: D.title || "My circuit", next: N.length + 1, parts, links } };
+  const comps = {};
+  for (const cp of chipPins) {
+    const ins = D.insts[cp.c], p = { id: idOf.get("c" + cp.c), kind: "chip", comp: ins.comp, name: names.get("c" + cp.c), x: 0, y: 0,
+      ins: cp.ins.map(x => [x[0], x[1]]), outs: cp.outs.map(x => [x[0], x[1]]) };
+    place(p, lay && lay["i" + cp.c], false, false);
+    parts.push(p);
+    cp.ins.forEach(x => linkTo(x[2], { id: p.id, pin: x[0] }));
+    comps[ins.comp] = { ins: p.ins, outs: p.outs };
+  }
+  if (chips.length && !defs) return { why: "Wire could not find where its chips are written" };
+  return { model: { title: D.title || "My circuit", next, parts, links, defs: chips.length ? defs : "", dir: chips.length ? dir : "", comps } };
 }
 async function makeView(to) {
   if (to === "draw") {
@@ -931,14 +1130,20 @@ async function makeView(to) {
     if (r.code !== 0) return { why: "fix the error first (" + firstError(r, path) + ")" };
     let lay = null;
     if (from === viewKey()) try { lay = frames[front].contentWindow.wireLayout(); } catch (e) {}
-    const m = netlistToModel(JSON.parse(r.out), lay);
+    /* the chips, as Wire: from the Wire, or from the Wire the VHDL is turned into */
+    let wtext = t.text;
+    if (from === "vhdl") {
+      const w = await wire(["--to-wire", path], path, t.text);
+      wtext = w.code === 0 ? w.out : "";
+    }
+    const m = netlistToModel(JSON.parse(r.out), lay, wireDefs(wtext), from === "wire" ? t.dir : "");
     if (m.why) return m;
-    const p2 = pathFor("wire", ""), c = await wire(["--check", p2], p2, genCode(m.model));
+    const p2 = pathFor("wire", m.model.dir), c = await wire(["--check", p2], p2, genCode(m.model));
     if (c.code !== 0) return { why: "the drawing cannot show it (" + firstError(c, p2) + ")" };
     return { value: m.model };
   }
   /* a text view: from the view that holds the circuit, which reads best */
-  const from = source, t = from === "draw" ? { text: genCode(views.draw), dir: "" } : views[from];
+  const from = source, t = from === "draw" ? { text: genCode(views.draw), dir: views.draw.dir || "" } : views[from];
   const path = pathFor(from === "draw" ? "wire" : from, t.dir);
   if (to === "wire") {
     if (from === "draw") return { value: t };

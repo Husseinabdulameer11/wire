@@ -75,10 +75,13 @@ change it, and `make test` runs every check.
 Nothing is installed and nothing leaves the browser.
 
 - **Draw:** drag parts onto the circuit (inputs, buttons, clocks, outputs,
-  LEDs, hex digits, every gate, a mux, an adder, a comparator, a D
-  flip-flop, a counter), drag from pin to pin to wire them, and click a part
-  to rename it or change its width, its number of inputs, or whether it has
-  an enable, a reset or a carry in. It runs as you build it. A change that
+  LEDs, hex digits, every gate and a buffer, a mux, an adder, a comparator,
+  D, T and JK flip-flops, a counter, a decoder, an encoder, constants, and
+  splits and joins for buses), drag from pin to pin to wire them, and click
+  a part to rename it or change its width, its number of inputs, its pieces,
+  or whether it has an enable, a reset or a carry in. A circuit made of
+  chips keeps them: each is a box with its pins (click it twice to look inside),
+  and the circuit's chips are in the palette to place more of. It runs as you build it. A change that
   cannot work (a 4-bit bus into a 1-bit gate) is undone, and the page says
   why. The drawing is written as Wire as you go (**Edit as code** carries on
   from it), so it simulates and turns into VHDL like any other circuit.
@@ -92,8 +95,9 @@ Nothing is installed and nothing leaves the browser.
 Draw, Wire and VHDL are three views of **one circuit**. Change it in one,
 switch, and the other view is made from it (going back without changing
 anything gives you exactly what you left). A switch that would lose part of
-the circuit does not happen, and the page says why: the drawing has no chips,
-slices, rom or ram yet, and Wire cannot read flip-flops back from VHDL yet.
+the circuit does not happen, and the page says why: the drawing has no rom,
+ram or 7-segment display yet, and Wire cannot read a tri-state bus back
+from VHDL yet.
 
 **Save .vhd** gives the circuit in VHDL for Vivado, **Save .wire** keeps it,
 and **Copy link** makes a link that opens the same circuit for someone else.

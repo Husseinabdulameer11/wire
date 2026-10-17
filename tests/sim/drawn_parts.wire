@@ -1,0 +1,25 @@
+circuit "What the playground's drawing writes"
+
+# chips with inputs left at 0 and outputs nobody reads, a constant, a split
+# with a piece nobody reads, and a join with a fixed piece: the Wire the
+# drawing writes for them, which the VHDL writer must also handle
+
+component half(a, b) -> (s, c) {
+    s = a ^ b
+    c = a & b
+}
+
+input  x[8], y
+output lo[4], j[6], hs, hc
+
+h1 = half(a = y, b = x[0])
+h2 = half(a = 0, b = 0)
+k1 = 0b0101
+split1_0 = x[7:4]
+split1_1 = x[3:0]
+split1_2 = x[5]
+join1 = {0b1, y, k1}
+lo = split1_1
+j  = join1
+hs = h1.s
+hc = h1.c

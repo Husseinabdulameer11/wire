@@ -817,6 +817,7 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
         int a = find(n->in[0]), aw = net_w(a);
         for (i = 0; i < n->nout; i++) {
             int on = find(n->out[i]), hi = n->range[i][0], lo = n->range[i][1];
+            if (!vn[on]) continue;   /* a piece nothing reads has no signal */
             if (vis_const(a)) {
                 unsigned long v = nodes[vdriver[a]].value >> lo;
                 vbf(b, "  %s <= %s;\n", N(on), vlit(v & wmask(hi - lo + 1), hi - lo + 1, lit));

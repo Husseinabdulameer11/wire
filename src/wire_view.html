@@ -559,6 +559,18 @@ function makeView(id) {
       inNames: pi.map(n => n.name), outNames: po.map(n => n.name), inW: pi.map(n => nets[n.out[0]].w), outW: po.map(n => nets[n.in[0]].w)
     });
   });
+  if (EDIT && id === 0) items.forEach(it => {
+    /* the playground's splits and joins have names of their own: the Wire it
+     * writes gives a split the line  name_0 = bus[...]  and a join  name = {...} */
+    if ((it.kind !== "split" && it.kind !== "merge" && it.kind !== "const") || it.name) return;
+    const f = D.files && D.files[it.file], line = f && f.source.split("\n")[it.line - 1] || "";
+    const m = it.kind === "split" ? /^\s*([A-Za-z_]\w*)_0\s*=/.exec(line) : it.kind === "merge" ? /^\s*([A-Za-z_]\w*)\s*=\s*\{/.exec(line)
+            : /^\s*([A-Za-z_]\w*)\s*=\s*0b[01]+\s*$/.exec(line);
+    if (!m) return;
+    it.name = m[1];
+    if (it.kind === "split") it.outNames = it.out.map((_, i) => String(i));
+    else if (it.kind === "merge") it.inNames = it.in.map((_, i) => String(i));
+  });
   items.forEach((it, i) => { it.vi = i; it.x = 0; it.y = 0; it.g = geom(it); });
   const drv = new Map(), rdr = new Map();
   items.forEach(it => {
@@ -1159,7 +1171,7 @@ function cssColor(c) {
 function place(n) { n.el.setAttribute("transform", `translate(${n.x},${n.y})`); }
 /* drawing mode: every pin of a part you drew can be grabbed to wire it */
 function addPins(n) {
-  if (!n.name || n.kind === "const") return;
+  if (!n.name) return;
   const mk = (p, dir, i) => {
     const c = el("circle", { class: "pin-hit", cx: p.x, cy: p.y, r: 9 }, n.el);
     c.dataset.pin = dir + ":" + i;
@@ -1423,7 +1435,11 @@ function editValue(n, net, x, y) {
   inp.onkeydown = ev => { if (ev.key === "Escape") f.hidden = true; };
 }
 function click(n, target) {
-  if (n.kind === "chip") { openView(n.inst); return; }
+  if (n.kind === "chip") {
+    /* drawing: the first click picks the chip (to rename or delete it), the next opens it */
+    if (editing() && selected !== n) { select(n); return; }
+    openView(n.inst); return;
+  }
   if (n.kind === "input") {
     const net = nets[n.out[0]];
     if (target.dataset.type) {
@@ -2306,7 +2322,7 @@ $("tidy").onclick = () => {
   V.items.forEach(place);
   drawWires();
   fit();
-  if (editing()) hostCall("movedAll", Object.fromEntries(V.items.filter(n => n.name && n.kind !== "const").map(n => [n.name, [n.x, n.y]])));
+  if (editing()) hostCall("movedAll", Object.fromEntries(V.items.filter(n => n.name).map(n => [n.name, [n.x, n.y]])));
 };
 addEventListener("resize", applyView);
 /* with a keypad, the keys 0-9 and a-f press it */
@@ -2335,7 +2351,7 @@ window.wireLayout = () => {
   const v = views.get(0);
   if (!v) return null;
   const at = {};
-  v.items.forEach(it => { if (it.node && it.node.id != null) at[it.node.id] = [it.x, it.y]; });
+  v.items.forEach(it => { if (it.node && it.node.id != null) at[it.node.id] = [it.x, it.y]; else if (it.kind === "chip") at["i" + it.inst] = [it.x, it.y]; });
   return at;
 };
 /* drawing mode: parts dropped from the playground's palette */
