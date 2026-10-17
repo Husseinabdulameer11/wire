@@ -885,6 +885,7 @@ function showSheets() {
   btn(model.title && model.title !== "My circuit" ? model.title : "Main circuit", !model.at, () => goSheet(null), "The circuit itself");
   for (const c of Object.keys(model.chips || {})) btn(c, model.at === c, () => goSheet(c, [c]), `Open the chip ${c} to change its inside`);
   btn("+ New chip", false, newChip, "Make a chip: draw its inside, its inputs and outputs are its pins").className = "add";
+  btn("Rename", false, renameSheet, model.at ? `Give the chip ${model.at} another name` : "Give the circuit another title").className = "add";
   /* inside a chip only inputs and outputs talk to the outside */
   for (const k of ["button", "clock", "led", "hex", "seg7"]) {
     const b = document.querySelector(`.parts button[data-kind="${k}"]`);
@@ -928,6 +929,31 @@ function newChip() {
   goSheet(name, [name]);
   msg.className = "";
   msg.textContent = `Draw the inside of ${name}. Its inputs and outputs are its pins; rename them as you like. Then go back to the main circuit and place it from Chips.`;
+}
+/* the sheet on screen gets another name: the circuit its title, a chip its
+ * name everywhere it is used */
+function renameSheet() {
+  if (!model.at) {
+    const t = (prompt("Title of the circuit:", model.title || "My circuit") || "").trim();
+    if (t && t !== model.title) change(m => { m.title = t; });
+    return;
+  }
+  const old = model.at, name = (prompt(`New name for the chip ${old}:`, old) || "").trim();
+  if (!name || name === old) return;
+  const taken = (model.chips && model.chips[name]) || (model.comps && model.comps[name]);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || RESERVED.has(name) || taken) {
+    msg.className = "err";
+    msg.textContent = taken ? `There is already a chip called ${name}.` : `${name} cannot be a chip's name: use letters, digits and _, starting with a letter, and not a word of Wire.`;
+    return;
+  }
+  change(m => {
+    m.chips[name] = m.chips[old];
+    delete m.chips[old];
+    for (const sh of [m, ...Object.values(m.chips)]) sh.parts.forEach(p => { if (p.kind === "chip" && p.comp === old) p.comp = name; });
+    m.at = name;
+    m.path = (m.path || [old]).map(c => c === old ? name : c);
+  });
+  showSheets();
 }
 function deleteChip(name) {
   const where = [["the main circuit", model], ...Object.entries(model.chips || {})].filter(([n, sh]) => n !== name && sh.parts.some(p => p.kind === "chip" && p.comp === name));
