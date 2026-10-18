@@ -1338,7 +1338,10 @@ function buildSheet(D, scope, lay, comps) {
   const keep = (key, name) => { used.add(name.toLowerCase()); names.set(key, name); };
   /* a fixed value: a constant part, unless it is a 0 (an unwired pin) or only a join reads it */
   const readers = net => [...top].filter(j => N[j].in.includes(net));
-  const shown = i => N[i].kind !== "const" || (N[i].value && readers(N[i].out[0]).some(j => N[j].kind !== "merge"));
+  /* a chip's input pin reads it too: cin = 0b1 into a chip must stay a 1 */
+  const chipReads = net => chipPins.some(cp => cp.ins.some(x => x[2] === net));
+  const shown = i => N[i].kind !== "const"
+    || (N[i].value && (readers(N[i].out[0]).some(j => N[j].kind !== "merge") || chipReads(N[i].out[0])));
   const order = [...top].filter(shown)
     .sort((a, b) => (SOURCE.has(kindOf(N[b])) || SINK.has(kindOf(N[b]))) - (SOURCE.has(kindOf(N[a])) || SINK.has(kindOf(N[a]))));
   for (const i of order) if (SOURCE.has(kindOf(N[i])) || SINK.has(kindOf(N[i]))) keep(i, N[i].name);

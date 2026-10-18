@@ -147,6 +147,7 @@ static char *vname_take(const char *want, const char *suffix)
 /* ---- the scope being written ------------------------------------------- */
 
 static char **vn;          /* net -> its VHDL name, or a literal for a constant */
+static char **vlabs;       /* instance -> its label in the entity being written */
 static int *vreaders;      /* net -> parts reading it in this entity */
 static int *vdriver;       /* net -> the part writing it (-1: none here) */
 static char *vsignal;      /* net -> 1: declare it as a signal */
@@ -973,6 +974,24 @@ static void vemit_entity(int inst, const char *ename)
         vn[net] = vdup(pnames[i]);
         vportnet[net] = 1;
     }
+    /* the child instances' labels, before the signals: a label keeps its name
+     * and a signal named after it gets the _i, so a round trip through VHDL
+     * does not add another _u to every chip's name */
+    {
+        static char **labs;
+        static int caplabs;
+        labs = (char **)grow(labs, &caplabs, ninsts + 1, sizeof *labs);
+        for (i = 1; i < ninsts; i++) {
+            int vc;
+            labs[i] = NULL;
+            if (insts[i].parent != inst) continue;
+            vc = vcomp_find(insts[i].comp);
+            if (insts[i].name) vhdl_ident(insts[i].name, insts[i].nlen, buf, sizeof buf);
+            else snprintf(buf, sizeof buf, "u_%s", vcomps[vc].entity);
+            labs[i] = vname_take(buf, "u");
+        }
+        vlabs = labs;
+    }
     /* every other net here gets a signal */
     for (j = 0; j < nnodes; j++) {
         Node *n = &nodes[j];
@@ -1007,9 +1026,7 @@ static void vemit_entity(int inst, const char *ename)
         char lab[160];
         if (insts[i].parent != inst) continue;
         vc = vcomp_find(insts[i].comp);
-        if (insts[i].name) vhdl_ident(insts[i].name, insts[i].nlen, buf, sizeof buf);
-        else snprintf(buf, sizeof buf, "u_%s", vcomps[vc].entity);
-        snprintf(lab, sizeof lab, "%s", vname_take(buf, "u"));
+        snprintf(lab, sizeof lab, "%s", vlabs[i]);
         vbf(&body, "  %s: entity work.%s port map (", lab, vcomps[vc].entity);
         {
             int k = 0;

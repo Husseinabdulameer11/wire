@@ -51,6 +51,11 @@ typedef struct {
     int elem0;                   /* an array signal: the index of its first element's VSym */
     unsigned long *abits;        /* an array constant: each element */
     int hasinit;                 /* a signal's initial value (:= ...) is in bits */
+    /* an array signal written as a ram (one clocked process: if we then
+     * mem(to_integer(addr)) <= din) and only read as mem(to_integer(addr)):
+     * it becomes one ram part, not a register per element */
+    gram_node *ramproc, *ramaddr, *ramdin, *ramwe, *ramclk, *raminit;
+    int ramneg, rambit;
 } VSym;
 
 /* a type of the architecture: an enumeration or an array */
@@ -1288,6 +1293,8 @@ static VX vi_array_read(VSym *s, gram_node *id, gram_node *args, int want)
             VSym *el = &vi_syms[vi_syms[si].elem0 + (k - t->alo)];
             e = el->kind == VK_VAR ? vi_var_read(el, id) : vi_mk(el->wname, el->ty, el->w, 2);
         }
+    } else if (s->ramproc) {   /* a ram: read at the address it is written at */
+        e = vi_mk(s->wname, t->elem.ty, t->elem.w, 2);
     } else {
         int j, n;
         VBuf b = { 0, 0, 0 };
@@ -2938,8 +2945,179 @@ static int vi_is_clock(const gram_node *id)
     return 0;
 }
 
+/* ---- rams: an array signal used like Wire's own ram ------------------------------
+ * Wire writes a ram as
+ *     process (clk) begin if rising_edge(clk) then if we = '1' then
+ *         mem(to_integer(unsigned(addr))) <= din; end if; end if; end process;
+ *     q <= mem(to_integer(unsigned(addr)));
+ * Read that way it is one ram part again: no register per word, and no mux
+ * that has to pick one of 2^n words (which is limited to 32). */
+
+static int vi_space(int c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
+
+static int vi_txteq(const gram_node *a, const gram_node *b)   /* the same text, ignoring case and spaces */
+{
+    size_t i = 0, j = 0;
+    for (;;) {
+        while (i < a->len && vi_space(a->text[i])) i++;
+        while (j < b->len && vi_space(b->text[j])) j++;
+        if (i == a->len || j == b->len) return i == a->len && j == b->len;
+        if (vi_lower((unsigned char)a->text[i]) != vi_lower((unsigned char)b->text[j])) return 0;
+        i++; j++;
+    }
+}
+
+static int vi_same_id(const gram_node *a, const gram_node *b)
+{
+    return a->rule == VHDL_R_ident && a->len == b->len && vi_is(a, vi_fmt("%.*s", VT(b)));
+}
+
+/* the one statement in a list (labels, null and assert aside), or NULL */
+static gram_node *vi_only_stmt(gram_node *first)
+{
+    gram_node *k, *st = NULL;
+    for (k = first; k; k = k->next) {
+        if (k->rule == VHDL_R_ident || k->rule == VHDL_R_nullst || k->rule == VHDL_R_assert) continue;
+        if (st) return NULL;
+        st = k;
+    }
+    return st;
+}
+
+/* is process p the ram write of the array called name? */
+static int vi_ram_write(gram_node *p, const gram_node *name, VSym *r)
+{
+    gram_node *decls, *first = vi_proc_body(p, &decls), *clk, *rst, *rbody, *cbody, *st, *we = NULL, *tg, *id, *v;
+    int neg;
+    if (decls && decls->child) return 0;
+    if (!vi_proc_shape(first, &clk, &neg, &rst, &rbody, &cbody) || rst) return 0;
+    st = vi_only_stmt(cbody->child);
+    if (st && st->rule == VHDL_R_ifst) {   /* if we then ... end if, nothing else */
+        gram_node *c = st->child, *body;
+        if (c->rule == VHDL_R_label) c = c->next;
+        body = c->next;
+        if (body->next && body->next->rule != VHDL_R_ident) return 0;
+        we = c;
+        st = vi_only_stmt(body->child);
+    }
+    if (!st || st->rule != VHDL_R_sassign) return 0;
+    tg = st->child;
+    id = tg->child;
+    if (!vi_same_id(id, name) || !id->next || id->next->rule == VHDL_R_drange) return 0;
+    r->rambit = 0;
+    if (id->next->next) {   /* mem(i)(0) <= d: a ram of one-bit words */
+        long k;
+        if (id->next->next->next || id->next->next->rule == VHDL_R_drange || !vi_ceval(id->next->next, &k) || k != 0)
+            return 0;
+        r->rambit = 1;
+    }
+    v = st->child->next->rule == VHDL_R_wave ? st->child->next->child : st->child->next;
+    if (v->next) return 0;   /* after ... */
+    r->ramproc = p; r->ramaddr = id->next; r->ramdin = v; r->ramwe = we; r->ramclk = clk; r->ramneg = neg;
+    return 1;
+}
+
+/* is every use of name under n a read at addr (or in a sensitivity list)? */
+static int vi_ram_uses(const gram_node *n, const gram_node *parent, const gram_node *name, const gram_node *addr,
+                       const gram_node *skip)
+{
+    const gram_node *k;
+    if (n == skip) return 1;
+    if (n->rule == VHDL_R_ident && vi_same_id(n, name)) {
+        if (parent && parent->rule == VHDL_R_sens) return 1;
+        if (parent && parent->rule == VHDL_R_named && parent->child == n) return 1;   /* a port called the same */
+        if (!addr || !parent || parent->rule != VHDL_R_name || parent->child != n) return 0;
+        if (!n->next || n->next->rule != VHDL_R_args || vi_nargs((gram_node *)n->next) != 1) return 0;
+        if (n->next->child->rule == VHDL_R_drange || !vi_txteq(n->next->child, addr)) return 0;
+        return 1;
+    }
+    for (k = n->child; k; k = k->next)
+        if (!vi_ram_uses(k, n, name, addr, skip)) return 0;
+    return 1;
+}
+
+/* the array signal s (declared as id, with initial value init): is it a ram? */
+static int vi_ram_find(VSym *s, gram_node *id, gram_node *init)
+{
+    VType *t = &vi_types[s->ut - 1];
+    gram_node *k, *found = NULL, *first;
+    VSym r;
+    long c;
+    if (!vi_cur || t->alo != 0 || vi_suffix[0]) return 0;
+    if (t->elem.ty != T_SLV && t->elem.ty != T_UNS && t->elem.ty != T_SGN) return 0;
+    first = vi_cur->arch->child->next->next;
+    for (k = first; k; k = k->next) {
+        if (k->rule != VHDL_R_process) continue;
+        memset(&r, 0, sizeof r);
+        if (vi_ram_write(k, id, &r)) {
+            if (found) return 0;   /* written by two processes */
+            found = k;
+            s->ramproc = r.ramproc; s->ramaddr = r.ramaddr; s->ramdin = r.ramdin;
+            s->ramwe = r.ramwe; s->ramclk = r.ramclk; s->ramneg = r.ramneg; s->rambit = r.rambit;
+        }
+    }
+    if (!found) return 0;
+    if ((s->rambit && t->elem.w != 1) || vi_ceval(s->ramaddr, &c)
+        || !vi_ram_uses(s->ramdin, NULL, id, NULL, NULL) || (s->ramwe && !vi_ram_uses(s->ramwe, NULL, id, NULL, NULL)))
+        goto no;
+    for (k = first; k; k = k->next) {
+        if (k->rule == VHDL_R_signal || k->rule == VHDL_R_constant || k->rule == VHDL_R_typedecl
+            || k->rule == VHDL_R_compdecl || k->rule == VHDL_R_other || k->rule == VHDL_R_ident || k->rule == VHDL_R_funcdecl)
+            continue;
+        if (!vi_ram_uses(k, NULL, id, s->ramaddr, found)) goto no;
+    }
+    s->raminit = init;
+    return 1;
+no:
+    s->ramproc = NULL;
+    return 0;
+}
+
+/* the ram part, where its process was */
+static void vi_ram_emit(VSym *s)
+{
+    VType *t = &vi_types[s->ut - 1];
+    gram_node *at = vi_kid(s->ramproc, VHDL_R_PROCESS) ? vi_kid(s->ramproc, VHDL_R_PROCESS) : s->ramproc;
+    VSym *cs = vi_find(s->ramclk);
+    VTarget tt;
+    VX ix, d;
+    VBuf data = { 0, 0, 0 };
+    const char *we, *clk;
+    int j, n, any = 0;
+    ix = vi_gen(s->ramaddr, -1);
+    if (ix.ty != T_INTV && ix.ty != T_UNS)
+        vi_fail(s->ramaddr, "an index is an integer: write %s(to_integer(...))", s->wname);
+    if (ix.w > 16) vi_fail(s->ramaddr, "a ram has up to 16 address bits, and this index has %d", ix.w);
+    n = 1 << ix.w;
+    memset(&tt, 0, sizeof tt);
+    tt.s = s->wname;
+    tt.ty = s->rambit ? T_SL : t->elem.ty;
+    tt.w = s->rambit ? 1 : t->elem.w;
+    d = vi_gen(s->ramdin, tt.w);
+    vi_assignable(&tt, &d, s->ramdin);
+    we = s->ramwe ? vi_cond(s->ramwe).s : vi_lit(1, 1);
+    if (!cs || cs->w != 1 || cs->ty == T_ARR || cs->kind == VK_VAR)
+        vi_fail(s->ramclk, "the clock must be a one-bit signal or port");
+    clk = s->ramneg ? vi_fmt("~%s", cs->wname) : cs->wname;
+    if (s->raminit) {   /* the words it starts with */
+        for (j = 0; j < n && j <= t->ahi; j++) {
+            VX x = vi_array_elem(t, s->raminit, j, s->raminit);
+            if (!x.cst) vi_fail(s->raminit, "a starting value must be a constant");
+            if (x.v) any = 1;
+            vbf(&data, "%s%lX", j ? " " : "", x.v);
+        }
+    }
+    vi_emit(at, "%s = ram(%s, %s, %s, %s%s%s%s)", s->wname, ix.s, d.s, we, clk,
+            any ? ", data = \"" : "", any ? data.s : "", any ? "\"" : "");
+}
+
 static void vi_statement(gram_node *st)
 {
+    if (st->rule == VHDL_R_process) {   /* a ram's write: the ram part */
+        int i;
+        for (i = 0; i < vi_nsyms; i++)
+            if (vi_syms[i].ramproc == st) { vi_ram_emit(&vi_syms[i]); return; }
+    }
     switch (st->rule) {
     case VHDL_R_condassign: vi_condassign(st); break;
     case VHDL_R_selassign: vi_selassign(st); break;
@@ -3017,6 +3195,17 @@ static void vi_decls(gram_node *first)   /* signal and constant declarations, fr
                 int si = (int)(s - vi_syms);
                 s->ty = proto.ty; s->w = proto.w; s->left = proto.left; s->right = proto.right; s->down = proto.down;
                 s->ut = proto.ut;
+                if (s->ty == T_ARR && !var && vi_ram_find(s, id, init)) {   /* one ram part */
+                    VType *t = &vi_types[proto.ut - 1];
+                    size_t L = strlen(vi_syms[si].wname);
+                    /* Wire writes its ram called mem as mem_words: it is mem again */
+                    if (L > 6 && !strcmp(vi_syms[si].wname + L - 6, "_words")) {
+                        char *w = vi_fmt("%.*s", (int)(L - 6), vi_syms[si].wname);
+                        if (!vi_wire_word(w, (int)strlen(w)) && !vi_wname_used(w)) vi_syms[si].wname = w;
+                    }
+                    vbf(&b, "%s%s[%d]", b.n ? ", " : "", vi_syms[si].wname, s->rambit ? 1 : t->elem.w);
+                    continue;
+                }
                 if (s->ty == T_ARR) {   /* a signal per element: mem_0, mem_1 ... */
                     VType *t = &vi_types[proto.ut - 1];
                     int k;
