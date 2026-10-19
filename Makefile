@@ -92,7 +92,7 @@ build/vhdl_grammar.h: src/vhdl.gram $(GRAMGEN) | need-gram build
 	$(GRAMGEN) src/vhdl.gram vhdl build
 
 # the HTML viewer, baked into the binary as a string
-build/wire_view.h: src/wire_view.html src/wire_sim.js $(EMBED)
+build/wire_view.h: src/wire_view.html src/wire_sim.js src/wire_inside.js $(EMBED)
 	$(EMBED) src/wire_view.html wire_view > $@
 
 $(WIRE): $(SRC) src/wire_vhdl.c src/wire_vhdl_in.c build/wire_grammar.h build/vhdl_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram
@@ -109,7 +109,7 @@ test: $(WIRE)
 	    if $(WIRE) --check $$f 2> build/err.txt; then echo "$$f: expected an error"; exit 1; fi; \
 	    grep -qF "$$(sed -n 's/^-- expect: //p' $$f)" build/err.txt || { echo "$$f: wrong error:"; cat build/err.txt; exit 1; }; \
 	done
-	@if command -v node >/dev/null 2>&1; then node tests/sim/simtest.js $(WIRE) || exit 1; \
+	@if command -v node >/dev/null 2>&1; then node tests/sim/simtest.js $(WIRE) && node tests/sim/inside.js $(WIRE) || exit 1; \
 	   node tests/sim/run.js $(WIRE) examples/notes/sap1.wire 200 outp | grep -q "outp = 28" \
 	     || { echo "examples/notes/sap1.wire: the SAP-1 did not compute 16 + 20 + 24 - 32 = 28"; exit 1; }; \
 	   node tests/vhdl/cosim.js $(WIRE) || exit 1; \

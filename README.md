@@ -167,6 +167,18 @@ netlists, the VHDL and the error messages.
 - **Source** shows the `.wire` file. Click a part to find its line, or a
   line to find its part.
 - **Chips** (your own components) open when you click them; see below.
+- **Built-in parts open too.** Double-click a counter, an adder, a mux, a
+  decoder, an encoder, a demux, a comparator or a flip-flop (or click the
+  mark in its corner) to see what it is made of: a counter is a register,
+  a +1 adder and muxes; an adder a row of full adders; a mux of many
+  inputs a tree of 2-input muxes; a D flip-flop two latches of NAND gates.
+  The parts inside open the same way, down to the gates. The inside is
+  live: it is simulated beside the part, on the same wires, starting from
+  what the part holds, so the values you see are the part's own (probe
+  them on the Scope too). A line under the toolbar says what you are
+  looking at. It is for looking; the circuit and its VHDL still use the
+  part itself. Unknown (x) values can show differently inside, gate by
+  gate. `tests/sim/inside.js` checks every inside against its part.
 - Drag parts to move them (the layout is remembered in the browser), drag
   the background to pan, scroll or pinch to zoom. **Tidy** lays it out again.
 

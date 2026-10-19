@@ -946,7 +946,7 @@ function showSheets() {
   });
   if (pageView.length) {
     const n = document.createElement("span"); n.className = "how"; n.style.margin = "0 0 0 8px";
-    n.textContent = "(imported: look only)"; crumbs.append(n);
+    n.textContent = pageView.some(v => v.builtin) ? "(inside a built-in part: look only)" : "(imported: look only)"; crumbs.append(n);
   } else {
     const del = document.createElement("button");
     del.textContent = "delete this chip"; del.style.marginLeft = "12px";

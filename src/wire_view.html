@@ -86,6 +86,9 @@ select { font: inherit; color: var(--ink); background: transparent; border: 0; b
 #crumbs button + button::before { content: "›"; color: var(--ink-soft); margin-right: 4px; }
 #crumbs small { color: var(--ink-soft); font-size: 12px; font-weight: 400; }
 #crumbs button[aria-current] { background: var(--hi-soft); cursor: default; }
+#about { flex-basis: 100%; max-width: 62ch; font-size: 13px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--panel-line); border-radius: 6px; padding: 5px 10px; }
+#about b { color: var(--ink); font-weight: 600; }
+.part.opens .part-body { stroke-width: 1.8; }
 #warn {
   display: none; background: var(--bad); color: #fff; border-radius: 6px; padding: 7px 12px; font-weight: 500;
 }
@@ -307,6 +310,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
     <button id="tidy" title="Lay the circuit out again">Tidy</button>
   </div>
   <nav class="group" id="crumbs" aria-label="Where you are" hidden></nav>
+  <div id="about" hidden></div>
   <div id="warn" role="status"></div>
   <span class="spacer"></span>
 </div>
@@ -516,6 +520,7 @@ function constText(n) {
  * net.v, net.k and node.state. In the console, wireSim.dump() shows where
  * each net lives and the order the logic runs in. */
 //@include wire_sim.js
+//@include wire_inside.js
 const known = net => net.k === mask(net.w);
 const seqNodes = nodes.filter(n => SEQ.has(n.kind));
 let sim = null, unstable = false;
@@ -524,13 +529,13 @@ function bindSim(s) {
   const m = s.mem, c = s.compiled;
   nets.forEach((net, i) => {
     const a = c.V(i) >> 2, b = c.K(i) >> 2;
-    Object.defineProperty(net, "v", { get: () => m[a] >>> 0, set: x => { m[a] = x; } });
-    Object.defineProperty(net, "k", { get: () => m[b] >>> 0, set: x => { m[b] = x; } });
+    Object.defineProperty(net, "v", { get: () => m[a] >>> 0, set: x => { m[a] = x; }, configurable: true });
+    Object.defineProperty(net, "k", { get: () => m[b] >>> 0, set: x => { m[b] = x; }, configurable: true });
   });
   nodes.forEach((n, j) => {
     const a = c.S(j) >> 2, b = c.LC(j) >> 2;
-    Object.defineProperty(n, "state", { get: () => m[a] >>> 0, set: x => { m[a] = x; } });
-    Object.defineProperty(n, "lastClk", { get: () => m[b], set: x => { m[b] = x; } });
+    Object.defineProperty(n, "state", { get: () => m[a] >>> 0, set: x => { m[a] = x; }, configurable: true });
+    Object.defineProperty(n, "lastClk", { get: () => m[b], set: x => { m[b] = x; }, configurable: true });
   });
   window.wireSim = s;
 }
@@ -591,7 +596,7 @@ function makeView(id) {
     else items.push(wrap(n, {}));
   });
   D.insts.forEach((ins, c) => {
-    if (ins.parent !== id || c === 0) return;
+    if (ins.parent !== id || c === 0 || ins.builtin != null) return;
     const pins = nodes.filter(n => n.inst === c);
     const pi = pins.filter(n => n.kind === "pin_in"), po = pins.filter(n => n.kind === "pin_out");
     items.push({
@@ -1233,6 +1238,16 @@ function buildPart(n) {
     }
     if (shown) label(shown, g.w / 2, -7);
   }
+  if (n.node && WireInside.canOpen(n.node)) {
+    /* the mark of a chip: double-click (or click this) to look inside */
+    const tall = k === "mux" ? (n.in.length - 1) * 20 : k === "demux" ? n.out.length * 20 : 0;
+    const mx = tall ? 31 : g.w - 5, my = tall ? tall - 8 : g.h - 5;
+    el("path", { class: "chip-open", d: `M${mx - 8} ${my}h8v-8M${mx} ${my}l-6 -6` }, root);
+    const hit = el("rect", { class: "hit open-inside", x: mx - 11, y: my - 11, width: 14, height: 14, fill: "transparent" }, root);
+    hit.dataset.open = "1";
+    root.classList.add("opens");
+    root.setAttribute("aria-label", `${n.name || k}: double-click to look inside`);
+  }
   n.update = () => upd.forEach(f => f());
   place(n);
 }
@@ -1364,7 +1379,7 @@ const toWorld = (cx, cy) => ({ x: (cx - view.x) / view.s, y: (cy - view.y) / vie
 /* every use of a component shares one layout, saved per component */
 const keyBase = "wire-layout:" + hash((D.files || [{ source: D.source }]).map(f => f.source).join("\u0000")) + ":";
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
-const compOf = id => id === 0 ? "" : D.insts[id].comp;
+const compOf = id => id === 0 ? "" : D.insts[id].key || D.insts[id].comp;
 const shared = new Map();
 function save() {
   const rec = { n: V.items.map(n => [n.x, n.y]), d: V.dummies.map(d => d.y) };
@@ -1521,7 +1536,13 @@ function editValue(n, net, x, y) {
   };
   inp.onkeydown = ev => { if (ev.key === "Escape") f.hidden = true; };
 }
+let lastClick = { n: null, t: 0 };
 function click(n, target) {
+  const now = performance.now(), dbl = lastClick.n === n && now - lastClick.t < 400;
+  lastClick = { n, t: now };
+  if (n.node && WireInside.canOpen(n.node) && (dbl || (target.dataset && target.dataset.open))) {
+    if (!editing() || selected === n || target.dataset.open) { openInside(n.node); return; }
+  }
   if (n.kind === "chip") {
     /* drawing: the first click picks the chip (to rename or delete it), the next opens it */
     if (editing() && selected !== n) { select(n); return; }
@@ -1644,6 +1665,7 @@ $("reset").onclick = () => {
   nodes.forEach(n => { if (SOURCES.has(n.kind) || SEQ.has(n.kind)) n.state = 0; n.lastClk = 0; });
   nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
   sim.resetMem();
+  insides.forEach(initInside);     /* the latches of an opened flip-flop: as cleared */
   if (scopeOpen) { sHead = 0; sCount = 0; sTotal = 0; sHalf = 0; sBack = 0; }
   simulate();
 };
@@ -1996,6 +2018,55 @@ function markSource(line) {
 
 /* ============================================================ navigation */
 const instLabel = id => { const i = D.insts[id]; return i.name || i.comp; };
+
+/* ============================================================ inside */
+/* Looking inside a built-in part: wire_inside.js adds the part's inside to
+ * the netlist (a chip of simpler parts beside it, reading the same wires),
+ * the simulator is made again with it, everything is copied across, and the
+ * inside is set to what the part holds. Made once per part, when first
+ * opened; the parts inside open the same way, down to the gates. */
+let opening = false;
+const insides = [];               /* { node, init }, in the order they were opened */
+function initInside(x) {
+  for (const [what, i, v] of x.init(x.node.state, x.node.lastClk)) {
+    if (what === "state") nodes[i].state = v;
+    else if (what === "lastClk") nodes[i].lastClk = v;
+    else { nets[i].v = v; nets[i].k = mask(nets[i].w); }
+  }
+}
+async function openInside(node) {
+  const have = D.insts.findIndex(x => x.builtin === node.id);
+  if (have >= 0) { openView(have); return; }
+  if (opening) return;
+  opening = true;
+  try {
+    const nNets = D.nets.length, nNodes = D.nodes.length;
+    const e = WireInside.expand(D, node.id);
+    const next = await WireSim.create(D);
+    /* the old simulator's state, now (the clock may have run meanwhile) */
+    const nv = nets.map(x => [x.v, x.k]), ns = nodes.map(x => [x.state, x.lastClk]);
+    const words = nodes.map(x => { const w = sim.words(x.id); return w ? Uint32Array.from(w) : null; });
+    for (let i = nNets; i < D.nets.length; i++) nets.push({ id: i, w: D.nets[i].w, name: D.nets[i].name, v: 0, k: 0, driver: null, readers: [] });
+    for (let j = nNodes; j < D.nodes.length; j++) {
+      const n = Object.assign({ id: j, x: 0, y: 0, state: 0, lastClk: 0 }, D.nodes[j]);
+      nodes.push(n);
+      n.out.forEach((net, p) => { nets[net].driver = { node: j, port: p }; });
+      n.in.forEach((net, p) => nets[net].readers.push({ node: j, port: p }));
+    }
+    bindSim(next);
+    nets.forEach((x, i) => { if (i < nNets) { x.v = nv[i][0]; x.k = nv[i][1]; } else { x.v = 0; x.k = mask(x.w); } });
+    for (let j = 0; j < nNodes; j++) { nodes[j].state = ns[j][0]; nodes[j].lastClk = ns[j][1]; }
+    words.forEach((w, j) => { if (w) sim.words(j).set(w); });
+    insides.push({ node, init: e.init });
+    initInside(insides[insides.length - 1]);
+    settle();
+    openView(e.inst);
+  } catch (err) {
+    const w = $("warn");
+    w.style.display = "block";
+    w.textContent = "Could not open this part: " + err.message;
+  } finally { opening = false; }
+}
 function openView(id) {
   hideTip();
   if (selected) selected = null;
@@ -2022,7 +2093,14 @@ function openView(id) {
   /* in the playground's drawing the path is shown once, next to its chips */
   if (EDIT) {
     nav.hidden = true;
-    hostCall("viewPath", chain.map(c => ({ id: c, name: instLabel(c), comp: D.insts[c].comp })));
+    hostCall("viewPath", chain.map(c => ({ id: c, name: instLabel(c), comp: D.insts[c].comp, builtin: D.insts[c].builtin != null })));
+  }
+  const ins = D.insts[id], ab = $("about");
+  ab.hidden = !(ins && ins.builtin != null);
+  if (!ab.hidden) {
+    ab.textContent = "";
+    const b = document.createElement("b"); b.textContent = `Inside ${ins.name ? ins.name + ", a" : "a"} built-in ${ins.comp}: `;
+    ab.append(b, ins.about + ". It runs beside the part, on the same inputs. Double-click a part here to go further in.");
   }
   $("tb-view").textContent = id === 0 ? "the circuit" : `${instLabel(id)}${D.insts[id].name ? " (" + D.insts[id].comp + ")" : ""}, ${baseName((D.files || [])[viewFile(id)] ? D.files[viewFile(id)].name : D.file)}`;
   buildSource(viewFile(id));
