@@ -69,3 +69,7 @@ chu/ch7/uart_loopback
 chu/ch11/xilinx_one_port_ram_async
 chu/ch11/rom_template
 chu/ch11/xilinx_rom_sync_template
+
+== Screens | A screen is a ram the page shows as pixels: paint patterns, or draw with buttons. Open the Scope to watch the wires over time.
+screen/patterns
+screen/sketch

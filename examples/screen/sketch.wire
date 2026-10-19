@@ -1,0 +1,21 @@
+# An etch-a-sketch: hold an arrow button to move the pen, one pixel per
+# clock cycle, and it draws in the colour you pick while `pen` is 1.
+# x and y are counters that count up or down; together {y, x} is the
+# address of the pen's pixel on the 64 x 32 screen. Reset wipes it.
+#
+# Pixels are 3 bits: red, green, blue (1 = on), so colour 7 is white.
+
+circuit "Screen: etch-a-sketch"
+
+clock  clk (hz = 10)
+button left, right, up, down
+input  pen, colour[3]   # inputs start at 0: click pen, and type a colour
+
+x = counter(clk, bits = 6, en = left | right, down = left)
+y = counter(clk, bits = 5, en = up | down, down = up)
+
+s = screen({y, x}, colour, pen, clk, width = 64)
+
+output at_x, at_y
+at_x = x
+at_y = y

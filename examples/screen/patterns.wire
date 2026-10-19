@@ -1,0 +1,28 @@
+# A screen is a ram the page shows as pixels: screen(addr, pixel, we, clk).
+# The address is {y, x}: on this 32 x 32 screen, x is addr[4:0] and y is
+# addr[9:5]. Here a counter walks over every pixel, one per clock cycle,
+# and writes what `pick` chooses, so the picture is painted line by line.
+#
+# The pixels are 8 bits, 3-3-2: red is bits 7..5, green 4..2, blue 1..0.
+# Change `pick` while it runs and the new picture paints over the old one.
+# Open the Scope to watch the counter, the pixel and the clock.
+
+circuit "Screen: four patterns"
+
+clock clk (hz = 200)
+input pick[2]           # 0 gradient, 1 x xor y, 2 checkerboard, 3 stripes
+
+p = counter(clk, bits = 10)
+x = p[4:0]
+y = p[9:5]
+
+gradient = {x[4:2], y[4:2], x[4], y[4]}      # red across, green down
+texture  = {x[4:2] ^ y[4:2], x[4:2] ^ y[4:2], 0b11}
+checker  = mux(0x00, 0xFF, sel = x[2] ^ y[2])
+stripes  = mux(0xE0, 0x1C, 0x03, 0xFC, sel = x[3:2])
+
+px = mux(gradient, texture, checker, stripes, sel = pick)
+s = screen(p, px, 1, clk, width = 32)
+
+output row[5]           # the line being painted
+row = y

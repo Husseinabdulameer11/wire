@@ -75,7 +75,7 @@ change it, and `make test` runs every check.
 Nothing is installed and nothing leaves the browser.
 
 - **Draw:** drag parts onto the circuit (inputs, buttons, clocks, outputs,
-  LEDs, hex digits, 7-segment displays, every gate and a buffer, a mux, an
+  LEDs, hex digits, 7-segment displays, screens, every gate and a buffer, a mux, an
   adder, a comparator, D, T and JK flip-flops, a counter, a decoder, an
   encoder, a rom and a ram with their contents, constants, and splits and
   joins for buses), drag from pin to pin to wire them, and click
@@ -106,8 +106,8 @@ Draw, Wire and VHDL are three views of **one circuit**. Change it in one,
 switch, and the other view is made from it (going back without changing
 anything gives you exactly what you left). A switch that would lose part of
 the circuit does not happen, and the page says why: the drawing has no
-tri-state bus or keypad yet, and Wire cannot read a tri-state bus back from
-VHDL yet.
+tri-state bus or keypad yet, and Wire cannot read a tri-state bus or a
+screen back from VHDL yet.
 
 **Save .vhd** gives the circuit in VHDL for Vivado, **Save .wire** keeps it,
 and **Copy link** makes a link that opens the same circuit for someone else.
@@ -152,6 +152,18 @@ netlists, the VHDL and the error messages.
   than 12 input bits gets a "try it" panel instead: type its inputs and see
   its outputs. Chips with memory inside (flip-flops, counters, ram) have
   none; open the chips inside them.
+- **Scope** is a logic analyser along the bottom: the wires you probe,
+  over time, like the waveform window of a simulator. It starts with the
+  clocks, inputs and outputs; click a wire on the circuit (or pick one in
+  the list) to probe it, and × to stop. While it is open, every half clock
+  cycle and every input you change is recorded (the last 8192). Buses show
+  their value in hex; unknown is blue, floating grey. Drag a trace to look
+  back, scroll or − + to zoom, hover to read every value at one moment,
+  **Now** to follow again. **Save .vcd** writes the recording for GTKWave
+  (one time unit is half a clock cycle). The clock runs one flip at a time
+  while the scope is open, so a fast circuit runs a little slower.
+- **Screens** show their pixels as the circuit writes them; click one to see
+  them as memory words (see [Screens](#screens)).
 - **Source** shows the `.wire` file. Click a part to find its line, or a
   line to find its part.
 - **Chips** (your own components) open when you click them; see below.
@@ -248,6 +260,7 @@ number like `5` takes whatever width it is used at, and it must fit.
 | `tri(x, en)` | value | drives x while en is 1, floats while 0; see buses |
 | `rom(addr, bits = 8, file = "f.hex")` | q | 2^addr words; contents from `file =` or `data = "..."` |
 | `ram(addr, din, we, clk, file = "f.hex")` | q | reads at once; writes din at the rising edge while we is 1 |
+| `screen(addr, px, we, clk, width = 32)` | q | a ram the page shows as pixels; see [Screens](#screens) |
 
 Name a component to use its other outputs: `s = add(x, y)` then `s.cout`.
 `rst` is asynchronous; flip-flops start at 0.
@@ -269,9 +282,31 @@ While nobody drives it, a bus floats (shown grey, `z` in values); parts
 read a floating value as unknown. If two drive it at once, it is unknown
 and the page warns about a bus conflict.
 
+### Screens
+
+A `screen` is a ram whose words are pixels, drawn on the page as the
+circuit writes them. It takes the same inputs as a ram, with a pixel as the
+data:
+
+```
+p = counter(clk, bits = 10)               # every pixel of 32 x 32, in turn
+s = screen(p, p[0] ^ p[5], 1, clk)        # a checkerboard, painted line by line
+s = screen({y, x}, colour, pen, clk, width = 64)   # 64 x 32: x is 6 bits, y 5
+```
+
+The address is `{y, x}`, x in the low bits, so the width is a power of two
+and the height is what the rest of the address gives. Without `width =` a
+screen is square (the address then has an even number of bits). A pixel is
+1 bit (on or off), or 3, 6, 8, 12 or 24 bits of red, green and blue, red
+highest: 8 bits is 3-3-2 (`RRRGGGBB`), 12 bits 4-4-4 as on the Basys 3's VGA
+port. Up to 16 address bits (256 x 256). `data =` and `file =` give the
+starting picture, as for a ram, and Reset puts it back. In VHDL a screen is
+its ram (the pixels); on a board, a video circuit would read them out.
+See `examples/screen/`.
+
 ### Memory contents
 
-`rom` and `ram` take their contents from a file (`file = "program.hex"`,
+`rom`, `ram` and `screen` take their contents from a file (`file = "program.hex"`,
 next to the `.wire` file) or inline (`data = "3E 05 76"`). Both are hex
 numbers separated by spaces, commas or new lines, filling words from
 address 0; `@10` moves to address 0x10; `#`, `;` and `//` start comments;
@@ -289,7 +324,7 @@ F0   # HLT
 
 ## The examples
 
-`examples/` follows two books, each example a `.wire` file with the same
+`examples/` follows two books (and adds screens), each example a `.wire` file with the same
 circuit in VHDL beside it (`.vhd`). `examples/index.txt` gives the order.
 
 - **`examples/notes/`**: from my FPGA exam summary (`books/fpga_summary.pdf`),
@@ -308,7 +343,10 @@ circuit in VHDL beside it (`.vhd`). `examples/index.txt` gives the order.
   multiplexing, stopwatch, FIFO (ch. 4); FSMs, edge detectors, a debouncer
   (ch. 5); FSMDs: debouncer, Fibonacci, division, binary to BCD, period
   counter (ch. 6); the UART, and one wired to itself (ch. 7); RAM and ROM
-  templates (ch. 11). Each file names the listings it follows. The chapters
+  templates (ch. 11). Each file names the listings it follows.
+- **`examples/screen/`**: screens. `patterns` paints four patterns, one
+  pixel per clock cycle; `sketch` is an etch-a-sketch drawn with four
+  buttons. Neither has VHDL of its own beside it (the VHDL is Wire's). The chapters
   on the board's devices (PS/2, VGA, SRAM, PicoBlaze) are left out.
 
 The VHDL is written for this project, in the book's style and with the

@@ -298,6 +298,7 @@ const KINDS = {
   led:     { label: "LED", group: "io", prefix: "led" },
   hex:     { label: "Hex digit", group: "io", prefix: "digit" },
   seg7:    { label: "7-segment", group: "io", prefix: "disp" },
+  screen:  { label: "Screen", group: "io", prefix: "screen" },
   and: { label: "AND", group: "gates", n: 2 }, or: { label: "OR", group: "gates", n: 2 },
   not: { label: "NOT", group: "gates" }, buf: { label: "Buffer", group: "gates" },
   nand: { label: "NAND", group: "gates", n: 2 }, nor: { label: "NOR", group: "gates", n: 2 },
@@ -345,7 +346,7 @@ const insOf = (p, m = model) => {
   if (k === "split") return ["in"];
   if (k === "const") return [];
   if (k === "rom") return ["addr"];
-  if (k === "ram") return ["addr", "din", "we", "clk"];
+  if (k === "ram" || k === "screen") return ["addr", "din", "we", "clk"];
   if (k === "join") return p.ranges.map((_, i) => String(i));
   if (k === "chip") return chipPins(m, p).ins.map(x => x[0]);
   return [];
@@ -357,7 +358,7 @@ const outsOf = (p, m = model) => {
   if (k === "compare") return ["lt", "eq", "gt"];
   if (k === "dff" || k === "tff" || k === "jkff") return ["q", "nq"];
   if (k === "encoder") return ["out", "valid"];
-  if (k === "rom" || k === "ram") return ["q"];
+  if (k === "rom" || k === "ram" || k === "screen") return ["q"];
   if (k === "counter") return ["q", "carry"];
   if (k === "split") return p.ranges.map((_, i) => String(i));
   if (k === "chip") return chipPins(m, p).outs.map(x => x[0]);
@@ -388,6 +389,7 @@ const ICONS = {
   seg7: '<rect class="f" x="11" y="2" width="18" height="22" rx="2"/><path d="M15 5H25M15 13H25M15 21H25M15 5V21M25 5V21" stroke-width="1.6"/><path d="M4 13H11"/>',
   rom: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><text x="11" y="17" font-size="8">ROM</text><path d="M4 13H9M31 13H36"/>',
   ram: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><text x="11" y="17" font-size="8">RAM</text><path d="M4 9H9M4 17H9M31 13H36"/>',
+  screen: '<path d="M2 9H7M2 17H7"/><rect class="f" x="7" y="3" width="28" height="20" rx="2"/><rect x="11" y="7" width="20" height="12" fill="currentColor" stroke="none" opacity=".75"/>',
   buf: '<path d="M4 13H11"/><path class="f" d="M11 5L27 13L11 21Z"/><path d="M27 13H36"/>',
   tff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="17" y="14">T</text>',
   jkff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="15" y="14">JK</text>',
@@ -423,7 +425,7 @@ const partById = id => sheet(model).parts.find(p => p.id === id);
 
 /* a fresh name: a, b, c... for inputs; y, z, out1... for outputs; and1,
  * ff1... for the rest */
-const RESERVED = new Set("input output wire led seg7 hex button clock bus keypad circuit import component and or nand nor xor xnor not buf mux demux decoder encoder add compare dff reg tff jkff counter tri rom ram".split(" "));
+const RESERVED = new Set("input output wire led seg7 hex button clock bus keypad circuit import component and or nand nor xor xnor not buf mux demux decoder encoder add compare dff reg tff jkff counter tri rom ram screen".split(" "));
 function freshName(kind) {
   const used = new Set(sheet(model).parts.map(p => p.name.toLowerCase()));
   const free = n => !used.has(n.toLowerCase()) && !RESERVED.has(n);
@@ -499,6 +501,11 @@ function sheetLines(m, sh) {
     else if (k === "compare") body.push(`${p.name} = compare(${from(p, "a")}, ${from(p, "b")})`);
     else if (k === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
     else if (k === "counter") body.push(`${p.name} = counter(${from(p, "clk")}, bits = ${p.bits || 4}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
+    else if (k === "screen") {
+      const pin = (name, w) => { const v = from(p, name); return v === "0" ? lit(0, w) : v; };
+      const data = (p.data || "").trim() ? `, data = "${p.data.trim()}"` : "";
+      body.push(`${p.name} = screen(${pin("addr", p.abits || 10)}, ${pin("din", p.bits || 1)}, ${from(p, "we")}, ${from(p, "clk")}, width = ${p.sw || 32}${data})`);
+    }
     else if (k === "rom" || k === "ram") {
       /* an unwired address or data in reads 0, as wide as the memory's */
       const pin = (name, w) => { const v = from(p, name); return v === "0" ? lit(0, w) : v; };
@@ -777,6 +784,7 @@ window.wireCanvas = {
       if (kind === "decoder") p.bits = 2;
       if (kind === "encoder") p.bits = 4;
       if (kind === "rom" || kind === "ram") { p.bits = 8; p.abits = 4; p.data = kind === "rom" ? "00" : ""; }
+      if (kind === "screen") { p.bits = 1; p.abits = 10; p.sw = 32; p.data = ""; }
       sheet(m).parts.push(p);
       selectedName = p.name;
     });
@@ -1107,6 +1115,19 @@ function showProps() {
     field("Input bits", sel).title = "The size it has while nothing is wired in; wire an input of this many bits to it";
     sel.addEventListener("change", () => change(() => { p.bits = +sel.value; }));
   }
+  if (k === "screen") {
+    /* the size sets the address: {y, x}, x the low bits */
+    const sizes = [[16, 16], [32, 32], [64, 32], [64, 64], [128, 64], [128, 128]];
+    const sz = document.createElement("select");
+    sizes.forEach(([w, h]) => sz.append(new Option(`${w} × ${h} (address ${Math.log2(w * h)} bits)`, `${w}x${h}`, false, w === (p.sw || 32) && w * h === 2 ** (p.abits || 10))));
+    field("Size", sz).title = "Pixels across and down; the address is {y, x}, so x is its low bits";
+    sz.addEventListener("change", () => { const [w, h] = sz.value.split("x").map(Number); change(() => { p.sw = w; p.abits = Math.log2(w * h); }); });
+    const px = document.createElement("select");
+    [[1, "1 bit: on/off"], [3, "3 bits: RGB 1-1-1"], [6, "6 bits: RGB 2-2-2"], [8, "8 bits: RGB 3-3-2"], [12, "12 bits: RGB 4-4-4"], [24, "24 bits: RGB 8-8-8"]]
+      .forEach(([b, t]) => px.append(new Option(t, String(b), false, b === (p.bits || 1))));
+    field("Pixel", px).title = "Bits per pixel: red is the highest bits";
+    px.addEventListener("change", () => change(() => { p.bits = +px.value; }));
+  }
   if (k === "rom" || k === "ram") {
     const b = field("Word bits", Object.assign(document.createElement("input"), { type: "number", min: 1, max: 32, value: p.bits || 8 }));
     b.addEventListener("change", () => { const v = Math.max(1, Math.min(32, parseInt(b.value, 10) || 8)); if (v !== p.bits) change(() => { p.bits = v; }); });
@@ -1313,7 +1334,7 @@ function buildSheet(D, scope, lay, comps) {
    * its pins (pin_in, pin_out) are the sheet's inputs and outputs */
   const N = D.nodes, top = new Set(N.map((n, i) => i).filter(i => N[i].inst === scope));
   const chips = D.insts.map((ins, c) => ({ ins, c })).filter(x => x.c > 0 && x.ins.parent === scope);
-  const kindOf = n => n.kind === "merge" ? "join" : n.kind === "pin_in" ? "input" : n.kind === "pin_out" ? "output" : n.kind;
+  const kindOf = n => n.kind === "merge" ? "join" : n.kind === "pin_in" ? "input" : n.kind === "pin_out" ? "output" : n.kind === "ram" && n.screen ? "screen" : n.kind;
   /* who drives each net seen from the top: a part's pin, or a chip's */
   const drv = new Map();
   for (const i of top) N[i].out.forEach((net, p) => drv.set(net, { i, p }));
@@ -1387,9 +1408,10 @@ function buildSheet(D, scope, lay, comps) {
     if (k === "decoder" || k === "encoder") p.bits = D.nets[n.in[0]].w;
     if (k === "split") { p.bits = D.nets[n.in[0]].w; p.ranges = n.ranges.map(r => [r[0], r[1]]); }
     if (k === "const") { p.bits = D.nets[n.out[0]].w; p.value = n.value >>> 0; }
-    if (k === "rom" || k === "ram") {
+    if (k === "rom" || k === "ram" || k === "screen") {
       /* the contents, as data = "..." from address 0 (a file's words come along) */
       p.bits = n.bits; p.abits = n.abits;
+      if (k === "screen") p.sw = n.screen;
       const words = [];
       for (const [at, ws] of n.init || []) ws.forEach((w, j) => { words[at + j] = w; });
       p.data = Array.from(words, w => ((w || 0) >>> 0).toString(16).toUpperCase().padStart(2, "0")).join(" ");
@@ -1466,6 +1488,12 @@ async function makeView(to) {
   }
   const r = await wire(["--to-vhdl", "-o", "/out.vhd", path], path, t.text);
   if (r.code !== 0) return { why: "fix the error first (" + firstError(r, path) + ")" };
+  /* a screen is a ram in VHDL; read back, it would be a plain ram */
+  if (from !== "vhdl") {
+    const j = await wire(["--json", path], path, t.text);
+    if (j.code === 0 && JSON.parse(j.out).nodes.some(n => n.screen))
+      return { why: "Wire cannot read a screen back from VHDL yet (it would come back as a ram). Save .vhd still gives you its VHDL." };
+  }
   const v = r.read("/out.vhd"), vp = pathFor("vhdl", ""), c = await wire(["--check", vp], vp, v);
   if (c.code !== 0) return { why: "Wire cannot read this circuit back from VHDL yet (" + firstError(c, vp).replace(/^line \d+:\d+: error: /, "").split(/[.;:] /)[0] + "). Save .vhd still gives you its VHDL." };
   return { value: { text: v, dir: "" } };

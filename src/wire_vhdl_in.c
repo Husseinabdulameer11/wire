@@ -1865,7 +1865,7 @@ static int vi_wname_taken(const char *w)   /* a component name already in use (o
 {
     static const char *parts[] = { "and", "or", "nand", "nor", "xor", "xnor", "not", "buf", "mux", "demux", "decoder",
                                    "encoder", "add", "compare", "dff", "reg", "tff", "jkff", "counter", "tri", "rom",
-                                   "ram", NULL };
+                                   "ram", "screen", NULL };
     int i;
     for (i = 0; parts[i]; i++) if (!strcmp(parts[i], w)) return 1;
     if (vi_wire_word(w, (int)strlen(w))) return 1;

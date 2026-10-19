@@ -1,0 +1,4 @@
+# expect: ram has no setting called width
+clock clk
+input a[10], d
+s = ram(a, d, 1, clk, width = 32)

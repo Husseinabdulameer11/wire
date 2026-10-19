@@ -211,6 +211,27 @@ table.tt tr.row:hover td { background: var(--hi-soft); }
 table.tt tr.cur td { background: var(--hi-soft); font-weight: 500; }
 table.tt td.one { color: var(--on); font-weight: 500; }
 
+/* the scope: a timing diagram of the wires you probe, along the bottom */
+@media (min-width: 900px) {
+  #scopedrawer { left: 0; right: 0; top: auto; width: auto; height: 42vh; max-height: 42vh; border-left: 0; border-top: 1.5px solid var(--ink); }
+}
+#scopedrawer { height: 46vh; }
+#scopetools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--panel-line); font-size: 13px; }
+#scopetools select { font: 13px "IBM Plex Sans Condensed", sans-serif; border: 1px solid var(--panel-line); border-radius: 4px; background: var(--paper); color: var(--ink); min-height: 30px; padding: 0 6px; max-width: 14em; }
+#scopetools button { border: 1px solid var(--panel-line); border-radius: 4px; min-height: 30px; padding: 2px 10px; }
+#scopetools .info { color: var(--ink-soft); margin-left: auto; }
+#scoperows { padding: 2px 0 6px; }
+.srow { display: flex; align-items: stretch; height: 30px; border-bottom: 1px solid var(--grid); }
+.srow .sname { flex: none; width: 150px; display: flex; align-items: center; gap: 4px; padding: 0 4px 0 14px; font-size: 13px; overflow: hidden; }
+.srow .sname b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srow .sval { font: 12px "IBM Plex Mono", ui-monospace, monospace; color: var(--ink-soft); margin-left: auto; white-space: nowrap; }
+.srow .sdel { min-height: 0; padding: 0 4px; color: var(--ink-soft); font-size: 15px; line-height: 1; }
+.srow canvas { flex: 1; min-width: 0; height: 30px; display: block; cursor: ew-resize; touch-action: none; }
+@media (max-width: 600px) { .srow .sname { width: 112px; padding-left: 10px; } }
+#scopeempty { padding: 12px 14px; color: var(--ink-soft); max-width: 70ch; }
+.wire.probed { filter: drop-shadow(0 0 2.5px var(--hi)); }
+.screen-px { image-rendering: pixelated; image-rendering: crisp-edges; }
+
 /* drawing */
 .part-body { fill: var(--body); stroke: var(--ink); stroke-width: 1.6; }
 .part-line { fill: none; stroke: var(--ink); stroke-width: 1.6; }
@@ -275,6 +296,7 @@ table.tt td.one { color: var(--on); font-weight: 500; }
   <div class="group">
     <button id="reset" title="Inputs to 0, flip-flops cleared">Reset</button>
     <button id="tablebtn" title="Truth table">Truth table</button>
+    <button id="scopebtn" title="Scope: the wires you probe, over time">Scope</button>
     <button id="srcbtn" title="Show the .wire source">Source</button>
     <button id="membtn" title="Contents of the roms and rams" hidden>Memory</button>
     <button id="vhdlbtn" title="The VHDL for this example" hidden>VHDL</button>
@@ -346,6 +368,17 @@ table.tt td.one { color: var(--on); font-weight: 500; }
   </div>
   <div class="scroll" id="membody"></div>
 </section>
+<section class="drawer" id="scopedrawer" aria-label="Scope">
+  <header><h2>Scope</h2><button id="scopeclear" title="Forget what was recorded">Clear</button><button id="scopevcd" title="Save the recording as a .vcd file, for GTKWave">Save .vcd</button><button data-close="scopedrawer">Close</button></header>
+  <div id="scopetools">
+    <select id="scopeadd" aria-label="Probe a wire"></select>
+    <button id="scopeout" aria-label="Zoom out">−</button>
+    <button id="scopein" aria-label="Zoom in">+</button>
+    <button id="scopelive" title="Back to now">Now</button>
+    <span class="info" id="scopeinfo"></span>
+  </div>
+  <div class="scroll"><div id="scoperows"></div><p id="scopeempty" hidden>Click a wire on the circuit to probe it, or pick one above. The scope records every clock edge and every input you change while it is open.</p></div>
+</section>
 <section class="drawer" id="srcdrawer" aria-label="Source">
   <header><h2 id="srctitle">Source</h2><button data-close="srcdrawer">Close</button></header>
   <div class="scroll"><div id="src"></div></div>
@@ -415,6 +448,14 @@ function geom(n) {
     right(Math.floor(g.h / 20) * 10);
   } else if (k === "keypad") {
     g.w = 100; g.h = 100; right(50);
+  } else if (k === "ram" && n.screen) {
+    /* a screen: the pins on the left, the pixels beside them */
+    const sw = n.screen, sh = (1 << n.abits) / sw, s = Math.max(1, 200 / Math.max(sw, sh));
+    const dw = Math.round(sw * s), dh = Math.round(sh * s);
+    g.w = Math.ceil((dw + 62) / 10) * 10; g.h = Math.max(110, Math.ceil((dh + 36) / 10) * 10);
+    g.disp = { x: 36, y: 24, w: dw, h: dh };
+    n.in.forEach((_, i) => left(30 + i * 20, n.inNames[i]));
+    right(30, "q");
   } else if (k === "decoder" || k === "encoder" || k === "add" || k === "compare" || SEQ.has(k) || MEMS.has(k)) {
     g.w = SEQ.has(k) ? 60 : MEMS.has(k) ? 80 : 50;
     const top = SEQ.has(k) || k === "add" ? 20 : 30;     /* room for the title on top */
@@ -496,7 +537,7 @@ function bindSim(s) {
 /* evaluate the logic; returns false if it never settles */
 function settle() { unstable = !sim.settle(); return !unstable; }
 /* settle, clock the flip-flops that saw a rising edge, and draw */
-function simulate() { unstable = !sim.simulate(); redraw(); }
+function simulate() { unstable = !sim.simulate(); if (scopeOpen) scopeSample(); redraw(); }
 
 /* ================================================================== graph */
 /* items have .vi (their index) .in .out (nets); drv: net -> {node: vi, port} */
@@ -1132,6 +1173,37 @@ function buildPart(n) {
       dp.setAttribute("fill", k === "seg7" && net.w === 8 && kn && (net.v >>> 7) & 1 ? "var(--seg-on)" : "var(--seg-off)");
     });
     label(n.name, 20, -7);
+  } else if (k === "ram" && n.screen) {
+    const d = g.disp, sw = n.screen, sh = (1 << n.abits) / sw, bits = n.bits;
+    el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 2 }, root);
+    const tt = el("text", { class: "part-text", x: d.x, y: 15, style: "font-weight:600;font-size:12px" }, root);
+    tt.textContent = `SCREEN ${sw}×${sh}`;
+    g.ins.forEach(p => {
+      if (p.name === "clk") el("path", { class: "part-line", d: `M0 ${p.y - 5}L7 ${p.y}L0 ${p.y + 5}` }, root);
+      else { const t = el("text", { class: "part-small", x: 4, y: p.y + 3 }, root); t.textContent = p.name === "din" ? "px" : p.name; }
+    });
+    const qt = el("text", { class: "part-small", x: g.w - 4, y: g.outs[0].y + 3, "text-anchor": "end" }, root); qt.textContent = "q";
+    el("rect", { x: d.x - 2, y: d.y - 2, width: d.w + 4, height: d.h + 4, rx: 2, fill: "#05090a", stroke: "var(--ink)", "stroke-width": 1.2 }, root);
+    const img = el("image", { class: "screen-px hit", x: d.x, y: d.y, width: d.w, height: d.h, preserveAspectRatio: "none" }, root);
+    const cv = document.createElement("canvas");
+    cv.width = sw; cv.height = sh;
+    const cx = cv.getContext("2d"), pix = cx.createImageData(sw, sh), px = new Uint32Array(pix.data.buffer);
+    let last = null;
+    upd.push(() => {
+      const words = sim.words(n.node.id);
+      if (!words) return;
+      if (last && last.length === words.length) {
+        let same = true;
+        for (let i = 0; i < words.length; i++) if (words[i] !== last[i]) { same = false; break; }
+        if (same) return;
+      }
+      last = Uint32Array.from(words);
+      for (let i = 0; i < words.length; i++) px[i] = screenColor(words[i], bits);
+      cx.putImageData(pix, 0, 0);
+      img.setAttribute("href", cv.toDataURL());
+    });
+    root.setAttribute("aria-label", `Show the pixels of ${n.name || "the screen"} as memory`);
+    if (shown) label(shown, g.w / 2, -7);
   } else {
     /* boxes: decoder, encoder, add, compare, flip-flops, counter */
     el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 2 }, root);
@@ -1163,6 +1235,16 @@ function buildPart(n) {
   }
   n.update = () => upd.forEach(f => f());
   place(n);
+}
+/* a pixel as ABGR (canvas byte order): 1 bit is on/off, more bits are red,
+ * green and blue, red highest (8 bits: 3 red, 3 green, 2 blue) */
+const SCREEN_RGB = { 3: [1, 1, 1], 6: [2, 2, 2], 8: [3, 3, 2], 12: [4, 4, 4], 24: [8, 8, 8] };
+function screenColor(v, bits) {
+  if (bits === 1) return v & 1 ? 0xFF78F05A : 0xFF0C100A;
+  const [rb, gb, bb] = SCREEN_RGB[bits] || [8, 8, 8];
+  const ch = (x, b) => Math.round((x & ((1 << b) - 1)) * 255 / ((1 << b) - 1));
+  const b = ch(v, bb), g = ch(v >>> bb, gb), r = ch(v >>> (bb + gb), rb);
+  return (0xFF000000 | (b << 16) | (g << 8) | r) >>> 0;
 }
 function cssColor(c) {
   const map = { red: "#e2321f", green: "#1fae4b", blue: "#2f6fd6", yellow: "#f0c419", orange: "#ef7d1a", white: "#f4f6f8", amber: "var(--hi)" };
@@ -1205,6 +1287,7 @@ function drawWires() {
     if (j.net == null) j.net = netAt(j.x, j.y);
   });
   recolor();
+  if (scopeOpen) markProbed();
 }
 function netAt(x, y) {
   for (const [id, d] of wirePaths) {
@@ -1231,6 +1314,7 @@ function redraw() {
   else w.style.display = "none";
   if (tableOpen) markRow();
   if (memOpen) updateMem();
+  if (scopeOpen && sDirty) drawScope();
 }
 
 /* ================================================================ view */
@@ -1395,7 +1479,10 @@ function endPointer(e) {
   /* a tap that places a part (the playground says so) is not a deselect */
   if (d.pan && editing()) { const w = toWorld(e.clientX, e.clientY); if (hostCall("tap", Math.round(w.x / 10) * 10, Math.round(w.y / 10) * 10)) return; }
   if (d.pan) {
-    if (d.target.dataset && d.target.dataset.net != null) showTip(+d.target.dataset.net, e.clientX, e.clientY);
+    if (d.target.dataset && d.target.dataset.net != null) {
+      if (scopeOpen && !editing()) toggleProbe(+d.target.dataset.net);
+      showTip(+d.target.dataset.net, e.clientX, e.clientY);
+    }
     else select(null);
     return;
   }
@@ -1516,7 +1603,12 @@ function frame(now) {
   let n = max ? budget : Math.min(Math.floor(owed), budget);
   if (n > 0) {
     const t0 = performance.now();
-    unstable = !sim.toggle(n);
+    if (scopeOpen) {
+      /* one flip at a time, so the scope sees every edge */
+      let ok = true;
+      for (let i = 0; i < n; i++) { ok = sim.toggle(1); sHalf++; scopeSample(); }
+      unstable = !ok;
+    } else unstable = !sim.toggle(n);
     const dt = performance.now() - t0;
     owed = Math.max(0, owed - n);
     if (owed > budget) owed = 0;               /* fell behind: do not try to catch up */
@@ -1537,8 +1629,8 @@ function fmtHz(h) {
 }
 function stepClock() {
   if (timer) setRun(false);
-  clocks.forEach(c => { c.state = 1; }); simulate();
-  clocks.forEach(c => { c.state = 0; }); simulate();
+  clocks.forEach(c => { c.state = 1; }); sHalf++; simulate();
+  clocks.forEach(c => { c.state = 0; }); sHalf++; simulate();
 }
 if (clocks.length) {
   $("clockgroup").hidden = false;
@@ -1552,6 +1644,7 @@ $("reset").onclick = () => {
   nodes.forEach(n => { if (SOURCES.has(n.kind) || SEQ.has(n.kind)) n.state = 0; n.lastClk = 0; });
   nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
   sim.resetMem();
+  if (scopeOpen) { sHead = 0; sCount = 0; sTotal = 0; sHalf = 0; sBack = 0; }
   simulate();
 };
 
@@ -1754,7 +1847,9 @@ function showTable(c, title, comp) {
   });
 }
 function openDrawer(id) {
-  ["tabledrawer", "srcdrawer", "memdrawer", "vhdldrawer"].forEach(d => $(d).classList.toggle("open", d === id));
+  ["tabledrawer", "srcdrawer", "memdrawer", "vhdldrawer", "scopedrawer"].forEach(d => $(d).classList.toggle("open", d === id));
+  showScope(id === "scopedrawer");
+  $("scopebtn").setAttribute("aria-pressed", id === "scopedrawer");
   tableOpen = id === "tabledrawer";
   memOpen = id === "memdrawer";
   const wasVhdl = vhdlOpen;
@@ -1775,7 +1870,8 @@ $("srcbtn").onclick = () => openDrawer($("srcdrawer").classList.contains("open")
  * word to change it. Reset puts back the contents written in the circuit. */
 const memNodes = nodes.filter(n => MEMS.has(n.kind));
 let memOpen = false, memSel = null, memPage = 0, memCells = [], memEdit = false;
-const memLabel = n => `${n.kind} ${n.name || ""}`.trim() + ` (${1 << n.abits} × ${n.bits} bits)`;
+const memLabel = n => n.screen ? `screen ${n.name || ""}`.trim() + ` (${n.screen} × ${(1 << n.abits) / n.screen} pixels, ${n.bits} bit${n.bits > 1 ? "s" : ""})`
+                                : `${n.kind} ${n.name || ""}`.trim() + ` (${1 << n.abits} × ${n.bits} bits)`;
 if (memNodes.length) {
   $("membtn").hidden = false;
   memNodes.forEach((n, i) => { const o = document.createElement("option"); o.value = i; o.textContent = memLabel(n); $("memsel").append(o); });
@@ -2298,6 +2394,253 @@ if (VHDL) {
   };
   if (VHDL.generated) $("vhdlbtn").title = "VHDL for this circuit, made by Wire (VHDL-93, ready for Vivado)";
 }
+
+/* ================================================================ scope */
+/* A logic analyser: the wires you probe, over time. While the scope is open
+ * every half clock cycle and every change you make is one sample; the last
+ * SCOPE_N samples are kept. Running, the clock is stepped one flip at a time
+ * so no edge is missed (it runs a little slower while the scope is open).
+ * Drag a trace to look back, scroll (or − +) to zoom, Now to follow again. */
+const SCOPE_N = 8192;
+let scopeOpen = false, probes = [], sHead = 0, sCount = 0, sTotal = 0, sZoom = 12, sBack = 0, sCursor = -1, sDirty = false;
+const sTime = new Float64Array(SCOPE_N);          /* half cycles since the scope started */
+let sHalf = 0;
+const scopeKey = keyBase + "scope";
+function probeLabel(id) { return nets[id].name || `wire ${id}`; }
+function newProbe(id) { return { net: id, v: new Uint32Array(SCOPE_N), k: new Uint32Array(SCOPE_N), row: null }; }
+function scopeSave() { try { localStorage.setItem(scopeKey, JSON.stringify(probes.map(p => p.net))); } catch (e) {} }
+function scopeDefaults() {
+  let ids = null;
+  try { ids = JSON.parse(localStorage.getItem(scopeKey) || "null"); } catch (e) { ids = null; }
+  if (!Array.isArray(ids)) {
+    /* the clocks, the inputs and the outputs of the circuit */
+    ids = [];
+    const top = nodes.filter(n => n.inst === 0);
+    top.filter(n => n.kind === "clock").forEach(n => ids.push(n.out[0]));
+    top.filter(n => n.kind === "input" || n.kind === "button").forEach(n => ids.push(n.out[0]));
+    top.filter(n => SINKS.has(n.kind)).forEach(n => ids.push(n.in[0]));
+    ids = ids.slice(0, 10);
+  }
+  ids = [...new Set(ids)].filter(id => Number.isInteger(id) && id >= 0 && id < nets.length);
+  probes = ids.map(newProbe);
+}
+function markProbed() { wireEls.forEach((p, id) => p.classList.toggle("probed", scopeOpen && probes.some(q => q.net === id))); }
+/* every wire with a name, once, for the "Probe a wire" list */
+function fillScopeAdd() {
+  const sel = $("scopeadd"), seen = new Set();
+  sel.textContent = "";
+  const first = document.createElement("option"); first.value = ""; first.textContent = "Probe a wire…"; sel.append(first);
+  nets.forEach((n, id) => {
+    if (!n.name || seen.has(n.name + "/" + id) || probes.some(p => p.net === id)) return;
+    seen.add(n.name + "/" + id);
+    const o = document.createElement("option"); o.value = id; o.textContent = n.name + (n.w > 1 ? ` [${n.w}]` : ""); sel.append(o);
+  });
+}
+function toggleProbe(id) {
+  const i = probes.findIndex(p => p.net === id);
+  if (i >= 0) probes.splice(i, 1);
+  else {
+    const p = newProbe(id);
+    /* it was not recorded before: what it is now goes back to the start */
+    const net = nets[id];
+    p.v.fill(net.v); p.k.fill(net.k);
+    probes.push(p);
+  }
+  scopeSave(); buildScope(); markProbed();
+}
+function scopeSample() {
+  const at = sHead;
+  for (let i = 0; i < probes.length; i++) { const p = probes[i], net = nets[p.net]; p.v[at] = net.v; p.k[at] = net.k; }
+  sTime[at] = sHalf;
+  sHead = (sHead + 1) % SCOPE_N;
+  if (sCount < SCOPE_N) sCount++;
+  sTotal++;
+  sDirty = true;
+}
+function scopeClear() { sHead = 0; sCount = 0; sTotal = 0; sHalf = 0; sBack = 0; sCursor = -1; if (sim) scopeSample(); drawScope(); }
+/* sample i, counted back from the newest (0) */
+const sAt = i => (sHead - 1 - i + 2 * SCOPE_N) % SCOPE_N;
+function buildScope() {
+  const box = $("scoperows");
+  box.textContent = "";
+  probes.forEach(p => {
+    const row = document.createElement("div"); row.className = "srow";
+    const nm = document.createElement("div"); nm.className = "sname";
+    const b = document.createElement("b"); b.textContent = probeLabel(p.net); b.title = `${probeLabel(p.net)}, ${nets[p.net].w} bit${nets[p.net].w > 1 ? "s" : ""}`;
+    const val = document.createElement("span"); val.className = "sval";
+    const del = document.createElement("button"); del.className = "sdel"; del.textContent = "×"; del.setAttribute("aria-label", `Stop probing ${probeLabel(p.net)}`);
+    del.onclick = () => toggleProbe(p.net);
+    nm.append(b, val, del);
+    const cv = document.createElement("canvas");
+    row.append(nm, cv);
+    box.append(row);
+    p.row = { cv, val };
+    scopePointer(cv);
+  });
+  $("scopeempty").hidden = probes.length > 0;
+  fillScopeAdd();
+  drawScope();
+}
+function scopeColors() {
+  const cs = getComputedStyle(document.documentElement), v = x => cs.getPropertyValue(x).trim();
+  return { on: v("--on"), unknown: v("--unknown"), float: v("--float"), ink: v("--ink"), soft: v("--ink-soft"), grid: v("--grid"), hi: v("--hi"), panel: v("--panel") };
+}
+const sHex = (v, k, w) => {
+  if (k === mask(w)) return w <= 3 ? v.toString(2).padStart(w, "0") : v.toString(16).toUpperCase();
+  if (k === 0 && v === mask(w)) return "z";
+  return "x";
+};
+function drawScope() {
+  sDirty = false;
+  if (!scopeOpen) return;
+  const C = scopeColors(), dpr = window.devicePixelRatio || 1;
+  const live = sBack === 0;
+  $("scopelive").disabled = live;
+  $("scopeinfo").textContent = sCount ? `${Math.floor(sHalf / 2)} cycles` + (live ? "" : ", looking back") : "";
+  probes.forEach(p => {
+    if (!p.row) return;
+    const cv = p.row.cv, W = cv.clientWidth, H = 30;
+    if (!W) return;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    const w = nets[p.net].w, top = 6, bot = H - 6, mid = H / 2;
+    /* the newest sample ends at the right edge; sample i (back from the
+     * newest) spans [x(i), x(i) + zoom) */
+    const n = Math.min(sCount, Math.ceil(W / sZoom) + 1);
+    const x = i => W - (i - sBack + 1) * sZoom;
+    /* clock edges as faint lines */
+    g.strokeStyle = C.grid; g.lineWidth = 1;
+    for (let i = sBack; i < sBack + n && i < sCount; i++) {
+      const a = sAt(i);
+      if (sTime[a] % 2 === 1 && sZoom >= 4) { g.beginPath(); g.moveTo(Math.round(x(i)) + .5, 0); g.lineTo(Math.round(x(i)) + .5, H); g.stroke(); }
+    }
+    let lastLabelEnd = -Infinity;
+    for (let i = Math.min(sCount - 1, sBack + n); i >= sBack; i--) {
+      const a = sAt(i), v = p.v[a], k = p.k[a], x0 = x(i), x1 = x0 + sZoom;
+      const pa = i + 1 < sCount ? sAt(i + 1) : -1;
+      const changed = pa < 0 || p.v[pa] !== v || p.k[pa] !== k;
+      if (w === 1) {
+        if (k & 1) {
+          const y = v & 1 ? top : bot;
+          g.strokeStyle = C.on; g.lineWidth = 1.6;
+          g.beginPath();
+          if (pa >= 0 && changed && (p.k[pa] & 1)) { g.moveTo(x0, p.v[pa] & 1 ? top : bot); g.lineTo(x0, y); } else g.moveTo(x0, y);
+          g.lineTo(x1, y); g.stroke();
+          if (v & 1) { g.fillStyle = C.on; g.globalAlpha = .12; g.fillRect(x0, top, sZoom, bot - top); g.globalAlpha = 1; }
+        } else if (v & 1) {
+          g.strokeStyle = C.float; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0, mid); g.lineTo(x1, mid); g.stroke();
+        } else {
+          g.fillStyle = C.unknown; g.globalAlpha = .35; g.fillRect(x0, top, sZoom, bot - top); g.globalAlpha = 1;
+        }
+      } else {
+        /* a bus: a band, crossing where the value changes, the value written in */
+        const full = k === mask(w), floating = k === 0 && v === mask(w);
+        const col = full ? C.ink : floating ? C.float : C.unknown;
+        const s = changed ? Math.min(3, sZoom / 2) : 0;
+        g.strokeStyle = col; g.lineWidth = 1.3;
+        g.beginPath();
+        if (s) {
+          g.moveTo(x0, mid); g.lineTo(x0 + s, top); g.lineTo(x1, top);
+          g.moveTo(x0, mid); g.lineTo(x0 + s, bot); g.lineTo(x1, bot);
+        } else { g.moveTo(x0, top); g.lineTo(x1, top); g.moveTo(x0, bot); g.lineTo(x1, bot); }
+        g.stroke();
+        if (!full && !floating) { g.fillStyle = C.unknown; g.globalAlpha = .2; g.fillRect(x0 + s, top, sZoom - s, bot - top); g.globalAlpha = 1; }
+        if (changed || i === Math.min(sCount - 1, sBack + n)) {
+          /* how far this value lasts (towards the newest) */
+          let j = i;
+          while (j - 1 >= sBack && p.v[sAt(j - 1)] === v && p.k[sAt(j - 1)] === k) j--;
+          const end = Math.min(W, x(j) + sZoom), start = Math.max(0, x0 + s + 2);
+          const t = sHex(v, k, w);
+          g.font = '11px "IBM Plex Mono", ui-monospace, monospace';
+          const tw = g.measureText(t).width;
+          if (end - start >= tw + 4 && start >= lastLabelEnd) {
+            g.fillStyle = col; g.textBaseline = "middle"; g.fillText(t, start + 1, mid + .5);
+            lastLabelEnd = start + tw;
+          }
+        }
+      }
+    }
+    /* the cursor */
+    if (sCursor >= 0 && sCursor < sCount) {
+      const cx = Math.round(x(sCursor) + sZoom / 2) + .5;
+      g.strokeStyle = C.hi; g.lineWidth = 1; g.beginPath(); g.moveTo(cx, 0); g.lineTo(cx, H); g.stroke();
+    }
+    const at = sCursor >= 0 && sCursor < sCount ? sAt(sCursor) : sCount ? sAt(sBack) : -1;
+    p.row.val.textContent = at < 0 ? "" : w === 1 ? ((p.k[at] & 1) ? String(p.v[at] & 1) : (p.v[at] & 1) ? "z" : "x")
+                                     : (p.k[at] === mask(w) ? (w > 3 ? "0x" : "") : "") + sHex(p.v[at], p.k[at], w);
+  });
+}
+function scopePointer(cv) {
+  let dragX = null, back0 = 0;
+  const sampleAt = e => { const r = cv.getBoundingClientRect(); return Math.floor((r.width - (e.clientX - r.left)) / sZoom) + sBack; };
+  cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); dragX = e.clientX; back0 = sBack; });
+  cv.addEventListener("pointermove", e => {
+    if (dragX != null) {
+      sBack = Math.max(0, Math.min(Math.max(0, sCount - 4), back0 + Math.round((e.clientX - dragX) / sZoom)));
+      sCursor = -1;
+    } else sCursor = sampleAt(e);
+    drawScope();
+  });
+  const up = () => { dragX = null; };
+  cv.addEventListener("pointerup", up);
+  cv.addEventListener("pointercancel", up);
+  cv.addEventListener("pointerleave", () => { if (dragX == null) { sCursor = -1; drawScope(); } });
+  cv.addEventListener("dblclick", () => { sBack = 0; drawScope(); });
+  cv.addEventListener("wheel", e => { e.preventDefault(); scopeZoom(e.deltaY < 0 ? 1.25 : 0.8); }, { passive: false });
+}
+function scopeZoom(f) { sZoom = Math.max(1, Math.min(48, sZoom * f)); drawScope(); }
+function scopeVcd() {
+  /* one time unit per half clock cycle */
+  const ids = probes.map((p, i) => { let s = "", x = i; do { s += String.fromCharCode(33 + x % 94); x = Math.floor(x / 94); } while (x); return s; });
+  const vname = id => probeLabel(id).replace(/[^A-Za-z0-9_]/g, "_");
+  const out = ["$date " + new Date().toISOString() + " $end", "$version Wire scope $end", "$comment one time unit is half a clock cycle $end",
+               "$timescale 1ns $end", "$scope module " + (D.title || D.file).replace(/[^A-Za-z0-9_]/g, "_") + " $end"];
+  probes.forEach((p, i) => out.push(`$var wire ${nets[p.net].w} ${ids[i]} ${vname(p.net)}${nets[p.net].w > 1 ? ` [${nets[p.net].w - 1}:0]` : ""} $end`));
+  out.push("$upscope $end", "$enddefinitions $end");
+  const bitsOf = (v, k, w) => { let s = ""; for (let b = w - 1; b >= 0; b--) s += (k >>> b) & 1 ? (v >>> b) & 1 : (v >>> b) & 1 ? "z" : "x"; return s; };
+  let t0 = null, lastT = null;
+  const prev = probes.map(() => null);
+  for (let i = sCount - 1; i >= 0; i--) {
+    const a = sAt(i);
+    if (t0 === null) t0 = sTime[a];
+    const lines = [];
+    probes.forEach((p, j) => {
+      const w = nets[p.net].w, s = bitsOf(p.v[a], p.k[a], w);
+      if (s === prev[j]) return;
+      prev[j] = s;
+      lines.push(w === 1 ? s + ids[j] : "b" + s + " " + ids[j]);
+    });
+    if (!lines.length) continue;
+    const t = sTime[a] - t0;
+    if (t !== lastT) { out.push("#" + t); lastT = t; }
+    out.push(...lines);
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([out.join("\n") + "\n"], { type: "text/plain" }));
+  a.download = baseName(D.file).replace(/\.(wire|vhd|vhdl)$/, "") + ".vcd";
+  document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function showScope(on) {
+  if (on && !scopeOpen) {
+    if (!probes.length && !scopeOpen) scopeDefaults();
+    scopeOpen = true;
+    buildScope();
+    scopeClear();
+  }
+  if (!on) scopeOpen = false;
+  markProbed();
+}
+$("scopebtn").onclick = () => openDrawer(scopeOpen ? null : "scopedrawer");
+$("scopeclear").onclick = scopeClear;
+$("scopevcd").onclick = scopeVcd;
+$("scopein").onclick = () => scopeZoom(1.5);
+$("scopeout").onclick = () => scopeZoom(1 / 1.5);
+$("scopelive").onclick = () => { sBack = 0; drawScope(); };
+$("scopeadd").onchange = e => { const v = e.target.value; e.target.value = ""; if (v !== "") toggleProbe(+v); };
+addEventListener("resize", () => { if (scopeOpen) drawScope(); });
 
 /* ================================================================ start */
 document.title = D.title || D.file;

@@ -1,0 +1,4 @@
+# expect: a pixel is 1 bit (on/off), or 3, 6, 8, 12 or 24 bits of red, green and blue, not 2
+clock clk
+input a[10], px[2]
+s = screen(a, px, 1, clk)

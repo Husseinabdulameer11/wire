@@ -792,6 +792,9 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
         snprintf(tname, sizeof tname, "%s", vname_take(t1, NULL));
         snprintf(t1, sizeof t1, "%s_words", base);
         snprintf(mname, sizeof mname, "%s", vname_take(t1, NULL));
+        if (n->screenw)
+            vbf(decl, "  -- the pixels of a %d x %d screen, address {y, x}: on a board, a video\n"
+                      "  -- circuit (VGA) would read them out\n", n->screenw, words / n->screenw);
         vbf(decl, "  type %s is array (0 to %d) of std_logic_vector(%d downto 0);\n", tname, words - 1, n->membits - 1);
         vbf(decl, "  %s %s : %s := (", n->kind == K_ROM ? "constant" : "signal", mname, tname);
         for (k = 0; k < n->memlen && k < words; k++) {

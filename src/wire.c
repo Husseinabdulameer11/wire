@@ -181,6 +181,7 @@ typedef struct {
     const char *opt; int optlen;  /* led colour */
     long hz;                      /* clock, in hundredths */
     int membits, memabits;        /* rom, ram: bits per word, address bits */
+    int screenw;                  /* a ram made by screen(): its width in pixels */
     unsigned long *mem; long memlen; /* initial contents: words 0..memlen-1 */
     int dead;                     /* merged into an identical gate */
 } Node;
@@ -353,6 +354,7 @@ typedef struct {
     gram_node *load, *d, *down;    /* counter */
     gram_node *data;               /* rom, ram: the `data = "..."` or `file = "..."` setting */
     int bits;
+    int screen, screenw;           /* screen(): a ram shown as pixels, and its width */
     /* computed: */
     int nin; gram_node *in[MAXIO]; char inname[MAXIO][NAMEW]; int inw[MAXIO];
     int nout; char outname[MAXIO][NAMEW]; int outw[MAXIO];
@@ -394,6 +396,7 @@ static int kind_of(const gram_node *id)
     for (k = 0; k < K_INPUT; k++)
         if (same(id, kind_names[k], (int)strlen(kind_names[k]))) return k;
     if (same(id, "reg", 3)) return K_DFF;
+    if (same(id, "screen", 6)) return K_RAM;     /* a ram the page shows as pixels */
     return -1;
 }
 
@@ -405,6 +408,7 @@ static void say_kinds(char *buf)
         strcat(buf, kind_names[k]);
         strcat(buf, k + 1 < K_INPUT ? ", " : "");
     }
+    strcat(buf, ", screen");
 }
 
 static int is_const(const gram_node *e)
@@ -513,6 +517,7 @@ static void analyze(gram_node *call, Call *c, int check)
              ncomps ? "" : " Components you write (or import) can be used too.");
     }
     c->kname = kind_names[c->kind];
+    if (c->kind == K_RAM && same(c->id, "screen", 6)) { c->screen = 1; c->kname = "screen"; }
     for (a = c->id->next; a; a = a->next) {
         if (a->rule == WIRE_R_named) {
             gram_node *k = a->child, *v = a->child->next;
@@ -536,6 +541,9 @@ static void analyze(gram_node *call, Call *c, int check)
                 if (v->rule != WIRE_R_number) fail(v, "bits must be a number");
                 c->bits = number(v);
                 if (c->bits < 1 || c->bits > MAXW) fail(v, "a %s has 1 to %d bits", c->kname, MAXW);
+            } else if (same(k, "width", 5) && c->screen) {
+                if (v->rule != WIRE_R_number) fail(v, "width must be a number");
+                c->screenw = number(v);
             } else fail(k, "%s has no setting called %.*s", c->kname, TEXT(k));
         } else {
             if (c->npos >= MAXIO - 2) fail(a, "too many inputs");
@@ -695,12 +703,30 @@ static void analyze(gram_node *call, Call *c, int check)
         add_out(c, "q", w);
         break;
     case K_RAM:
-        need_args(c, 4, 4, "an address, data in, write enable and a clock: ram(addr, din, we, clk)");
+        if (c->screen) need_args(c, 4, 4, "an address, a pixel, write enable and a clock: screen(addr, pixel, we, clk, width = 32)");
+        else need_args(c, 4, 4, "an address, data in, write enable and a clock: ram(addr, din, we, clk)");
         s = argw(c->pos[0]);
         w = argw(c->pos[1]);
         if (check && (s < 1 || s > 16))
-            fail(c->pos[0], "the address of a ram is 1 to 16 bits (up to 65536 words), not %d", s);
-        if (check && !w) fail(c->pos[1], "the data in of a ram needs a width; use a wire with one, like d[8]");
+            fail(c->pos[0], "the address of a %s is 1 to 16 bits (up to 65536 %s), not %d", c->kname,
+                 c->screen ? "pixels" : "words", s);
+        if (check && !w) fail(c->pos[1], "the %s of a %s needs a width; use a wire with one, like %s", c->screen ? "pixel" : "data in",
+                              c->kname, c->screen ? "px[1]" : "d[8]");
+        if (check && c->screen) {
+            /* the address is y and x side by side: {y, x}, so the width is a
+             * power of two; a pixel is on/off (1 bit) or red, green and blue */
+            long words = 1L << s;
+            if (!c->screenw) {
+                if (s & 1) fail(c->call, "a screen with a %d-bit address is not square; say how wide it is: screen(..., width = %ld)",
+                                s, 1L << (s / 2 + 1));
+                c->screenw = 1 << (s / 2);
+            }
+            if (c->screenw < 1 || (c->screenw & (c->screenw - 1)) || c->screenw > words)
+                fail(c->call, "the width of a screen is a power of two up to %ld (the address is {y, x}), not %d",
+                     words, c->screenw);
+            if (w != 1 && w != 3 && w != 6 && w != 8 && w != 12 && w != 24)
+                fail(c->pos[1], "a pixel is 1 bit (on/off), or 3, 6, 8, 12 or 24 bits of red, green and blue, not %d", w);
+        }
         if (check) { want_width(c, c->pos[2], 1, "we"); want_width(c, c->pos[3], 1, "the clock"); }
         add_in(c, c->pos[0], "addr", s);
         add_in(c, c->pos[1], "din", w);
@@ -1038,6 +1064,7 @@ static Node *build_call(gram_node *call, int dst, Sym *s)
     if (c.kind == K_ROM || c.kind == K_RAM) {
         n->membits = c.outw[0];
         n->memabits = c.inw[0];
+        n->screenw = c.screenw;
         load_mem(k, c.data);
     }
     for (i = 0; i < c.nout; i++) {
@@ -1414,6 +1441,7 @@ static void write_json(void)
                 a = last + 1;
             }
             fputc(']', jf);
+            if (n->screenw) fprintf(jf, ",\"screen\":%d", n->screenw);
         }
         if (n->kind == K_CLOCK) fprintf(jf, ",\"hz\":%ld.%02ld", n->hz / 100, n->hz % 100);
         if (n->opt) { fputs(",\"color\":", jf); jstr(n->opt, n->optlen); }

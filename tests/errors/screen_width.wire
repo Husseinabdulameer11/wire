@@ -1,0 +1,4 @@
+# expect: the width of a screen is a power of two up to 1024 (the address is {y, x}), not 24
+clock clk
+input a[10], px
+s = screen(a, px, 1, clk, width = 24)

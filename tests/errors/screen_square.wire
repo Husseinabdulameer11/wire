@@ -1,0 +1,4 @@
+# expect: a screen with a 9-bit address is not square; say how wide it is: screen(..., width = 32)
+clock clk
+input a[9], px
+s = screen(a, px, 1, clk)
