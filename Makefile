@@ -112,6 +112,8 @@ test: $(WIRE)
 	@if command -v node >/dev/null 2>&1; then node tests/sim/simtest.js $(WIRE) && node tests/sim/inside.js $(WIRE) || exit 1; \
 	   node tests/sim/run.js $(WIRE) examples/notes/sap1.wire 200 outp | grep -q "outp = 28" \
 	     || { echo "examples/notes/sap1.wire: the SAP-1 did not compute 16 + 20 + 24 - 32 = 28"; exit 1; }; \
+	   node tests/sim/screen.js $(WIRE) examples/screen/computer.wire | tail -n +2 | diff -q - tests/sim/computer.screen >/dev/null \
+	     || { echo "examples/screen/computer.wire: the computer did not draw tests/sim/computer.screen"; exit 1; }; \
 	   node tests/vhdl/cosim.js $(WIRE) || exit 1; \
 	   node tests/vhdl/cosim.js $(WIRE) --generated || exit 1; \
 	   node tests/vhdl/cosim.js $(WIRE) --vhdl-in || exit 1; \

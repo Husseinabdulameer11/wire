@@ -22,7 +22,13 @@ drange    <- expr dir expr ;
 dir       <= ('downto'i / 'to'i) ![A-Za-z0-9_] ;
 
 arch      <- ~ARCHITECTURE ident ~OF ident ~IS adecl* ~BEGIN cstmt* ~END ~ARCHITECTURE? ident? ~';' ;
-adecl     <^ signal / constant / typedecl / compdecl / funcdecl / other ;
+adecl     <^ signal / constant / typedecl / compdecl / funcdecl / attrdecl / attrspec / other ;
+# attribute wire_screen : integer;   attribute wire_screen of pixels : signal is 16;
+# Wire draws an array written like a ram as a screen when it has wire_screen
+# (its width); other attributes (keep, mark_debug...) are for the tools
+attrdecl  <- ~ATTRIBUTE ident ~':' ident ~';' ;
+attrspec  <- ~ATTRIBUTE ident ~OF idlist ~':' attrclass ~IS expr ~';' ;
+attrclass <= [A-Za-z]+ ;
 signal    <- ~SIGNAL idlist ~':' type (~':=' expr)? ~';' ;
 constant  <- ~CONSTANT idlist ~':' type ~':=' expr ~';' ;
 # type state is (idle, run);   type mem is array (0 to 15) of std_logic_vector(7 downto 0);
@@ -137,6 +143,7 @@ MAP       <= 'map'i ![A-Za-z0-9_] ;
 RANGE     <= 'range'i ![A-Za-z0-9_] ;
 ARCHITECTURE <= 'architecture'i ![A-Za-z0-9_] ;
 OF        <= 'of'i ![A-Za-z0-9_] ;
+ATTRIBUTE <= 'attribute'i ![A-Za-z0-9_] ;
 BEGIN     <= 'begin'i ![A-Za-z0-9_] ;
 SIGNAL    <= 'signal'i ![A-Za-z0-9_] ;
 CONSTANT  <= 'constant'i ![A-Za-z0-9_] ;

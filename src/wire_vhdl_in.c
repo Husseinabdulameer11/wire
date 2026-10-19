@@ -56,6 +56,7 @@ typedef struct {
      * it becomes one ram part, not a register per element */
     gram_node *ramproc, *ramaddr, *ramdin, *ramwe, *ramclk, *raminit;
     int ramneg, rambit;
+    int screenw;                 /* attribute wire_screen of it: a screen this wide */
 } VSym;
 
 /* a type of the architecture: an enumeration or an array */
@@ -1958,7 +1959,8 @@ static void vi_ent_emit(VEnt *e)
     vi_decls(e->arch->child->next->next);
     for (k = e->arch->child->next->next; k; k = k->next) {
         if (k->rule == VHDL_R_signal || k->rule == VHDL_R_constant || k->rule == VHDL_R_compdecl
-            || k->rule == VHDL_R_other || k->rule == VHDL_R_ident || k->rule == VHDL_R_typedecl || k->rule == VHDL_R_funcdecl)
+            || k->rule == VHDL_R_other || k->rule == VHDL_R_ident || k->rule == VHDL_R_typedecl || k->rule == VHDL_R_funcdecl
+            || k->rule == VHDL_R_attrdecl || k->rule == VHDL_R_attrspec)
             continue;
         vi_statement(k);
     }
@@ -3062,7 +3064,8 @@ static int vi_ram_find(VSym *s, gram_node *id, gram_node *init)
         goto no;
     for (k = first; k; k = k->next) {
         if (k->rule == VHDL_R_signal || k->rule == VHDL_R_constant || k->rule == VHDL_R_typedecl
-            || k->rule == VHDL_R_compdecl || k->rule == VHDL_R_other || k->rule == VHDL_R_ident || k->rule == VHDL_R_funcdecl)
+            || k->rule == VHDL_R_compdecl || k->rule == VHDL_R_other || k->rule == VHDL_R_ident || k->rule == VHDL_R_funcdecl
+            || k->rule == VHDL_R_attrdecl || k->rule == VHDL_R_attrspec)
             continue;
         if (!vi_ram_uses(k, NULL, id, s->ramaddr, found)) goto no;
     }
@@ -3107,8 +3110,12 @@ static void vi_ram_emit(VSym *s)
             vbf(&data, "%s%lX", j ? " " : "", x.v);
         }
     }
-    vi_emit(at, "%s = ram(%s, %s, %s, %s%s%s%s)", s->wname, ix.s, d.s, we, clk,
-            any ? ", data = \"" : "", any ? data.s : "", any ? "\"" : "");
+    if (s->screenw)   /* attribute wire_screen of it: drawn as a screen */
+        vi_emit(at, "%s = screen(%s, %s, %s, %s, width = %d%s%s%s)", s->wname, ix.s, d.s, we, clk, s->screenw,
+                any ? ", data = \"" : "", any ? data.s : "", any ? "\"" : "");
+    else
+        vi_emit(at, "%s = ram(%s, %s, %s, %s%s%s%s)", s->wname, ix.s, d.s, we, clk,
+                any ? ", data = \"" : "", any ? data.s : "", any ? "\"" : "");
 }
 
 static void vi_statement(gram_node *st)
@@ -3307,6 +3314,23 @@ static void vi_decls(gram_node *first)   /* signal and constant declarations, fr
         } else if (d->rule == VHDL_R_funcdecl) {   /* inlined where it is called */
             if (vi_nfuncs == 64) vi_fail(d, "more than 64 functions");
             vi_funcs[vi_nfuncs++] = d;
+        } else if (d->rule == VHDL_R_attrdecl) {
+            /* attribute x : type; only its uses mean anything */
+        } else if (d->rule == VHDL_R_attrspec) {
+            gram_node *an = d->child, *ids = an->next, *val = ids->next->next;
+            if (vi_is(an, "wire_screen")) {
+                long w;
+                if (!vi_ceval(val, &w)) vi_fail(val, "wire_screen is the width of the screen in pixels, a number like 16");
+                for (id = ids->child; id; id = id->next) {
+                    VSym *s = vi_find(id);
+                    if (!s) vi_fail(id, "%.*s is not declared above this line", VT(id));
+                    if (s->ty != T_ARR || !s->ramproc)
+                        vi_fail(id, "Wire draws %.*s as a screen when it is an array written like a ram: one clocked process with "
+                                "if we = '1' then %.*s(to_integer(addr)) <= pixel; end if;, read only as %.*s(to_integer(addr))",
+                                VT(id), VT(id), VT(id));
+                    s->screenw = (int)w;
+                }
+            }   /* other attributes (keep, mark_debug, ...) are for the tools */
         } else if (d->rule == VHDL_R_compdecl) {
             /* only used by instances, which say they are not supported */
         } else if (d->rule == VHDL_R_other) {

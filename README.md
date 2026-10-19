@@ -106,8 +106,8 @@ Draw, Wire and VHDL are three views of **one circuit**. Change it in one,
 switch, and the other view is made from it (going back without changing
 anything gives you exactly what you left). A switch that would lose part of
 the circuit does not happen, and the page says why: the drawing has no
-tri-state bus or keypad yet, and Wire cannot read a tri-state bus or a
-screen back from VHDL yet.
+tri-state bus or keypad yet, and Wire cannot read a tri-state bus back from
+VHDL yet.
 
 **Save .vhd** gives the circuit in VHDL for Vivado, **Save .wire** keeps it,
 and **Copy link** makes a link that opens the same circuit for someone else.
@@ -312,9 +312,29 @@ screen is square (the address then has an even number of bits). A pixel is
 1 bit (on or off), or 3, 6, 8, 12 or 24 bits of red, green and blue, red
 highest: 8 bits is 3-3-2 (`RRRGGGBB`), 12 bits 4-4-4 as on the Basys 3's VGA
 port. Up to 16 address bits (256 x 256). `data =` and `file =` give the
-starting picture, as for a ram, and Reset puts it back. In VHDL a screen is
-its ram (the pixels); on a board, a video circuit would read them out.
-See `examples/screen/`.
+starting picture, as for a ram, and Reset puts it back. See
+`examples/screen/`.
+
+In VHDL a screen is its ram, the array of pixels (on a board, a video
+circuit would read them out), with an attribute that tells Wire to draw it.
+Vivado ignores the attribute, and Wire reads it back, so a screen written in
+VHDL shows as a screen too:
+
+```vhdl
+type screen_t is array (0 to 255) of std_logic_vector(2 downto 0);
+signal pixels : screen_t := (others => (others => '0'));
+attribute wire_screen : integer;
+attribute wire_screen of pixels : signal is 16;     -- 16 pixels across
+...
+process (clk) begin
+  if rising_edge(clk) then
+    if px_we = '1' then pixels(to_integer(unsigned(pos))) <= colour; end if;
+  end if;
+end process;
+```
+
+The array must be written like a ram (one clocked process, as above) and
+read only as `pixels(to_integer(...))`, if at all.
 
 ### Memory contents
 
@@ -358,7 +378,13 @@ circuit in VHDL beside it (`.vhd`). `examples/index.txt` gives the order.
   templates (ch. 11). Each file names the listings it follows.
 - **`examples/screen/`**: screens. `patterns` paints four patterns, one
   pixel per clock cycle; `sketch` is an etch-a-sketch drawn with four
-  buttons. Neither has VHDL of its own beside it (the VHDL is Wire's). The chapters
+  buttons (the VHDL of these two is Wire's). `computer` is an 8-bit
+  computer, written in VHDL (`computer.vhd`), with a 16 x 16 screen and
+  instructions to draw on it: PIX c colours the pixel whose address is in
+  A, ADI n and SBI n move A. Its program paints the screen blue and draws a
+  red diagonal; the comments at the top list every instruction and a second
+  program to try. `make test` checks the picture it draws
+  (`tests/sim/computer.screen`). The chapters
   on the board's devices (PS/2, VGA, SRAM, PicoBlaze) are left out.
 
 The VHDL is written for this project, in the book's style and with the

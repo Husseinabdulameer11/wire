@@ -1488,12 +1488,6 @@ async function makeView(to) {
   }
   const r = await wire(["--to-vhdl", "-o", "/out.vhd", path], path, t.text);
   if (r.code !== 0) return { why: "fix the error first (" + firstError(r, path) + ")" };
-  /* a screen is a ram in VHDL; read back, it would be a plain ram */
-  if (from !== "vhdl") {
-    const j = await wire(["--json", path], path, t.text);
-    if (j.code === 0 && JSON.parse(j.out).nodes.some(n => n.screen))
-      return { why: "Wire cannot read a screen back from VHDL yet (it would come back as a ram). Save .vhd still gives you its VHDL." };
-  }
   const v = r.read("/out.vhd"), vp = pathFor("vhdl", ""), c = await wire(["--check", vp], vp, v);
   if (c.code !== 0) return { why: "Wire cannot read this circuit back from VHDL yet (" + firstError(c, vp).replace(/^line \d+:\d+: error: /, "").split(/[.;:] /)[0] + "). Save .vhd still gives you its VHDL." };
   return { value: { text: v, dir: "" } };

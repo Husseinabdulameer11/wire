@@ -158,6 +158,7 @@ static char *vmayx;        /* net -> can float or be unknown (fed by tri() or a 
 static char vk01[200];     /* this entity's known01 function, once it needs one */
 static int vnamed;         /* counter for nets with no name */
 static int vrams;
+static int vscreens;               /* attribute wire_screen declared in this architecture */
 
 static int net_w(int net) { return nets[find(net)].w ? nets[find(net)].w : 1; }
 
@@ -794,7 +795,7 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
         snprintf(mname, sizeof mname, "%s", vname_take(t1, NULL));
         if (n->screenw)
             vbf(decl, "  -- the pixels of a %d x %d screen, address {y, x}: on a board, a video\n"
-                      "  -- circuit (VGA) would read them out\n", n->screenw, words / n->screenw);
+                      "  -- circuit (VGA) would read them out; wire_screen is how Wire knows\n", n->screenw, words / n->screenw);
         vbf(decl, "  type %s is array (0 to %d) of std_logic_vector(%d downto 0);\n", tname, words - 1, n->membits - 1);
         vbf(decl, "  %s %s : %s := (", n->kind == K_ROM ? "constant" : "signal", mname, tname);
         for (k = 0; k < n->memlen && k < words; k++) {
@@ -805,6 +806,10 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
             any = 1;
         }
         vbf(decl, "%s%sothers => (others => '0'));\n", any ? "," : "", any ? "\n    " : "");
+        if (n->screenw) {
+            if (!vscreens++) vbf(decl, "  attribute wire_screen : integer;\n");
+            vbf(decl, "  attribute wire_screen of %s : signal is %d;\n", mname, n->screenw);
+        }
         if (n->kind == K_RAM) {
             int clk = vin_by(n, "clk"), we = vin_by(n, "we"), din = vin_by(n, "din");
             vbf(b, "  process (%s)\n  begin\n    if rising_edge(%s) then\n      if %s then\n", N(clk), N(clk), C(we, 1));
@@ -894,6 +899,7 @@ static void vscope_reset(void)
     vnamed = 0;
     vk01[0] = 0;
     vrams = 0;
+    vscreens = 0;
 }
 
 static void vdeclare(VBuf *decl, int net)

@@ -1,0 +1,302 @@
+# computer.wire: made by `wire --to-wire computer.vhd`, then given this
+# title and these comments. The VHDL beside it is the design; its comments
+# list the instructions and the program in the ROM.
+
+component reg8(clk, rst, load, d[8]) -> (q[8]) {
+wire mux1[8]
+wire q_i[8]
+wire mux2[8]
+q_i = dff(mux1, clk)
+mux1 = mux(mux2, 0x00, sel = rst)
+mux2 = mux(q_i, d, sel = load)
+q = q_i
+}
+component reg4(clk, rst, load, d[4]) -> (q[4]) {
+wire mux1[4]
+wire q_i[4]
+wire mux2[4]
+q_i = dff(mux1, clk)
+mux1 = mux(mux2, 0b0000, sel = rst)
+mux2 = mux(q_i, d, sel = load)
+q = q_i
+}
+component rom16x8(addr[4]) -> (q[8]) {
+q = rom(addr, bits = 8, data = "A1 B1 74 60 C1 A4 CF C2 7A 65 A4 F0 0 0 0 0")
+}
+component ram16x8(clk, we, addr[4], d[8]) -> (q[8]) {
+wire ram1[8]
+ram1 = ram(addr, d, we, clk, data = "0 0 0 0 0 0 0 0 0 0 0 0 3 0 5 1")
+q = ram1
+}
+component ha(a, b) -> (sum, cout) {
+sum = a ^ b
+cout = a & b
+}
+component fa(a, b, cin) -> (sum, cout) {
+wire n1[1]
+wire n2[1]
+wire chip1_u_u_u_u_i[1]
+cout = n1 | n2
+chip1_u_u_u_u = ha(a = a, b = b)
+chip1_u_u_u_u_i = chip1_u_u_u_u.sum
+n2 = chip1_u_u_u_u.cout
+chip2 = ha(a = chip1_u_u_u_u_i, b = cin)
+sum = chip2.sum
+n1 = chip2.cout
+}
+component eightbitfa(a[8], b[8], cin) -> (cout, sum[8]) {
+wire chip8_u_u_u_u_i[1]
+wire chip7_u_u_u_u_i[1]
+wire chip6_u_u_u_u_i[1]
+wire chip5_u_u_u_u_i[1]
+wire chip4_u_u_u_u_i[1]
+wire chip3_u_u_u_u_i[1]
+wire chip2_u_u_u_u_i[1]
+wire chip1_u_u_u_u_i[1]
+wire split1_7[1]
+wire split2_0[1]
+wire n1[1]
+wire split1_6[1]
+wire split2_1[1]
+wire n2[1]
+wire split1_5[1]
+wire split2_2[1]
+wire n3[1]
+wire split1_4[1]
+wire split2_3[1]
+wire n4[1]
+wire split1_3[1]
+wire split2_4[1]
+wire n5[1]
+wire split1_2[1]
+wire split2_5[1]
+wire n6[1]
+wire split1_1[1]
+wire split2_6[1]
+wire n7[1]
+wire split1_0[1]
+wire split2_7[1]
+sum = {chip8_u_u_u_u_i, chip7_u_u_u_u_i, chip6_u_u_u_u_i, chip5_u_u_u_u_i, chip4_u_u_u_u_i, chip3_u_u_u_u_i, chip2_u_u_u_u_i, chip1_u_u_u_u_i}
+split1_0 = a[7]
+split1_1 = a[6]
+split1_2 = a[5]
+split1_3 = a[4]
+split1_4 = a[3]
+split1_5 = a[2]
+split1_6 = a[1]
+split1_7 = a[0]
+split2_0 = b[0]
+split2_1 = b[1]
+split2_2 = b[2]
+split2_3 = b[3]
+split2_4 = b[4]
+split2_5 = b[5]
+split2_6 = b[6]
+split2_7 = b[7]
+chip1_u_u_u_u = fa(a = split1_7, b = split2_0, cin = cin)
+chip1_u_u_u_u_i = chip1_u_u_u_u.sum
+n1 = chip1_u_u_u_u.cout
+chip2_u_u_u_u = fa(a = split1_6, b = split2_1, cin = n1)
+chip2_u_u_u_u_i = chip2_u_u_u_u.sum
+n2 = chip2_u_u_u_u.cout
+chip3_u_u_u_u = fa(a = split1_5, b = split2_2, cin = n2)
+chip3_u_u_u_u_i = chip3_u_u_u_u.sum
+n3 = chip3_u_u_u_u.cout
+chip4_u_u_u_u = fa(a = split1_4, b = split2_3, cin = n3)
+chip4_u_u_u_u_i = chip4_u_u_u_u.sum
+n4 = chip4_u_u_u_u.cout
+chip5_u_u_u_u = fa(a = split1_3, b = split2_4, cin = n4)
+chip5_u_u_u_u_i = chip5_u_u_u_u.sum
+n5 = chip5_u_u_u_u.cout
+chip6_u_u_u_u = fa(a = split1_2, b = split2_5, cin = n5)
+chip6_u_u_u_u_i = chip6_u_u_u_u.sum
+n6 = chip6_u_u_u_u.cout
+chip7_u_u_u_u = fa(a = split1_1, b = split2_6, cin = n6)
+chip7_u_u_u_u_i = chip7_u_u_u_u.sum
+n7 = chip7_u_u_u_u.cout
+chip8_u_u_u_u = fa(a = split1_0, b = split2_7, cin = n7)
+chip8_u_u_u_u_i = chip8_u_u_u_u.sum
+cout = chip8_u_u_u_u.cout
+}
+component full_adder_c(a[8], b[8], c) -> (sum[8]) {
+wire chip1_u_u_u_u_i[1]
+chip1_u_u_u_u = eightbitfa(a = a, b = b, cin = c)
+chip1_u_u_u_u_i = chip1_u_u_u_u.cout
+sum = chip1_u_u_u_u.sum
+}
+component eightbitsub(a[8], b[8]) -> (diff[8], bout) {
+wire nb[8]
+wire u_add_u_u_i[1]
+nb = ~b
+bout = ~u_add_u_u_i
+u_add_u_u = eightbitfa(a = a, b = nb, cin = 0b1)
+u_add_u_u_i = u_add_u_u.cout
+diff = u_add_u_u.sum
+}
+component full_adder_c2(a[8], b[8], c, d) -> (bout, y[8]) {
+wire u_adder_u_u_i[8]
+wire u_sub_u_u_i[8]
+y = mux(u_adder_u_u_i, u_sub_u_u_i, sel = d)
+u_adder_u_u = full_adder_c(a = a, b = b, c = c)
+u_adder_u_u_i = u_adder_u_u.sum
+u_sub_u_u = eightbitsub(a = a, b = b)
+u_sub_u_u_i = u_sub_u_u.diff
+bout = u_sub_u_u.bout
+}
+component full_adder(rst, sw[8], sw_out, a_out, alu_out, rom_out, ram_out, a_load, b_load, out_load, mar_load, ram_in, sub, clk) -> (data_bus[8], out_q[8], a_q[8], borrow) {
+wire mux1[8]
+wire data_bus_i[8]
+wire mux2[8]
+wire u_rega_u_i[8]
+wire mux3[8]
+wire n1[8]
+wire mux4[8]
+wire u_rom_u_i[8]
+wire u_ram_u_i[8]
+wire u_regb_u_i[8]
+wire split1_0[4]
+wire u_mar_u_i[4]
+data_bus_i = mux(mux1, sw, sel = sw_out)
+mux1 = mux(mux2, u_rega_u_i, sel = a_out)
+mux2 = mux(mux3, n1, sel = alu_out)
+mux3 = mux(mux4, u_rom_u_i, sel = rom_out)
+mux4 = mux(0x00, u_ram_u_i, sel = ram_out)
+split1_0 = data_bus_i[3:0]
+u_rega_u = reg8(clk = clk, rst = rst, load = a_load, d = data_bus_i)
+u_rega_u_i = u_rega_u.q
+u_regb_u = reg8(clk = clk, rst = rst, load = b_load, d = data_bus_i)
+u_regb_u_i = u_regb_u.q
+u_out = reg8(clk = clk, rst = rst, load = out_load, d = data_bus_i)
+out_q = u_out.q
+u_mar_u = reg4(clk = clk, rst = rst, load = mar_load, d = split1_0)
+u_mar_u_i = u_mar_u.q
+u_rom_u = rom16x8(addr = u_mar_u_i)
+u_rom_u_i = u_rom_u.q
+u_ram_u = ram16x8(clk = clk, we = ram_in, addr = u_mar_u_i, d = data_bus_i)
+u_ram_u_i = u_ram_u.q
+u_alu = full_adder_c2(a = u_rega_u_i, b = u_regb_u_i, c = 0b0, d = sub)
+borrow = u_alu.bout
+n1 = u_alu.y
+data_bus = data_bus_i
+a_q = u_rega_u_i
+}
+component control(clk, rst, bus_in[8], borrow) -> (val[8], sw_out, a_out, alu_out, rom_out, ram_out, a_load, b_load, out_load, mar_load, ram_in, sub, px_we, pc_q[4], halted) {
+wire pc[4]
+wire ir[8]
+wire step[3]
+wire zf[1]
+wire cf[1]
+wire hlt_q[1]
+wire ir_load[1]
+wire pc_inc[1]
+wire jump[1]
+wire done[1]
+wire halt[1]
+wire alu_o[1]
+wire v1_[8]
+v1_ = mux(0x00, {0b0000, ir[3:0]}, {0b0000, ir[3:0]}, {0b0000, ir[3:0]}, {0b0000, ir[3:0]}, {0b0000, ir[3:0]}, {0b0000, ir[3:0]}, mux(0x00, {0b0000, ir[3:0]}, sel = zf), 0x00, mux(0x00, {0b0000, ir[3:0]}, sel = cf), {0b00000, ir[2:0]}, {0b0000, ir[3:0]}, {0b0000, ir[3:0]}, 0x00, 0x00, 0x00, sel = ir[7:4])
+wire v2_[1]
+v2_ = mux(0b0, mux(0b0, 0b0, 0b0, 0b0, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b011).eq)
+wire v3_[1]
+v3_ = mux(0b1, mux(0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b1, 0b1, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b011).eq)
+wire v4_[1]
+v4_ = mux(0b0, mux(0b0, 0b1, 0b1, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b011).eq)
+wire v5_[1]
+v5_ = mux(0b1, mux(0b0, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b1, 0b1, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b011).eq)
+wire v6_[1]
+v6_ = mux(0b0, mux(0b0, 0b0, 0b1, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b011).eq)
+wire v7_[1]
+v7_ = mux(0b0, mux(0b0, 0b0, 0b0, 0b0, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b011).eq)
+wire v8_[1]
+v8_ = mux(compare(ir[7:4], 0b0011).eq, mux(0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b1, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b011).eq)
+wire v9_[1]
+v9_ = mux(0b1, mux(0b1, 0b1, 0b0, 0b0, 0b1, 0b1, 0b1, 0b1, 0b1, 0b1, 0b1, 0b1, 0b1, 0b1, 0b1, 0b1, sel = ir[7:4]), sel = compare(step, 0b011).eq)
+wire v10_[1]
+v10_ = mux(0b0, mux(0b0, 0b1, 0b1, 0b1, 0b1, 0b1, 0b1, zf, 0b0, cf, 0b1, 0b1, 0b1, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+wire v11_[1]
+v11_ = mux(v2_, mux(0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+wire v12_[1]
+v12_ = mux(v5_, mux(0b0, 0b0, 0b0, 0b0, 0b0, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+wire v13_[1]
+v13_ = mux(v6_, mux(0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b1, 0b1, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+wire v14_[1]
+v14_ = mux(0b0, mux(0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+wire v15_[1]
+v15_ = mux(0b0, mux(0b0, 0b1, 0b1, 0b1, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+wire v16_[1]
+v16_ = mux(0b0, mux(0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b1, zf, 0b0, cf, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+wire v17_[1]
+v17_ = mux(v9_, mux(0b1, 0b0, 0b0, 0b0, 0b0, 0b1, 0b1, 0b1, 0b1, 0b1, 0b1, 0b0, 0b0, 0b1, 0b1, 0b1, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+wire v18_[1]
+v18_ = mux(0b0, mux(0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b1, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+wire v19_[1]
+v19_ = mux(0b0, mux(0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b0, 0b1, 0b0, 0b0, 0b0, 0b0, 0b0, sel = ir[7:4]), sel = compare(step, 0b010).eq)
+val = mux(mux(mux(0x00, v1_, sel = compare(step, 0b010).eq), 0x00, sel = compare(step, 0b001).eq), {0b0000, pc}, sel = compare(step, 0b000).eq)
+sw_out = mux(mux(v10_, 0b0, sel = compare(step, 0b001).eq), 0b1, sel = compare(step, 0b000).eq)
+a_out = mux(mux(v11_, 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+alu_o = mux(mux(mux(v3_, 0b0, sel = compare(step, 0b010).eq), 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+rom_out = mux(compare(step, 0b001).eq, 0b0, sel = compare(step, 0b000).eq)
+ram_out = mux(mux(mux(v4_, 0b0, sel = compare(step, 0b010).eq), 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+a_load = mux(mux(v12_, 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+b_load = mux(mux(v13_, 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+out_load = mux(mux(v14_, 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+mar_load = mux(mux(v15_, 0b0, sel = compare(step, 0b001).eq), 0b1, sel = compare(step, 0b000).eq)
+ram_in = mux(mux(mux(v7_, 0b0, sel = compare(step, 0b010).eq), 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+sub = mux(mux(mux(v8_, 0b0, sel = compare(step, 0b010).eq), 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+ir_load = mux(compare(step, 0b001).eq, 0b0, sel = compare(step, 0b000).eq)
+pc_inc = mux(compare(step, 0b001).eq, 0b0, sel = compare(step, 0b000).eq)
+jump = mux(mux(v16_, 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+done = mux(mux(v17_, 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+halt = mux(mux(v18_, 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+px_we = mux(mux(v19_, 0b0, sel = compare(step, 0b001).eq), 0b0, sel = compare(step, 0b000).eq)
+pc = dff(mux(mux(pc, mux(mux(pc, add(pc, 0b0001), sel = pc_inc), bus_in[3:0], sel = jump), sel = ~hlt_q), 0b0000, sel = rst), clk)
+ir = dff(mux(mux(ir, mux(ir, bus_in, sel = ir_load), sel = ~hlt_q), 0x00, sel = rst), clk)
+step = dff(mux(mux(step, mux(add(step, 0b001), 0b000, sel = done), sel = ~hlt_q), 0b000, sel = rst), clk)
+zf = dff(mux(mux(zf, mux(zf, compare(bus_in, 0x00).eq, sel = alu_o), sel = ~hlt_q), 0b0, sel = rst), clk)
+cf = dff(mux(mux(cf, mux(cf, borrow, sel = alu_o), sel = ~hlt_q), 0b0, sel = rst), clk)
+hlt_q = dff(mux(mux(hlt_q, mux(hlt_q, 0b1, sel = halt), sel = ~hlt_q), 0b0, sel = rst), clk)
+alu_out = alu_o
+pc_q = pc
+halted = hlt_q
+}
+circuit "A computer that draws"
+
+# An 8-bit computer with a 16 x 16 screen, and instructions to draw on it:
+# PIX c colours the pixel at the address in A (high 4 bits y, low 4 x),
+# ADI n and SBI n move A. The program paints the screen blue, draws a red
+# diagonal and halts, in about 7 seconds. Run the clock, open the Scope to
+# watch the bus, and double-click u_ctl or u_dp to go inside. In the
+# playground it opens as its VHDL: change the ROM and draw something else.
+clock clk (hz = 500)       # about 7 seconds to draw the picture at 1x
+input rst
+output out_q[8]
+output data_bus[8]
+output pc_q[4]
+output halted
+wire bus_s[8], val[8], a_q[8]
+wire sw_out[1], a_out[1], alu_out[1], rom_out[1], ram_out[1]
+wire a_load[1], b_load[1], out_load[1], mar_load[1], ram_in[1], sub[1], borrow[1], px_we[1]
+wire pixels[3]
+pixels = screen(a_q, bus_s[2:0], px_we, clk, width = 16)
+u_ctl = control(clk = clk, rst = rst, bus_in = bus_s, borrow = borrow)
+val = u_ctl.val
+sw_out = u_ctl.sw_out
+a_out = u_ctl.a_out
+alu_out = u_ctl.alu_out
+rom_out = u_ctl.rom_out
+ram_out = u_ctl.ram_out
+a_load = u_ctl.a_load
+b_load = u_ctl.b_load
+out_load = u_ctl.out_load
+mar_load = u_ctl.mar_load
+ram_in = u_ctl.ram_in
+sub = u_ctl.sub
+px_we = u_ctl.px_we
+pc_q = u_ctl.pc_q
+halted = u_ctl.halted
+u_dp = full_adder(rst = rst, sw = val, sw_out = sw_out, a_out = a_out, alu_out = alu_out, rom_out = rom_out, ram_out = ram_out, a_load = a_load, b_load = b_load, out_load = out_load, mar_load = mar_load, ram_in = ram_in, sub = sub, clk = clk)
+bus_s = u_dp.data_bus
+out_q = u_dp.out_q
+a_q = u_dp.a_q
+borrow = u_dp.borrow
+data_bus = bus_s
