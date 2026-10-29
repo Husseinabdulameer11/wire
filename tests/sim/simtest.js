@@ -35,7 +35,7 @@ function rng(seed) {
 
 let failed = 0;
 for (const file of files) {
-  const D = JSON.parse(execFileSync(wire, ["--json", file], { stdio: ["ignore", "pipe", "ignore"] }).toString());
+  const D = JSON.parse(execFileSync(wire, ["--json", file], { stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 }).toString());
   const ref = refSim(D);
   if (process.env.SIMTEST_VERBOSE) console.log(file, D.nodes.map(n => n.kind).join(" "));
   const sim = WireSim.createSync(D);

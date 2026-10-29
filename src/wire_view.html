@@ -455,7 +455,9 @@ function geom(n) {
   } else if (k === "ram" && n.screen) {
     /* a screen: the pins on the left, the pixels beside them */
     const sw = n.screen, sh = (1 << n.abits) / sw, s = Math.max(1, 200 / Math.max(sw, sh));
-    const dw = Math.round(sw * s), dh = Math.round(sh * s);
+    /* a text screen: a cell of 8 x 13 per character (smaller when it is very wide) */
+    const ts = n.text ? Math.min(1, 640 / (sw * 8)) : 0;
+    const dw = n.text ? Math.round(sw * 8 * ts) : Math.round(sw * s), dh = n.text ? Math.round(sh * 13 * ts) : Math.round(sh * s);
     g.w = Math.ceil((dw + 62) / 10) * 10; g.h = Math.max(110, Math.ceil((dh + 36) / 10) * 10);
     g.disp = { x: 36, y: 24, w: dw, h: dh };
     n.in.forEach((_, i) => left(30 + i * 20, n.inNames[i]));
@@ -1192,15 +1194,45 @@ function buildPart(n) {
     const d = g.disp, sw = n.screen, sh = (1 << n.abits) / sw, bits = n.bits;
     el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 2 }, root);
     const tt = el("text", { class: "part-text", x: d.x, y: 15, style: "font-weight:600;font-size:12px" }, root);
-    tt.textContent = `SCREEN ${sw}×${sh}`;
+    tt.textContent = n.text ? `TEXT ${sw}×${sh}` : `SCREEN ${sw}×${sh}`;
     g.ins.forEach(p => {
       if (p.name === "clk") el("path", { class: "part-line", d: `M0 ${p.y - 5}L7 ${p.y}L0 ${p.y + 5}` }, root);
-      else { const t = el("text", { class: "part-small", x: 4, y: p.y + 3 }, root); t.textContent = p.name === "din" ? "px" : p.name; }
+      else { const t = el("text", { class: "part-small", x: 4, y: p.y + 3 }, root); t.textContent = p.name === "din" ? (n.text ? "ch" : "px") : p.name; }
     });
     const qt = el("text", { class: "part-small", x: g.w - 4, y: g.outs[0].y + 3, "text-anchor": "end" }, root); qt.textContent = "q";
     el("rect", { x: d.x - 2, y: d.y - 2, width: d.w + 4, height: d.h + 4, rx: 2, fill: "#05090a", stroke: "var(--ink)", "stroke-width": 1.2 }, root);
     const img = el("image", { class: "screen-px hit", x: d.x, y: d.y, width: d.w, height: d.h, preserveAspectRatio: "none" }, root);
     const cv = document.createElement("canvas");
+    if (n.text) {
+      /* characters: the low 8 bits the code (below 32 shows nothing), the
+       * high 8 bits (16-bit words) the colour, RGB 3-3-2; 0 is the usual green */
+      const Z = 2, cw = 8 * Z, chh = 13 * Z;
+      cv.width = sw * cw; cv.height = sh * chh;
+      const cx = cv.getContext("2d");
+      let last = null;
+      upd.push(() => {
+        const words = sim.words(n.node.id);
+        if (!words) return;
+        if (last && last.length === words.length) {
+          let same = true;
+          for (let i = 0; i < words.length; i++) if (words[i] !== last[i]) { same = false; break; }
+          if (same) return;
+        }
+        last = Uint32Array.from(words);
+        cx.fillStyle = "#05090a"; cx.fillRect(0, 0, cv.width, cv.height);
+        cx.font = `${11 * Z}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
+        cx.textBaseline = "top"; cx.textAlign = "center";
+        for (let i = 0; i < words.length; i++) {
+          const c = words[i] & 255;
+          if (c <= 32 || c === 127) continue;
+          const col = bits > 8 ? (words[i] >>> 8) & 255 : 0, rgb = col ? screenColor(col, 8) : 0xFF78F05A;
+          cx.fillStyle = `rgb(${rgb & 255},${(rgb >>> 8) & 255},${(rgb >>> 16) & 255})`;
+          cx.fillText(String.fromCharCode(c), (i % sw) * cw + cw / 2, Math.floor(i / sw) * chh + Z);
+        }
+        img.setAttribute("href", cv.toDataURL());
+      });
+      root.setAttribute("aria-label", `Show the characters of ${n.name || "the screen"} as memory`);
+    } else {
     cv.width = sw; cv.height = sh;
     const cx = cv.getContext("2d"), pix = cx.createImageData(sw, sh), px = new Uint32Array(pix.data.buffer);
     let last = null;
@@ -1218,6 +1250,7 @@ function buildPart(n) {
       img.setAttribute("href", cv.toDataURL());
     });
     root.setAttribute("aria-label", `Show the pixels of ${n.name || "the screen"} as memory`);
+    }
     if (shown) label(shown, g.w / 2, -7);
   } else {
     /* boxes: decoder, encoder, add, mul, compare, flip-flops, counter */
@@ -1882,8 +1915,10 @@ function showTable(c, title, comp) {
     markRow();
   });
 }
+const addonDrawers = [];   /* drawers an add-on made (wirePage.addDrawer) */
 function openDrawer(id) {
-  ["tabledrawer", "srcdrawer", "memdrawer", "vhdldrawer", "scopedrawer"].forEach(d => $(d).classList.toggle("open", d === id));
+  ["tabledrawer", "srcdrawer", "memdrawer", "vhdldrawer", "scopedrawer", ...addonDrawers].forEach(d => $(d).classList.toggle("open", d === id));
+  addonDrawers.forEach(d => { const b = document.querySelector(`[data-drawer="${d}"]`); if (b) b.setAttribute("aria-pressed", d === id); });
   showScope(id === "scopedrawer");
   $("scopebtn").setAttribute("aria-pressed", id === "scopedrawer");
   tableOpen = id === "tabledrawer";
@@ -1906,7 +1941,7 @@ $("srcbtn").onclick = () => openDrawer($("srcdrawer").classList.contains("open")
  * word to change it. Reset puts back the contents written in the circuit. */
 const memNodes = nodes.filter(n => MEMS.has(n.kind));
 let memOpen = false, memSel = null, memPage = 0, memCells = [], memEdit = false;
-const memLabel = n => n.screen ? `screen ${n.name || ""}`.trim() + ` (${n.screen} × ${(1 << n.abits) / n.screen} pixels, ${n.bits} bit${n.bits > 1 ? "s" : ""})`
+const memLabel = n => n.screen ? `screen ${n.name || ""}`.trim() + ` (${n.screen} × ${(1 << n.abits) / n.screen} ${n.text ? "characters" : "pixels"}, ${n.bits} bit${n.bits > 1 ? "s" : ""})`
                                 : `${n.kind} ${n.name || ""}`.trim() + ` (${1 << n.abits} × ${n.bits} bits)`;
 if (memNodes.length) {
   $("membtn").hidden = false;
@@ -2750,6 +2785,7 @@ WireSim.create(D).then(s => {
   });
   openView(0);
   simulate();
+  whenReady.splice(0).forEach(f => f(window.wirePage));
 }).catch(e => {
   const w = $("warn");
   w.style.display = "block";
@@ -2773,7 +2809,7 @@ addEventListener("keyup", e => {
   if (keypad && sim && hexKey(e) >= 0 && (keypad.state & 16) && (keypad.state & 15) === hexKey(e)) { keypad.state &= 15; simulate(); }
 });
 addEventListener("keydown", e => {
-  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return;
   if (keypad && sim && hexKey(e) >= 0) { if (!e.repeat) { keypad.state = 16 | hexKey(e); simulate(); } return; }
   if (e.key === " " && clocks.length) { e.preventDefault(); stepClock(); }
   if (e.key === "f") fit();
@@ -2786,6 +2822,64 @@ addEventListener("keydown", e => {
   if (editing() && (e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey)) { e.preventDefault(); hostCall("undo"); return; }
   if (e.key === "Backspace") goUp();
 });
+/* ============================================================== add-ons
+ * An example can bring a script of its own (name.addon.js next to
+ * name.wire, put in the page by wire): an assembler for a computer, say.
+ * It works the page through wirePage, and only through it. */
+const whenReady = [];
+window.wirePage = {
+  D, nodes, nets,
+  get sim() { return sim; },
+  /* f(wirePage) once the simulator runs */
+  ready(f) { if (sim) f(window.wirePage); else whenReady.push(f); },
+  /* a part by its name (and kind): find("instr", "rom") */
+  find(name, kind) { return nodes.find(n => n.name === name && (!kind || n.kind === kind)) || null; },
+  /* a rom's or ram's words, kept through Reset: what it starts with from now on */
+  setContents(n, words) {
+    const w = Array.from(words, x => x >>> 0), at = sim && sim.words(n.id);
+    D.nodes[n.id].init = [[0, w]];
+    n.init = D.nodes[n.id].init;
+    if (at) { at.fill(0); at.set(w.slice(0, at.length)); }
+    if (memOpen) buildMem();
+  },
+  words(n) { return sim ? sim.words(n.id) : null; },
+  setInput(name, v) {
+    const n = nodes.find(x => x.name === name && SOURCES.has(x.kind));
+    if (!n) return false;
+    n.state = v & mask(nets[n.out[0]].w);
+    simulate();
+    return true;
+  },
+  reset() { $("reset").click(); },
+  run(on = true) { if (clocks.length) setRun(on); },
+  running: () => !!timer,
+  step: () => stepClock(),
+  speed(v) { const o = [...$("speed").options].find(x => x.value === String(v)); if (o) { $("speed").value = o.value; if (timer) setRun(true); } },
+  /* a button in the toolbar */
+  addButton(label, title, onclick) {
+    const b = Object.assign(document.createElement("button"), { textContent: label, title: title || "" });
+    b.onclick = onclick;
+    $("reset").parentNode.append(b);
+    return b;
+  },
+  /* a drawer like Memory or Scope, opened by a toolbar button; returns its body */
+  addDrawer(id, title, buttonTitle) {
+    const sec = document.createElement("section");
+    sec.className = "drawer"; sec.id = id; sec.setAttribute("aria-label", title);
+    sec.innerHTML = `<header><h2></h2><button data-close>Close</button></header><div class="scroll"></div>`;
+    sec.querySelector("h2").textContent = title;
+    sec.querySelector("[data-close]").onclick = () => openDrawer(null);
+    document.body.append(sec);
+    addonDrawers.push(id);
+    const b = window.wirePage.addButton(title, buttonTitle || title, () => openDrawer(sec.classList.contains("open") ? null : id));
+    b.dataset.drawer = id;
+    b.setAttribute("aria-pressed", "false");
+    return { section: sec, header: sec.querySelector("header"), body: sec.querySelector(".scroll"), button: b };
+  },
+  openDrawer: id => openDrawer(id),
+  redraw: () => redraw()
+};
+
 /* where every part of the circuit is drawn now, by node: the playground uses
  * it to keep the layout when a written circuit becomes a drawing */
 window.wireGoView = id => openView(id);
@@ -2816,5 +2910,6 @@ if (EDIT) {
   window.wireCentre = () => toWorld(sheet.clientWidth / 2, sheet.clientHeight / 2);
 }
 </script>
+<script>/*WIRE_ADDON*/</script>
 </body>
 </html>

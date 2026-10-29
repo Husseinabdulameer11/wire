@@ -1,0 +1,4 @@
+# expect: a character is 8 bits (its code), or 16
+clock clk
+input a[9], c[4]
+s = screen(a, c, 1, clk, width = 32, text = 1)

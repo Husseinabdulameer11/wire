@@ -183,6 +183,7 @@ typedef struct {
     long hz;                      /* clock, in hundredths */
     int membits, memabits;        /* rom, ram: bits per word, address bits */
     int screenw;                  /* a ram made by screen(): its width in pixels */
+    int screentext;               /* ... that shows characters, not pixels */
     unsigned long *mem; long memlen; /* initial contents: words 0..memlen-1 */
     int dead;                     /* merged into an identical gate */
 } Node;
@@ -357,6 +358,7 @@ typedef struct {
     int bits;
     int sgn;                       /* mul: 1 a is signed, 2 b is signed */
     int screen, screenw;           /* screen(): a ram shown as pixels, and its width */
+    int screentext;                /* text = 1: its words are characters */
     /* computed: */
     int nin; gram_node *in[MAXIO]; char inname[MAXIO][NAMEW]; int inw[MAXIO];
     int nout; char outname[MAXIO][NAMEW]; int outw[MAXIO];
@@ -548,6 +550,10 @@ static void analyze(gram_node *call, Call *c, int check)
                 if (v->rule != WIRE_R_number || (number(v) != 0 && number(v) != 1))
                     fail(v, "%.*s is 0 or 1: mul(a, b, %.*s = 1)", TEXT(k), TEXT(k));
                 if (number(v)) c->sgn |= bit; else c->sgn &= ~bit;
+            } else if (same(k, "text", 4) && c->screen) {
+                if (v->rule != WIRE_R_number || (number(v) != 0 && number(v) != 1))
+                    fail(v, "text is 0 or 1: screen(..., text = 1) shows characters");
+                c->screentext = (int)number(v);
             } else if (same(k, "width", 5) && c->screen) {
                 if (v->rule != WIRE_R_number) fail(v, "width must be a number");
                 c->screenw = number(v);
@@ -742,7 +748,10 @@ static void analyze(gram_node *call, Call *c, int check)
             if (c->screenw < 1 || (c->screenw & (c->screenw - 1)) || c->screenw > words)
                 fail(c->call, "the width of a screen is a power of two up to %ld (the address is {y, x}), not %d",
                      words, c->screenw);
-            if (w != 1 && w != 3 && w != 6 && w != 8 && w != 12 && w != 24)
+            if (c->screentext) {
+                if (w != 8 && w != 16)
+                    fail(c->pos[1], "a character is 8 bits (its code), or 16 (the code, and its colour on top: RGB 3-3-2), not %d", w);
+            } else if (w != 1 && w != 3 && w != 6 && w != 8 && w != 12 && w != 24)
                 fail(c->pos[1], "a pixel is 1 bit (on/off), or 3, 6, 8, 12 or 24 bits of red, green and blue, not %d", w);
         }
         if (check) { want_width(c, c->pos[2], 1, "we"); want_width(c, c->pos[3], 1, "the clock"); }
@@ -1084,6 +1093,7 @@ static Node *build_call(gram_node *call, int dst, Sym *s)
         n->membits = c.outw[0];
         n->memabits = c.inw[0];
         n->screenw = c.screenw;
+        n->screentext = c.screentext;
         load_mem(k, c.data);
     }
     for (i = 0; i < c.nout; i++) {
@@ -1462,6 +1472,7 @@ static void write_json(void)
             }
             fputc(']', jf);
             if (n->screenw) fprintf(jf, ",\"screen\":%d", n->screenw);
+            if (n->screentext) fputs(",\"text\":1", jf);
         }
         if (n->kind == K_CLOCK) fprintf(jf, ",\"hz\":%ld.%02ld", n->hz / 100, n->hz % 100);
         if (n->opt) { fputs(",\"color\":", jf); jstr(n->opt, n->optlen); }
@@ -1594,23 +1605,45 @@ static void write_vhdl(void)
     free(data);
 }
 
+/* add-ons: scripts of the example's own (an assembler for a computer), put
+ * in the page after the viewer: --addon f.js, or name.addon.js next to the file */
+#define MAXADDONS 8
+static const char *addons[MAXADDONS];
+static int naddons;
+
+static void write_addons(void)
+{
+    int i;
+    for (i = 0; i < naddons; i++) {
+        size_t n;
+        char *t = read_file(addons[i], &n), *p;
+        if (!t) { perror(addons[i]); exit(1); }
+        fprintf(jf, "\n/* %s */\n", base_name(addons[i], 1));
+        for (p = t; *p; p++) {   /* nothing in it may end the script early */
+            if (p[0] == '<' && p[1] == '/' && (p[2] == 's' || p[2] == 'S')) { fputs("<\\/", jf); p++; continue; }
+            fputc(*p, jf);
+        }
+        free(t);
+    }
+}
+
 /* the page: the viewer with the netlist (and the book) put in at their marks */
 static int write_html(const char *path)
 {
-    static const char *marks[] = { "/*WIRE_DATA*/", "/*WIRE_BOOK*/null", "/*WIRE_VHDL*/null" };
+    static const char *marks[] = { "/*WIRE_DATA*/", "/*WIRE_BOOK*/null", "/*WIRE_VHDL*/null", "/*WIRE_ADDON*/" };
     const char *at = wire_view;
     jf = fopen(path, "wb");
     if (!jf) return 0;
     for (;;) {
         const char *best = NULL;
         int k, which = -1;
-        for (k = 0; k < 3; k++) {
+        for (k = 0; k < 4; k++) {
             const char *m = strstr(at, marks[k]);
             if (m && (!best || m < best)) { best = m; which = k; }
         }
         if (!best) { fputs(at, jf); break; }
         fwrite(at, 1, (size_t)(best - at), jf);
-        if (which == 0) write_json(); else if (which == 1) write_book(); else write_vhdl();
+        if (which == 0) write_json(); else if (which == 1) write_book(); else if (which == 2) write_vhdl(); else write_addons();
         at = best + strlen(marks[which]);
     }
     return fclose(jf) == 0;
@@ -2353,6 +2386,7 @@ int main(int argc, char **argv)
                    "  --book-name n    what to call that book in the page\n"
                    "                   (repeat --book/--book-url for more books)\n"
                    "  --vhdl f.vhd     VHDL to show (default: the .vhd next to the .wire file)\n"
+                   "  --addon f.js     a script of the circuit's own for the page (default: name.addon.js next to it)\n"
                    "  -t               print the syntax tree\n"
                    "  --version        print the version\n", WIRE_VERSION);
             return 0;
@@ -2371,6 +2405,10 @@ int main(int argc, char **argv)
             if (!nbooks) { fprintf(stderr, "wire: %s goes after the --book it is about\n", argv[i]); return 2; }
             if (argv[i][2] == 't') books[nbooks - 1].topics = argv[++i]; else books[nbooks - 1].name = argv[++i];
         } else if (!strcmp(argv[i], "--vhdl") && i + 1 < argc) vhdl_file = argv[++i];
+        else if (!strcmp(argv[i], "--addon") && i + 1 < argc) {
+            if (naddons == MAXADDONS) { fprintf(stderr, "wire: at most %d add-ons\n", MAXADDONS); return 2; }
+            addons[naddons++] = argv[++i];
+        }
         else return usage();
     }
     if (i != argc - 1) return usage();
@@ -2426,6 +2464,17 @@ int main(int argc, char **argv)
         else def[n - vhdl_ext(def)] = 0;
         strcat(def, ".html");
         out = def;
+    }
+    if (!naddons) {   /* name.addon.js next to the circuit */
+        size_t l = strlen(src_name);
+        char *a = (char *)malloc(l + 16), *dot, *p;
+        FILE *f;
+        strcpy(a, src_name);
+        dot = NULL;
+        for (p = a; *p; p++) if (*p == '.') dot = p; else if (*p == '/' || *p == '\\') dot = NULL;
+        if (dot) *dot = 0;
+        strcat(a, ".addon.js");
+        if ((f = fopen(a, "rb"))) { fclose(f); addons[naddons++] = a; }
     }
     if (!write_html(out)) { perror(out); return 1; }
     fprintf(stderr, "wrote %s\n", out);

@@ -114,6 +114,10 @@ test: $(WIRE)
 	     || { echo "examples/notes/sap1.wire: the SAP-1 did not compute 16 + 20 + 24 - 32 = 28"; exit 1; }; \
 	   node tests/sim/run.js $(WIRE) tests/vhdl_in/rv32im.vhd 2000 out_port | grep -q "out_port = 965487436" \
 	     || { echo "tests/vhdl_in/rv32im.vhd: the RV32IM core did not finish its program with 0x398C2B4C"; exit 1; }; \
+	   node tools/riscv.js $(WIRE) --check || exit 1; \
+	   node tests/riscv/run.js $(WIRE) || exit 1; \
+	   if command -v riscv64-unknown-elf-as >/dev/null 2>&1; then node tests/riscv/gnu.js || exit 1; \
+	   else echo "riscv: no riscv64-unknown-elf-as, so the assembler is not checked against GNU as"; fi; \
 	   node tests/sim/screen.js $(WIRE) examples/screen/computer.wire | tail -n +2 | diff -q - tests/sim/computer.screen >/dev/null \
 	     || { echo "examples/screen/computer.wire: the computer did not draw tests/sim/computer.screen"; exit 1; }; \
 	   node tests/vhdl/cosim.js $(WIRE) || exit 1; \

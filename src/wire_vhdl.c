@@ -159,6 +159,7 @@ static char vk01[200];     /* this entity's known01 function, once it needs one 
 static int vnamed;         /* counter for nets with no name */
 static int vrams;
 static int vscreens;               /* attribute wire_screen declared in this architecture */
+static int vtexts;                 /* ... and wire_text */
 
 static int net_w(int net) { return nets[find(net)].w ? nets[find(net)].w : 1; }
 
@@ -860,6 +861,10 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
         if (n->screenw) {
             if (!vscreens++) vbf(decl, "  attribute wire_screen : integer;\n");
             vbf(decl, "  attribute wire_screen of %s : signal is %d;\n", mname, n->screenw);
+            if (n->screentext) {   /* its words are characters */
+                if (!vtexts++) vbf(decl, "  attribute wire_text : integer;\n");
+                vbf(decl, "  attribute wire_text of %s : signal is 1;\n", mname);
+            }
         }
         if (n->kind == K_RAM) {
             int clk = vin_by(n, "clk"), we = vin_by(n, "we"), din = vin_by(n, "din");
@@ -951,6 +956,7 @@ static void vscope_reset(void)
     vk01[0] = 0;
     vrams = 0;
     vscreens = 0;
+    vtexts = 0;
 }
 
 static void vdeclare(VBuf *decl, int net)

@@ -61,6 +61,7 @@ typedef struct {
     struct VLane *lanes;         /* its writes: one ram part each (byte lanes: mem(i)(7 downto 0) <= ...) */
     int nlanes;
     int screenw;                 /* attribute wire_screen of it: a screen this wide */
+    int screentext;              /* attribute wire_text of it: the screen shows characters */
     int wch0, wnch;              /* wider than 32 bits: a signal (or variable) per 32 bits, from wch0 */
 } VSym;
 
@@ -1562,22 +1563,36 @@ static VX vi_wcompare(VX a, VX b, const char *o)
             *p[i] = vi_cat(vi_not(top), rest, p[i]->ty);
         }
     }
-    if (eq) {
+    {   /* chunk by chunk: = all of them; < the top one, or equal there and < below. Known chunks are worked out here */
+        VX res = vi_const(eq ? 1 : 0, 1, T_BOOL);
         for (c = 0; c < nch; c++) {
-            VX x = vi_chunk(&a, c), y = vi_chunk(&b, c);
-            vbf(&t, "%scompare(%s, %s).eq", c ? " & " : "", x.s, y.s);
+            VX x = vi_chunk(&a, c), y = vi_chunk(&b, c), e1, l1;
+            if (x.cst && y.cst) {
+                e1 = vi_const(x.v == y.v, 1, T_BOOL);
+                l1 = vi_const(lt ? x.v < y.v : x.v > y.v, 1, T_BOOL);
+            } else {
+                e1 = vi_mk(vi_fmt("compare(%s, %s).eq", x.s, y.s), T_BOOL, 1, 2);
+                l1 = vi_mk(vi_fmt("compare(%s, %s).%s", x.s, y.s, lt ? "lt" : "gt"), T_BOOL, 1, 2);
+            }
+            if (eq) {   /* res & e1 */
+                if (res.cst) res = res.v ? e1 : res;
+                else if (!e1.cst) res = vi_mk(vi_fmt("%s & %s", vi_wrap(&res, 1), vi_wrap(&e1, 1)), T_BOOL, 1, 0);
+                else if (!e1.v) res = e1;
+            } else {   /* l1 | e1 & res */
+                VX t2;
+                if (e1.cst) t2 = e1.v ? res : e1;
+                else if (res.cst) t2 = res.v ? e1 : res;
+                else t2 = vi_mk(vi_fmt("%s & %s", vi_wrap(&e1, 1), vi_wrap(&res, 1)), T_BOOL, 1, 0);
+                if (l1.cst) res = l1.v ? l1 : t2;
+                else if (t2.cst) res = t2.v ? t2 : l1;
+                else res = vi_mk(vi_fmt("%s | %s", l1.s, vi_wrap(&t2, 0)), T_BOOL, 1, 0);
+            }
         }
-    } else {   /* top.lt | top.eq & (next.lt | next.eq & ...) */
-        for (c = nch - 1; c >= 0; c--) {
-            VX x = vi_chunk(&a, c), y = vi_chunk(&b, c);
-            if (c) vbf(&t, "compare(%s, %s).%s | compare(%s, %s).eq & (", x.s, y.s, lt ? "lt" : "gt", x.s, y.s);
-            else vbf(&t, "compare(%s, %s).%s", x.s, y.s, lt ? "lt" : "gt");
-        }
-        for (c = 1; c < nch; c++) vb_add(&t, ")", 1);
+        r = res.cst ? res : vi_mk(vi_fmt("(%s)", res.s), T_BOOL, 1, 2);
     }
-    r = vi_mk(vi_fmt("(%s)", t.s), T_BOOL, 1, 2);
     if (neg) r = vi_not(r);
     r.ty = T_BOOL;
+    (void)t;
     return r;
 }
 
@@ -2522,7 +2537,7 @@ static void vi_ent_ports(VEnt *e)
 static int vi_wname_taken(const char *w)   /* a component name already in use (or a part of Wire) */
 {
     static const char *parts[] = { "and", "or", "nand", "nor", "xor", "xnor", "not", "buf", "mux", "demux", "decoder",
-                                   "encoder", "add", "compare", "dff", "reg", "tff", "jkff", "counter", "tri", "rom",
+                                   "encoder", "add", "mul", "compare", "dff", "reg", "tff", "jkff", "counter", "tri", "rom",
                                    "ram", "screen", NULL };
     int i;
     for (i = 0; parts[i]; i++) if (!strcmp(parts[i], w)) return 1;
@@ -2968,6 +2983,7 @@ static void vi_seq_if(gram_node *cond, gram_node *body, gram_node *rest)
         else if (rest) vi_seq(rest->child->child);
         return;
     }
+    vi_bind(&c);   /* a long condition gets a wire: every value it picks between uses it */
     t = vi_env_copy(pre);
     f = vi_env_copy(pre);
     vi_env = &t;
@@ -4018,8 +4034,8 @@ static void vi_ram_emit(VSym *s)
             }
         }
         if (s->screenw)   /* attribute wire_screen of it: drawn as a screen */
-            vi_emit(at, "%s = screen(%s, %s, %s, %s, width = %d%s%s%s)", l->wname, ix.s, d.s, we.s, clk, s->screenw,
-                    any ? ", data = \"" : "", any ? data.s : "", any ? "\"" : "");
+            vi_emit(at, "%s = screen(%s, %s, %s, %s, width = %d%s%s%s%s)", l->wname, ix.s, d.s, we.s, clk, s->screenw,
+                    s->screentext ? ", text = 1" : "", any ? ", data = \"" : "", any ? data.s : "", any ? "\"" : "");
         else
             vi_emit(at, "%s = ram(%s, %s, %s, %s%s%s%s)", l->wname, ix.s, d.s, we.s, clk,
                     any ? ", data = \"" : "", any ? data.s : "", any ? "\"" : "");
@@ -4305,6 +4321,13 @@ static void vi_decls(gram_node *first)   /* signal and constant declarations, fr
                                 "if we = '1' then %.*s(to_integer(addr)) <= pixel; end if;, read only as %.*s(to_integer(addr))",
                                 VT(id), VT(id), VT(id));
                     s->screenw = (int)w;
+                }
+            } else if (vi_is(an, "wire_text")) {   /* the screen shows characters */
+                for (id = ids->child; id; id = id->next) {
+                    VSym *s = vi_find(id);
+                    if (!s) vi_fail(id, "%.*s is not declared above this line", VT(id));
+                    if (!s->screenw) vi_fail(id, "wire_text goes with wire_screen: give %.*s its width in characters first", VT(id));
+                    s->screentext = 1;
                 }
             }   /* other attributes (keep, mark_debug, ...) are for the tools */
         } else if (d->rule == VHDL_R_compdecl) {

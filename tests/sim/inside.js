@@ -131,7 +131,7 @@ for (const c of C) {
   const f = path.join(dir, c.name + ".wire");
   fs.writeFileSync(f, c.src);
   let D;
-  try { D = JSON.parse(execFileSync(wire, ["--json", f], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })); }
+  try { D = JSON.parse(execFileSync(wire, ["--json", f], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28 })); }
   catch (e) { console.log(`FAIL ${c.name}: ${String(e.stderr || e.message).trim()}`); failed++; continue; }
   D.nodes.forEach((n, j) => {
     if (!WireInside.canOpen(n)) return;

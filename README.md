@@ -337,6 +337,21 @@ end process;
 The array must be written like a ram (one clocked process, as above) and
 read only as `pixels(to_integer(...))`, if at all.
 
+**Text.** With `text = 1` a screen shows characters, not pixels: each word
+is a character, 8 bits (its code: 65 is A; below 33 is blank) or 16 (the
+code, with its colour on top, RGB 3-3-2; colour 0 is the usual green). The
+address is the same `{y, x}`, so a 64 x 16 text screen is 64 characters a
+row and character (x, y) is at 64 y + x, as a computer writing to it would
+expect:
+
+```
+t = screen(addr, ch, we, clk, width = 64, text = 1)   # 64 x 16 characters (addr is 10 bits)
+```
+
+In VHDL it is `attribute wire_text of chars : signal is 1;` next to its
+`wire_screen` line (the width, in characters). The playground's drawing has
+it too: pick "characters" as the screen's pixel.
+
 ### Memory contents
 
 `rom`, `ram` and `screen` take their contents from a file (`file = "program.hex"`,
@@ -387,6 +402,25 @@ circuit in VHDL beside it (`.vhd`). `examples/index.txt` gives the order.
   program to try. `make test` checks the picture it draws
   (`tests/sim/computer.screen`). The chapters
   on the board's devices (PS/2, VGA, SRAM, PicoBlaze) are left out.
+- **`examples/riscv/`**: a RISC-V computer, `rv32im.vhd`: an RV32IM
+  processor (every RV32I instruction, and RV32M's multiply and divide; one
+  instruction per clock) with 4 KB of ram, a 64 x 64 colour screen, a
+  64 x 16 text screen, a hex display, switches and a keypad, all at
+  addresses in its memory map (the comments at the top list them). Its page
+  has an **Assembly** panel, from its add-on (see [Add-ons](#add-ons)): pick
+  one of the programs in `programs/` (hello, fib, primes, bounce, keys) or
+  write your own in RISC-V assembly, press **Assemble and run**, and watch
+  it on the screens, which the panel shows big, with the registers and a
+  listing where the instruction being run is lit. The assembler
+  (`asm/rvasm.js`) knows all of RV32IM, the usual pseudo-instructions (`li
+  la mv call ret j beqz bgt ...`) and `.data .text .word .half .byte .asciz
+  .space .align .equ`; `make test` checks it against GNU as when that is
+  installed. `rv32im.wire` and the add-on are made from the VHDL, the
+  programs and `asm/` by `node tools/riscv.js build/wire` (`make test` says
+  if they are out of date), and `tests/riscv/run.js` runs every program, and
+  `tests/riscv/isa.s` (each instruction on edge values), in the circuit and
+  in `tests/riscv/ref.js`, the same computer written plainly from the
+  RISC-V spec, and checks the registers, the ram and the screens agree.
 
 The VHDL is written for this project, in the book's style and with the
 book's entity and port names, so each example matches its listing; it is
@@ -605,6 +639,26 @@ the standard library that ships with Wire (`lib/`, installed to
 
 The standard library has `adders.wire`: `half_adder`, `full_adder` built from
 two half adders, `add4` (ripple carry) and `add8` built from two `add4`s.
+
+### Add-ons
+
+An example can bring a script of its own: `name.addon.js` next to
+`name.wire` (or `--addon f.js`) is put into the page after the viewer, so
+the page of the RISC-V computer gets its assembler. It works the page
+through `window.wirePage`, and only through it:
+
+- `wirePage.ready(f)`: call `f(wirePage)` once the simulator runs.
+- `find(name, kind)`: a part by its name (`find("instr", "rom")`); `nodes`,
+  `nets` and `D` (the netlist) are there too, and a net's `v` is its value now.
+- `setContents(part, words)`: a rom's or ram's words, kept through Reset;
+  `words(part)` reads them.
+- `setInput(name, value)`, `reset()`, `run(on)`, `running()`, `step()`,
+  `speed("max")`.
+- `addButton(label, title, onclick)` and `addDrawer(id, title, buttonTitle)`:
+  a button in the toolbar, or a panel like Memory with its button; it
+  returns `{ section, header, body, button }`. `openDrawer(id)` opens one.
+
+The site and the playground carry the add-on with the example.
 
 ### On the page
 

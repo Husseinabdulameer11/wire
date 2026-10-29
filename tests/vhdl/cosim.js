@@ -74,7 +74,7 @@ if (ROUND) {
   const list = files.splice(0);
   for (const f of list) {
     const d = fs.mkdtempSync(path.join(os.tmpdir(), "wirert-")), top = path.basename(f, ".wire");
-    const r = spawnSync(wire, ["--to-vhdl", "-o", path.join(d, top + ".vhd"), f], { encoding: "utf8" });
+    const r = spawnSync(wire, ["--to-vhdl", "-o", path.join(d, top + ".vhd"), f], { encoding: "utf8", maxBuffer: 1 << 28 });
     if (r.status !== 0) { console.log(`FAIL ${f}\n  ${(r.stderr || "").trim()}`); process.exit(1); }
     fs.copyFileSync(f, path.join(d, top + ".wire"));
     files.push(path.join(d, top + ".vhd"));
@@ -133,15 +133,18 @@ for (const file of files) {
     /* the VHDL Wire makes, in a folder of its own */
     gendir = fs.mkdtempSync(path.join(os.tmpdir(), "wirevhd-"));
     vfile = path.join(gendir, top + ".vhd");
-    try { execFileSync(wire, ["--to-vhdl", "-o", vfile, file], { stdio: ["ignore", "pipe", "pipe"] }); }
+    try { execFileSync(wire, ["--to-vhdl", "-o", vfile, file], { stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28 }); }
     catch (e) { fail(String(e.stderr || e.message).trim()); continue; }
     /* strict VHDL-93, as Vivado reads a .vhd file */
     const r93 = spawnSync("ghdl", ["-a", "--std=93", "--workdir=" + gendir, vfile], { cwd: gendir, encoding: "utf8" });
     if (r93.status !== 0) { fail(`not valid VHDL-93:\n  ${(r93.stderr || r93.stdout).trim().split("\n").slice(0, 6).join("\n  ")}` + (KEEP ? `\n  vhdl: ${vfile}` : "")); continue; }
     if (canSynth) {
-      const syn = spawnSync("ghdl", ["--synth", "--std=93", "--workdir=" + gendir, vfile, "-e", top], { cwd: gendir, encoding: "utf8" });
+      const syn = spawnSync("ghdl", ["--synth", "--std=93", "--workdir=" + gendir, vfile, "-e", top], { cwd: gendir, encoding: "utf8", maxBuffer: 1 << 28 });   /* the netlist it prints is big for a processor */
       if (syn.status !== 0) {
-        const msg = (syn.stderr || syn.stdout).trim().split("\n")[0];
+        /* the first real message: not the notes on attributes GHDL does not know (wire_screen, wire_text) */
+        const lines = (syn.stderr || syn.stdout || "").trim().split("\n");
+        const msg = lines.find(l => /error|cannot|multiple/i.test(l)) ||
+                    `exit ${syn.status}${syn.signal ? ", " + syn.signal : ""}${syn.error ? ", " + syn.error.message : ""}`;
         /* GHDL cannot synthesize a tri-state bus inside the design (several
          * drivers on one signal); Vivado turns those into logic */
         if (/multiple assignments/.test(msg) && /\bbus\b/.test(fs.readFileSync(file, "utf8"))) synthNotes++;
@@ -151,7 +154,7 @@ for (const file of files) {
   }
   if (VIN) {
     /* only what Wire reads; the rest must say it is not supported yet */
-    const r = spawnSync(wire, ["--check", file], { encoding: "utf8" });
+    const r = spawnSync(wire, ["--check", file], { encoding: "utf8", maxBuffer: 1 << 28 });
     if (r.status !== 0) {
       const msg = (r.stderr || "").trim();
       if (/not supported yet/.test(msg)) { notYet++; skipped++; console.log(`not yet  ${file}: ${msg.replace(/^.*error: /, "").split(/[.;]/)[0]}`); }
@@ -179,7 +182,7 @@ for (const file of files) {
     }
   }
   let D;
-  try { D = JSON.parse(execFileSync(wire, ["--json", file], { stdio: ["ignore", "pipe", "pipe"] }).toString()); }
+  try { D = JSON.parse(execFileSync(wire, ["--json", file], { stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28 }).toString()); }
   catch (e) { fail(String(e.stderr || e.message).trim()); continue; }
   const vname = n => rename[n] || (VIN && ports.some(p => p.name + "_" === n) ? n.slice(0, -1) : n);
   const top0 = D.nodes.map((n, j) => ({ n, j })).filter(x => x.n.inst === 0);
@@ -275,7 +278,7 @@ end sim;
 `;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cosim-"));
   fs.writeFileSync(path.join(dir, "tb.vhd"), tb);
-  const run = (a, opts) => spawnSync("ghdl", a, { cwd: dir, encoding: "utf8", ...opts });
+  const run = (a, opts) => spawnSync("ghdl", a, { cwd: dir, encoding: "utf8", maxBuffer: 1 << 28, ...opts });
   const syn = VIN ? ["-fsynopsys"] : [];   /* std_logic_unsigned */
   let r = run(["-a", "--std=08", "-frelaxed", ...syn, path.resolve(vfile), "tb.vhd"]);
   if (r.status !== 0) { fail(`GHDL could not read ${vfile}:\n  ${(r.stderr || r.stdout).trim().split("\n").slice(0, 6).join("\n  ")}`); continue; }

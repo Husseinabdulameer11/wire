@@ -26,7 +26,7 @@ jobs:
         with: { repository: "${{ env.GRAM_REPO }}", path: gram-src }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: sudo apt-get update -q && sudo apt-get install -y -q ghdl
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ghdl binutils-riscv64-unknown-elf   # GNU as: checks the RISC-V example's assembler
       - run: make test CC=${{ matrix.cc }} GRAM=gram-src
 
   linux-installed-gram:

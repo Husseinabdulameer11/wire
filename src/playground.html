@@ -429,7 +429,7 @@ const partById = id => sheet(model).parts.find(p => p.id === id);
 
 /* a fresh name: a, b, c... for inputs; y, z, out1... for outputs; and1,
  * ff1... for the rest */
-const RESERVED = new Set("input output wire led seg7 hex button clock bus keypad circuit import component and or nand nor xor xnor not buf mux demux decoder encoder add compare dff reg tff jkff counter tri rom ram screen".split(" "));
+const RESERVED = new Set("input output wire led seg7 hex button clock bus keypad circuit import component and or nand nor xor xnor not buf mux demux decoder encoder add mul compare dff reg tff jkff counter tri rom ram screen".split(" "));
 function freshName(kind) {
   const used = new Set(sheet(model).parts.map(p => p.name.toLowerCase()));
   const free = n => !used.has(n.toLowerCase()) && !RESERVED.has(n);
@@ -509,7 +509,7 @@ function sheetLines(m, sh) {
     else if (k === "screen") {
       const pin = (name, w) => { const v = from(p, name); return v === "0" ? lit(0, w) : v; };
       const data = (p.data || "").trim() ? `, data = "${p.data.trim()}"` : "";
-      body.push(`${p.name} = screen(${pin("addr", p.abits || 10)}, ${pin("din", p.bits || 1)}, ${from(p, "we")}, ${from(p, "clk")}, width = ${p.sw || 32}${data})`);
+      body.push(`${p.name} = screen(${pin("addr", p.abits || 10)}, ${pin("din", p.bits || 1)}, ${from(p, "we")}, ${from(p, "clk")}, width = ${p.sw || 32}${p.text ? ", text = 1" : ""}${data})`);
     }
     else if (k === "rom" || k === "ram") {
       /* an unwired address or data in reads 0, as wide as the memory's */
@@ -1128,10 +1128,12 @@ function showProps() {
     field("Size", sz).title = "Pixels across and down; the address is {y, x}, so x is its low bits";
     sz.addEventListener("change", () => { const [w, h] = sz.value.split("x").map(Number); change(() => { p.sw = w; p.abits = Math.log2(w * h); }); });
     const px = document.createElement("select");
-    [[1, "1 bit: on/off"], [3, "3 bits: RGB 1-1-1"], [6, "6 bits: RGB 2-2-2"], [8, "8 bits: RGB 3-3-2"], [12, "12 bits: RGB 4-4-4"], [24, "24 bits: RGB 8-8-8"]]
-      .forEach(([b, t]) => px.append(new Option(t, String(b), false, b === (p.bits || 1))));
-    field("Pixel", px).title = "Bits per pixel: red is the highest bits";
-    px.addEventListener("change", () => change(() => { p.bits = +px.value; }));
+    /* a pixel of colour, or (text) a character: its code, and its colour on top */
+    [[1, "1 bit: on/off"], [3, "3 bits: RGB 1-1-1"], [6, "6 bits: RGB 2-2-2"], [8, "8 bits: RGB 3-3-2"], [12, "12 bits: RGB 4-4-4"], [24, "24 bits: RGB 8-8-8"],
+     ["t8", "characters: 8 bits, the code"], ["t16", "characters: 16 bits, colour (RGB 3-3-2) on top"]]
+      .forEach(([b, t]) => px.append(new Option(t, String(b), false, String(b) === (p.text ? "t" : "") + (p.bits || 1))));
+    field("Pixel", px).title = "Bits per pixel (red is the highest bits), or characters: the screen shows text";
+    px.addEventListener("change", () => change(() => { const t = px.value[0] === "t"; p.text = t; p.bits = +px.value.replace("t", ""); }));
   }
   if (k === "rom" || k === "ram") {
     const b = field("Word bits", Object.assign(document.createElement("input"), { type: "number", min: 1, max: 32, value: p.bits || 8 }));
@@ -1418,7 +1420,7 @@ function buildSheet(D, scope, lay, comps) {
     if (k === "rom" || k === "ram" || k === "screen") {
       /* the contents, as data = "..." from address 0 (a file's words come along) */
       p.bits = n.bits; p.abits = n.abits;
-      if (k === "screen") p.sw = n.screen;
+      if (k === "screen") { p.sw = n.screen; p.text = !!n.text; }
       const words = [];
       for (const [at, ws] of n.init || []) ws.forEach((w, j) => { words[at + j] = w; });
       p.data = Array.from(words, w => ((w || 0) >>> 0).toString(16).toUpperCase().padStart(2, "0")).join(" ");

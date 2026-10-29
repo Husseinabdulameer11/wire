@@ -24,8 +24,9 @@ process.setMaxListeners(0);   /* every instance adds its own handlers */
 
 const walk = (d, keep) => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
   e.isDirectory() ? walk(path.join(d, e.name), keep) : keep(e.name) ? [path.join(d, e.name)] : []);
-/* every file a circuit may read: .wire, .hex, .vhd under examples, tests, lib */
-const files = ["examples", "tests", "lib"].flatMap(d => walk(path.join(root, d), n => /\.(wire|hex|vhd)$/.test(n)))
+/* every file a circuit may read: .wire, .hex, .vhd under examples, tests, lib,
+ * and the add-ons a page gets (name.addon.js) */
+const files = ["examples", "tests", "lib"].flatMap(d => walk(path.join(root, d), n => /\.(wire|hex|vhd)$|\.addon\.js$/.test(n)))
   .map(f => path.relative(root, f).split(path.sep).join("/"));
 
 /* one run of the WebAssembly wire: a fresh instance, the files, the args */
@@ -49,7 +50,7 @@ async function web(args) {
 }
 
 function nat(args) {
-  const r = spawnSync(path.resolve(native), args, { cwd: root, encoding: "buffer" });
+  const r = spawnSync(path.resolve(native), args, { cwd: root, encoding: "buffer", maxBuffer: 1 << 28 });
   const outFile = args.indexOf("-o") >= 0 ? path.join(root, args[args.indexOf("-o") + 1]) : null;
   let page = null;
   if (outFile && fs.existsSync(outFile)) { page = fs.readFileSync(outFile); fs.unlinkSync(outFile); }

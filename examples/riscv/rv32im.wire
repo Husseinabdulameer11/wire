@@ -1,0 +1,467 @@
+# rv32im.wire: made by `node tools/riscv.js build/wire` from rv32im.vhd (the
+# design; wire --to-wire, with this title and these comments, and key as a
+# keypad). Change rv32im.vhd or programs/hello.s and run it again.
+
+component divider(a[32], b[32], sgn) -> (q[32], r[32]) {
+wire v1_[1]
+v1_ = 0b0 | ~compare({0b0000000000000000000000000000000, mux(a, add(~a, 0x00000001), sel = sgn & a[31])[31]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v2_[32]
+v2_ = add({0b0000000000000000000000000000000, mux(a, add(~a, 0x00000001), sel = sgn & a[31])[31]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v3_[1]
+v3_ = mux({0b0000000000000000000000000000000, mux(a, add(~a, 0x00000001), sel = sgn & a[31])[31]}, v2_, sel = v1_)[31] | ~compare({mux({0b0000000000000000000000000000000, mux(a, add(~a, 0x00000001), sel = sgn & a[31])[31]}, v2_, sel = v1_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[30]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v4_[32]
+v4_ = add({mux({0b0000000000000000000000000000000, mux(a, add(~a, 0x00000001), sel = sgn & a[31])[31]}, v2_, sel = v1_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[30]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v5_[32]
+v5_ = {mux({0b0000000000000000000000000000000, mux(a, add(~a, 0x00000001), sel = sgn & a[31])[31]}, v2_, sel = v1_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[30]}
+wire v6_[1]
+v6_ = mux(v5_, v4_, sel = v3_)[31] | ~compare({mux(v5_, v4_, sel = v3_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[29]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v7_[32]
+v7_ = {mux(mux(0x00000000, 0x80000000, sel = v1_), {mux(0x00000000, 0x80000000, sel = v1_)[31], 0b1, mux(0x00000000, 0x80000000, sel = v1_)[29:0]}, sel = v3_)[31:30], 0b1, mux(mux(0x00000000, 0x80000000, sel = v1_), {mux(0x00000000, 0x80000000, sel = v1_)[31], 0b1, mux(0x00000000, 0x80000000, sel = v1_)[29:0]}, sel = v3_)[28:0]}
+wire v8_[32]
+v8_ = mux(mux(0x00000000, 0x80000000, sel = v1_), {mux(0x00000000, 0x80000000, sel = v1_)[31], 0b1, mux(0x00000000, 0x80000000, sel = v1_)[29:0]}, sel = v3_)
+wire v9_[32]
+v9_ = add({mux(v5_, v4_, sel = v3_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[29]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v10_[1]
+v10_ = mux({mux(v5_, v4_, sel = v3_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[29]}, v9_, sel = v6_)[31] | ~compare({mux({mux(v5_, v4_, sel = v3_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[29]}, v9_, sel = v6_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[28]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v11_[32]
+v11_ = add({mux({mux(v5_, v4_, sel = v3_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[29]}, v9_, sel = v6_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[28]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v12_[32]
+v12_ = {mux({mux(v5_, v4_, sel = v3_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[29]}, v9_, sel = v6_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[28]}
+wire v13_[1]
+v13_ = mux(v12_, v11_, sel = v10_)[31] | ~compare({mux(v12_, v11_, sel = v10_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[27]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v14_[32]
+v14_ = {mux(mux(v8_, v7_, sel = v6_), {mux(v8_, v7_, sel = v6_)[31:29], 0b1, mux(v8_, v7_, sel = v6_)[27:0]}, sel = v10_)[31:28], 0b1, mux(mux(v8_, v7_, sel = v6_), {mux(v8_, v7_, sel = v6_)[31:29], 0b1, mux(v8_, v7_, sel = v6_)[27:0]}, sel = v10_)[26:0]}
+wire v15_[32]
+v15_ = add({mux(v12_, v11_, sel = v10_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[27]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v16_[1]
+v16_ = mux({mux(v12_, v11_, sel = v10_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[27]}, v15_, sel = v13_)[31] | ~compare({mux({mux(v12_, v11_, sel = v10_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[27]}, v15_, sel = v13_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[26]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v17_[32]
+v17_ = {mux(mux(mux(v8_, v7_, sel = v6_), {mux(v8_, v7_, sel = v6_)[31:29], 0b1, mux(v8_, v7_, sel = v6_)[27:0]}, sel = v10_), v14_, sel = v13_)[31:27], 0b1, mux(mux(mux(v8_, v7_, sel = v6_), {mux(v8_, v7_, sel = v6_)[31:29], 0b1, mux(v8_, v7_, sel = v6_)[27:0]}, sel = v10_), v14_, sel = v13_)[25:0]}
+wire v18_[32]
+v18_ = mux(mux(mux(v8_, v7_, sel = v6_), {mux(v8_, v7_, sel = v6_)[31:29], 0b1, mux(v8_, v7_, sel = v6_)[27:0]}, sel = v10_), v14_, sel = v13_)
+wire v19_[32]
+v19_ = add({mux({mux(v12_, v11_, sel = v10_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[27]}, v15_, sel = v13_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[26]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v20_[32]
+v20_ = {mux({mux(v12_, v11_, sel = v10_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[27]}, v15_, sel = v13_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[26]}
+wire v21_[1]
+v21_ = mux(v20_, v19_, sel = v16_)[31] | ~compare({mux(v20_, v19_, sel = v16_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[25]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v22_[32]
+v22_ = add({mux(v20_, v19_, sel = v16_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[25]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v23_[1]
+v23_ = mux({mux(v20_, v19_, sel = v16_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[25]}, v22_, sel = v21_)[31] | ~compare({mux({mux(v20_, v19_, sel = v16_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[25]}, v22_, sel = v21_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[24]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v24_[32]
+v24_ = {mux(mux(v18_, v17_, sel = v16_), {mux(v18_, v17_, sel = v16_)[31:26], 0b1, mux(v18_, v17_, sel = v16_)[24:0]}, sel = v21_)[31:25], 0b1, mux(mux(v18_, v17_, sel = v16_), {mux(v18_, v17_, sel = v16_)[31:26], 0b1, mux(v18_, v17_, sel = v16_)[24:0]}, sel = v21_)[23:0]}
+wire v25_[32]
+v25_ = mux(mux(v18_, v17_, sel = v16_), {mux(v18_, v17_, sel = v16_)[31:26], 0b1, mux(v18_, v17_, sel = v16_)[24:0]}, sel = v21_)
+wire v26_[32]
+v26_ = add({mux({mux(v20_, v19_, sel = v16_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[25]}, v22_, sel = v21_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[24]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v27_[32]
+v27_ = {mux({mux(v20_, v19_, sel = v16_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[25]}, v22_, sel = v21_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[24]}
+wire v28_[1]
+v28_ = mux(v27_, v26_, sel = v23_)[31] | ~compare({mux(v27_, v26_, sel = v23_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[23]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v29_[32]
+v29_ = add({mux(v27_, v26_, sel = v23_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[23]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v30_[1]
+v30_ = mux({mux(v27_, v26_, sel = v23_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[23]}, v29_, sel = v28_)[31] | ~compare({mux({mux(v27_, v26_, sel = v23_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[23]}, v29_, sel = v28_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[22]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v31_[32]
+v31_ = {mux(mux(v25_, v24_, sel = v23_), {mux(v25_, v24_, sel = v23_)[31:24], 0b1, mux(v25_, v24_, sel = v23_)[22:0]}, sel = v28_)[31:23], 0b1, mux(mux(v25_, v24_, sel = v23_), {mux(v25_, v24_, sel = v23_)[31:24], 0b1, mux(v25_, v24_, sel = v23_)[22:0]}, sel = v28_)[21:0]}
+wire v32_[32]
+v32_ = mux(mux(v25_, v24_, sel = v23_), {mux(v25_, v24_, sel = v23_)[31:24], 0b1, mux(v25_, v24_, sel = v23_)[22:0]}, sel = v28_)
+wire v33_[32]
+v33_ = add({mux({mux(v27_, v26_, sel = v23_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[23]}, v29_, sel = v28_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[22]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v34_[32]
+v34_ = {mux({mux(v27_, v26_, sel = v23_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[23]}, v29_, sel = v28_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[22]}
+wire v35_[1]
+v35_ = mux(v34_, v33_, sel = v30_)[31] | ~compare({mux(v34_, v33_, sel = v30_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[21]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v36_[32]
+v36_ = add({mux(v34_, v33_, sel = v30_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[21]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v37_[1]
+v37_ = mux({mux(v34_, v33_, sel = v30_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[21]}, v36_, sel = v35_)[31] | ~compare({mux({mux(v34_, v33_, sel = v30_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[21]}, v36_, sel = v35_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[20]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v38_[32]
+v38_ = {mux(mux(v32_, v31_, sel = v30_), {mux(v32_, v31_, sel = v30_)[31:22], 0b1, mux(v32_, v31_, sel = v30_)[20:0]}, sel = v35_)[31:21], 0b1, mux(mux(v32_, v31_, sel = v30_), {mux(v32_, v31_, sel = v30_)[31:22], 0b1, mux(v32_, v31_, sel = v30_)[20:0]}, sel = v35_)[19:0]}
+wire v39_[32]
+v39_ = mux(mux(v32_, v31_, sel = v30_), {mux(v32_, v31_, sel = v30_)[31:22], 0b1, mux(v32_, v31_, sel = v30_)[20:0]}, sel = v35_)
+wire v40_[32]
+v40_ = add({mux({mux(v34_, v33_, sel = v30_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[21]}, v36_, sel = v35_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[20]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v41_[32]
+v41_ = {mux({mux(v34_, v33_, sel = v30_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[21]}, v36_, sel = v35_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[20]}
+wire v42_[1]
+v42_ = mux(v41_, v40_, sel = v37_)[31] | ~compare({mux(v41_, v40_, sel = v37_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[19]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v43_[32]
+v43_ = add({mux(v41_, v40_, sel = v37_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[19]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v44_[1]
+v44_ = mux({mux(v41_, v40_, sel = v37_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[19]}, v43_, sel = v42_)[31] | ~compare({mux({mux(v41_, v40_, sel = v37_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[19]}, v43_, sel = v42_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[18]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v45_[32]
+v45_ = {mux(mux(v39_, v38_, sel = v37_), {mux(v39_, v38_, sel = v37_)[31:20], 0b1, mux(v39_, v38_, sel = v37_)[18:0]}, sel = v42_)[31:19], 0b1, mux(mux(v39_, v38_, sel = v37_), {mux(v39_, v38_, sel = v37_)[31:20], 0b1, mux(v39_, v38_, sel = v37_)[18:0]}, sel = v42_)[17:0]}
+wire v46_[32]
+v46_ = mux(mux(v39_, v38_, sel = v37_), {mux(v39_, v38_, sel = v37_)[31:20], 0b1, mux(v39_, v38_, sel = v37_)[18:0]}, sel = v42_)
+wire v47_[32]
+v47_ = add({mux({mux(v41_, v40_, sel = v37_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[19]}, v43_, sel = v42_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[18]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v48_[32]
+v48_ = {mux({mux(v41_, v40_, sel = v37_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[19]}, v43_, sel = v42_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[18]}
+wire v49_[1]
+v49_ = mux(v48_, v47_, sel = v44_)[31] | ~compare({mux(v48_, v47_, sel = v44_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[17]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v50_[32]
+v50_ = add({mux(v48_, v47_, sel = v44_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[17]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v51_[1]
+v51_ = mux({mux(v48_, v47_, sel = v44_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[17]}, v50_, sel = v49_)[31] | ~compare({mux({mux(v48_, v47_, sel = v44_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[17]}, v50_, sel = v49_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[16]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v52_[32]
+v52_ = {mux(mux(v46_, v45_, sel = v44_), {mux(v46_, v45_, sel = v44_)[31:18], 0b1, mux(v46_, v45_, sel = v44_)[16:0]}, sel = v49_)[31:17], 0b1, mux(mux(v46_, v45_, sel = v44_), {mux(v46_, v45_, sel = v44_)[31:18], 0b1, mux(v46_, v45_, sel = v44_)[16:0]}, sel = v49_)[15:0]}
+wire v53_[32]
+v53_ = mux(mux(v46_, v45_, sel = v44_), {mux(v46_, v45_, sel = v44_)[31:18], 0b1, mux(v46_, v45_, sel = v44_)[16:0]}, sel = v49_)
+wire v54_[32]
+v54_ = add({mux({mux(v48_, v47_, sel = v44_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[17]}, v50_, sel = v49_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[16]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v55_[32]
+v55_ = {mux({mux(v48_, v47_, sel = v44_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[17]}, v50_, sel = v49_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[16]}
+wire v56_[1]
+v56_ = mux(v55_, v54_, sel = v51_)[31] | ~compare({mux(v55_, v54_, sel = v51_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[15]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v57_[32]
+v57_ = add({mux(v55_, v54_, sel = v51_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[15]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v58_[1]
+v58_ = mux({mux(v55_, v54_, sel = v51_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[15]}, v57_, sel = v56_)[31] | ~compare({mux({mux(v55_, v54_, sel = v51_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[15]}, v57_, sel = v56_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[14]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v59_[32]
+v59_ = {mux(mux(v53_, v52_, sel = v51_), {mux(v53_, v52_, sel = v51_)[31:16], 0b1, mux(v53_, v52_, sel = v51_)[14:0]}, sel = v56_)[31:15], 0b1, mux(mux(v53_, v52_, sel = v51_), {mux(v53_, v52_, sel = v51_)[31:16], 0b1, mux(v53_, v52_, sel = v51_)[14:0]}, sel = v56_)[13:0]}
+wire v60_[32]
+v60_ = mux(mux(v53_, v52_, sel = v51_), {mux(v53_, v52_, sel = v51_)[31:16], 0b1, mux(v53_, v52_, sel = v51_)[14:0]}, sel = v56_)
+wire v61_[32]
+v61_ = add({mux({mux(v55_, v54_, sel = v51_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[15]}, v57_, sel = v56_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[14]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v62_[32]
+v62_ = {mux({mux(v55_, v54_, sel = v51_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[15]}, v57_, sel = v56_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[14]}
+wire v63_[1]
+v63_ = mux(v62_, v61_, sel = v58_)[31] | ~compare({mux(v62_, v61_, sel = v58_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[13]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v64_[32]
+v64_ = add({mux(v62_, v61_, sel = v58_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[13]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v65_[1]
+v65_ = mux({mux(v62_, v61_, sel = v58_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[13]}, v64_, sel = v63_)[31] | ~compare({mux({mux(v62_, v61_, sel = v58_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[13]}, v64_, sel = v63_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[12]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v66_[32]
+v66_ = {mux(mux(v60_, v59_, sel = v58_), {mux(v60_, v59_, sel = v58_)[31:14], 0b1, mux(v60_, v59_, sel = v58_)[12:0]}, sel = v63_)[31:13], 0b1, mux(mux(v60_, v59_, sel = v58_), {mux(v60_, v59_, sel = v58_)[31:14], 0b1, mux(v60_, v59_, sel = v58_)[12:0]}, sel = v63_)[11:0]}
+wire v67_[32]
+v67_ = mux(mux(v60_, v59_, sel = v58_), {mux(v60_, v59_, sel = v58_)[31:14], 0b1, mux(v60_, v59_, sel = v58_)[12:0]}, sel = v63_)
+wire v68_[32]
+v68_ = add({mux({mux(v62_, v61_, sel = v58_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[13]}, v64_, sel = v63_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[12]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v69_[32]
+v69_ = {mux({mux(v62_, v61_, sel = v58_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[13]}, v64_, sel = v63_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[12]}
+wire v70_[1]
+v70_ = mux(v69_, v68_, sel = v65_)[31] | ~compare({mux(v69_, v68_, sel = v65_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[11]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v71_[32]
+v71_ = add({mux(v69_, v68_, sel = v65_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[11]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v72_[1]
+v72_ = mux({mux(v69_, v68_, sel = v65_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[11]}, v71_, sel = v70_)[31] | ~compare({mux({mux(v69_, v68_, sel = v65_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[11]}, v71_, sel = v70_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[10]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v73_[32]
+v73_ = {mux(mux(v67_, v66_, sel = v65_), {mux(v67_, v66_, sel = v65_)[31:12], 0b1, mux(v67_, v66_, sel = v65_)[10:0]}, sel = v70_)[31:11], 0b1, mux(mux(v67_, v66_, sel = v65_), {mux(v67_, v66_, sel = v65_)[31:12], 0b1, mux(v67_, v66_, sel = v65_)[10:0]}, sel = v70_)[9:0]}
+wire v74_[32]
+v74_ = mux(mux(v67_, v66_, sel = v65_), {mux(v67_, v66_, sel = v65_)[31:12], 0b1, mux(v67_, v66_, sel = v65_)[10:0]}, sel = v70_)
+wire v75_[32]
+v75_ = add({mux({mux(v69_, v68_, sel = v65_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[11]}, v71_, sel = v70_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[10]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v76_[32]
+v76_ = {mux({mux(v69_, v68_, sel = v65_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[11]}, v71_, sel = v70_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[10]}
+wire v77_[1]
+v77_ = mux(v76_, v75_, sel = v72_)[31] | ~compare({mux(v76_, v75_, sel = v72_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[9]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v78_[32]
+v78_ = add({mux(v76_, v75_, sel = v72_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[9]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v79_[1]
+v79_ = mux({mux(v76_, v75_, sel = v72_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[9]}, v78_, sel = v77_)[31] | ~compare({mux({mux(v76_, v75_, sel = v72_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[9]}, v78_, sel = v77_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[8]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v80_[32]
+v80_ = {mux(mux(v74_, v73_, sel = v72_), {mux(v74_, v73_, sel = v72_)[31:10], 0b1, mux(v74_, v73_, sel = v72_)[8:0]}, sel = v77_)[31:9], 0b1, mux(mux(v74_, v73_, sel = v72_), {mux(v74_, v73_, sel = v72_)[31:10], 0b1, mux(v74_, v73_, sel = v72_)[8:0]}, sel = v77_)[7:0]}
+wire v81_[32]
+v81_ = mux(mux(v74_, v73_, sel = v72_), {mux(v74_, v73_, sel = v72_)[31:10], 0b1, mux(v74_, v73_, sel = v72_)[8:0]}, sel = v77_)
+wire v82_[32]
+v82_ = add({mux({mux(v76_, v75_, sel = v72_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[9]}, v78_, sel = v77_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[8]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v83_[32]
+v83_ = {mux({mux(v76_, v75_, sel = v72_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[9]}, v78_, sel = v77_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[8]}
+wire v84_[1]
+v84_ = mux(v83_, v82_, sel = v79_)[31] | ~compare({mux(v83_, v82_, sel = v79_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[7]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v85_[32]
+v85_ = add({mux(v83_, v82_, sel = v79_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[7]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v86_[1]
+v86_ = mux({mux(v83_, v82_, sel = v79_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[7]}, v85_, sel = v84_)[31] | ~compare({mux({mux(v83_, v82_, sel = v79_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[7]}, v85_, sel = v84_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[6]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v87_[32]
+v87_ = {mux(mux(v81_, v80_, sel = v79_), {mux(v81_, v80_, sel = v79_)[31:8], 0b1, mux(v81_, v80_, sel = v79_)[6:0]}, sel = v84_)[31:7], 0b1, mux(mux(v81_, v80_, sel = v79_), {mux(v81_, v80_, sel = v79_)[31:8], 0b1, mux(v81_, v80_, sel = v79_)[6:0]}, sel = v84_)[5:0]}
+wire v88_[32]
+v88_ = mux(mux(v81_, v80_, sel = v79_), {mux(v81_, v80_, sel = v79_)[31:8], 0b1, mux(v81_, v80_, sel = v79_)[6:0]}, sel = v84_)
+wire v89_[32]
+v89_ = add({mux({mux(v83_, v82_, sel = v79_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[7]}, v85_, sel = v84_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[6]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v90_[32]
+v90_ = {mux({mux(v83_, v82_, sel = v79_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[7]}, v85_, sel = v84_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[6]}
+wire v91_[1]
+v91_ = mux(v90_, v89_, sel = v86_)[31] | ~compare({mux(v90_, v89_, sel = v86_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[5]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v92_[32]
+v92_ = add({mux(v90_, v89_, sel = v86_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[5]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v93_[1]
+v93_ = mux({mux(v90_, v89_, sel = v86_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[5]}, v92_, sel = v91_)[31] | ~compare({mux({mux(v90_, v89_, sel = v86_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[5]}, v92_, sel = v91_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[4]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v94_[32]
+v94_ = {mux(mux(v88_, v87_, sel = v86_), {mux(v88_, v87_, sel = v86_)[31:6], 0b1, mux(v88_, v87_, sel = v86_)[4:0]}, sel = v91_)[31:5], 0b1, mux(mux(v88_, v87_, sel = v86_), {mux(v88_, v87_, sel = v86_)[31:6], 0b1, mux(v88_, v87_, sel = v86_)[4:0]}, sel = v91_)[3:0]}
+wire v95_[32]
+v95_ = mux(mux(v88_, v87_, sel = v86_), {mux(v88_, v87_, sel = v86_)[31:6], 0b1, mux(v88_, v87_, sel = v86_)[4:0]}, sel = v91_)
+wire v96_[32]
+v96_ = add({mux({mux(v90_, v89_, sel = v86_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[5]}, v92_, sel = v91_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[4]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v97_[32]
+v97_ = {mux({mux(v90_, v89_, sel = v86_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[5]}, v92_, sel = v91_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[4]}
+wire v98_[1]
+v98_ = mux(v97_, v96_, sel = v93_)[31] | ~compare({mux(v97_, v96_, sel = v93_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[3]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v99_[32]
+v99_ = add({mux(v97_, v96_, sel = v93_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[3]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v100_[1]
+v100_ = mux({mux(v97_, v96_, sel = v93_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[3]}, v99_, sel = v98_)[31] | ~compare({mux({mux(v97_, v96_, sel = v93_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[3]}, v99_, sel = v98_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[2]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v101_[32]
+v101_ = {mux(mux(v95_, v94_, sel = v93_), {mux(v95_, v94_, sel = v93_)[31:4], 0b1, mux(v95_, v94_, sel = v93_)[2:0]}, sel = v98_)[31:3], 0b1, mux(mux(v95_, v94_, sel = v93_), {mux(v95_, v94_, sel = v93_)[31:4], 0b1, mux(v95_, v94_, sel = v93_)[2:0]}, sel = v98_)[1:0]}
+wire v102_[32]
+v102_ = mux(mux(v95_, v94_, sel = v93_), {mux(v95_, v94_, sel = v93_)[31:4], 0b1, mux(v95_, v94_, sel = v93_)[2:0]}, sel = v98_)
+wire v103_[32]
+v103_ = add({mux({mux(v97_, v96_, sel = v93_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[3]}, v99_, sel = v98_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[2]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v104_[32]
+v104_ = {mux({mux(v97_, v96_, sel = v93_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[3]}, v99_, sel = v98_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[2]}
+wire v105_[1]
+v105_ = mux(v104_, v103_, sel = v100_)[31] | ~compare({mux(v104_, v103_, sel = v100_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[1]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v106_[32]
+v106_ = add({mux(v104_, v103_, sel = v100_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[1]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v107_[1]
+v107_ = mux({mux(v104_, v103_, sel = v100_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[1]}, v106_, sel = v105_)[31] | ~compare({mux({mux(v104_, v103_, sel = v100_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[1]}, v106_, sel = v105_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[0]}, mux(b, add(~b, 0x00000001), sel = sgn & b[31])).lt
+wire v108_[32]
+v108_ = {mux(mux(v102_, v101_, sel = v100_), {mux(v102_, v101_, sel = v100_)[31:2], 0b1, mux(v102_, v101_, sel = v100_)[0]}, sel = v105_)[31:1], 0b1}
+wire v109_[32]
+v109_ = mux(mux(v102_, v101_, sel = v100_), {mux(v102_, v101_, sel = v100_)[31:2], 0b1, mux(v102_, v101_, sel = v100_)[0]}, sel = v105_)
+wire v110_[32]
+v110_ = add({mux({mux(v104_, v103_, sel = v100_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[1]}, v106_, sel = v105_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[0]}, ~mux(b, add(~b, 0x00000001), sel = sgn & b[31]), cin = 1)
+wire v111_[32]
+v111_ = {mux({mux(v104_, v103_, sel = v100_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[1]}, v106_, sel = v105_)[30:0], mux(a, add(~a, 0x00000001), sel = sgn & a[31])[0]}
+q = mux(mux(v109_, v108_, sel = v107_), add(~mux(v109_, v108_, sel = v107_), 0x00000001), sel = sgn & (a[31] ^ b[31]) & ~compare(b, 0x00000000).eq)
+r = mux(mux(v111_, v110_, sel = v107_), add(~mux(v111_, v110_, sel = v107_), 0x00000001), sel = sgn & a[31])
+}
+component alu(a[32], b[32], op[4], m) -> (y[32]) {
+wire shamt[5]
+wire dq[32], dr[32]
+wire dsgn[1]
+shamt = b[4:0]
+dsgn = ~op[0]
+dv = divider(a = a, b = b, sgn = dsgn)
+dq = dv.q
+dr = dv.r
+ops = ops(a = a, b = b, shamt = shamt, op = op, dq = dq, dr = dr, m = m)
+y = ops.y
+}
+component regfile(clk, we, rs1[5], rs2[5], rd[5], wd[32]) -> (rd1[32], rd2[32]) {
+wire regs_0[32], regs_1[32], regs_2[32], regs_3[32], regs_4[32], regs_5[32], regs_6[32], regs_7[32], regs_8[32], regs_9[32], regs_10[32], regs_11[32], regs_12[32], regs_13[32], regs_14[32], regs_15[32], regs_16[32], regs_17[32], regs_18[32], regs_19[32], regs_20[32], regs_21[32], regs_22[32], regs_23[32], regs_24[32], regs_25[32], regs_26[32], regs_27[32], regs_28[32], regs_29[32], regs_30[32], regs_31[32]
+regs_0 = dff(mux(regs_0, wd, sel = compare(rd, 0b00000).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_1 = dff(mux(regs_1, wd, sel = compare(rd, 0b00001).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_2 = dff(mux(regs_2, wd, sel = compare(rd, 0b00010).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_3 = dff(mux(regs_3, wd, sel = compare(rd, 0b00011).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_4 = dff(mux(regs_4, wd, sel = compare(rd, 0b00100).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_5 = dff(mux(regs_5, wd, sel = compare(rd, 0b00101).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_6 = dff(mux(regs_6, wd, sel = compare(rd, 0b00110).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_7 = dff(mux(regs_7, wd, sel = compare(rd, 0b00111).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_8 = dff(mux(regs_8, wd, sel = compare(rd, 0b01000).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_9 = dff(mux(regs_9, wd, sel = compare(rd, 0b01001).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_10 = dff(mux(regs_10, wd, sel = compare(rd, 0b01010).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_11 = dff(mux(regs_11, wd, sel = compare(rd, 0b01011).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_12 = dff(mux(regs_12, wd, sel = compare(rd, 0b01100).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_13 = dff(mux(regs_13, wd, sel = compare(rd, 0b01101).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_14 = dff(mux(regs_14, wd, sel = compare(rd, 0b01110).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_15 = dff(mux(regs_15, wd, sel = compare(rd, 0b01111).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_16 = dff(mux(regs_16, wd, sel = compare(rd, 0b10000).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_17 = dff(mux(regs_17, wd, sel = compare(rd, 0b10001).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_18 = dff(mux(regs_18, wd, sel = compare(rd, 0b10010).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_19 = dff(mux(regs_19, wd, sel = compare(rd, 0b10011).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_20 = dff(mux(regs_20, wd, sel = compare(rd, 0b10100).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_21 = dff(mux(regs_21, wd, sel = compare(rd, 0b10101).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_22 = dff(mux(regs_22, wd, sel = compare(rd, 0b10110).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_23 = dff(mux(regs_23, wd, sel = compare(rd, 0b10111).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_24 = dff(mux(regs_24, wd, sel = compare(rd, 0b11000).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_25 = dff(mux(regs_25, wd, sel = compare(rd, 0b11001).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_26 = dff(mux(regs_26, wd, sel = compare(rd, 0b11010).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_27 = dff(mux(regs_27, wd, sel = compare(rd, 0b11011).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_28 = dff(mux(regs_28, wd, sel = compare(rd, 0b11100).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_29 = dff(mux(regs_29, wd, sel = compare(rd, 0b11101).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_30 = dff(mux(regs_30, wd, sel = compare(rd, 0b11110).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+regs_31 = dff(mux(regs_31, wd, sel = compare(rd, 0b11111).eq), clk, en = we & ~compare(rd, 0b00000).eq)
+rd1 = mux(regs_0, regs_1, regs_2, regs_3, regs_4, regs_5, regs_6, regs_7, regs_8, regs_9, regs_10, regs_11, regs_12, regs_13, regs_14, regs_15, regs_16, regs_17, regs_18, regs_19, regs_20, regs_21, regs_22, regs_23, regs_24, regs_25, regs_26, regs_27, regs_28, regs_29, regs_30, regs_31, sel = rs1)
+rd2 = mux(regs_0, regs_1, regs_2, regs_3, regs_4, regs_5, regs_6, regs_7, regs_8, regs_9, regs_10, regs_11, regs_12, regs_13, regs_14, regs_15, regs_16, regs_17, regs_18, regs_19, regs_20, regs_21, regs_22, regs_23, regs_24, regs_25, regs_26, regs_27, regs_28, regs_29, regs_30, regs_31, sel = rs2)
+}
+component imm_gen(instr[32]) -> (imm[32]) {
+wire opcode[7]
+wire sign[20]
+opcode = instr[6:0]
+sign = {instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31], instr[31]}
+imm = mux(mux(mux(mux(mux(0x00000000, {sign, instr[31:20]}, sel = (compare(opcode, 0b0000011).eq | compare(opcode, 0b0010011).eq | compare(opcode, 0b1100111).eq)), {sign, instr[31:25], instr[11:7]}, sel = compare(opcode, 0b0100011).eq), {sign[18:0], instr[31], instr[7], instr[30:25], instr[11:8], 0b0}, sel = compare(opcode, 0b1100011).eq), {instr[31:12], 0x000}, sel = (compare(opcode, 0b0110111).eq | compare(opcode, 0b0010111).eq)), {sign[10:0], instr[31], instr[19:12], instr[20], instr[30:21], 0b0}, sel = compare(opcode, 0b1101111).eq)
+}
+component decoder_(instr[32]) -> (reg_write, alu_src, alu_op[4], m_ext, a_pc, mem_read, mem_write, branch, jump, jalr, sys) {
+wire opcode[7]
+wire f3[3]
+wire f7b[1]
+opcode = instr[6:0]
+f3 = instr[14:12]
+f7b = instr[30]
+m_ext = compare(opcode, 0b0110011).eq & instr[25]
+wire v117_[1]
+v117_ = mux(mux(compare(opcode, 0b1110011).eq, 0b0, sel = compare(opcode, 0b1100111).eq), 0b0, sel = compare(opcode, 0b1101111).eq)
+wire v118_[1]
+v118_ = mux(mux(compare(opcode, 0b1100111).eq, 0b1, sel = compare(opcode, 0b1101111).eq), 0b1, sel = compare(opcode, 0b0010111).eq)
+wire v119_[1]
+v119_ = mux(mux(compare(opcode, 0b1100111).eq, 0b0, sel = compare(opcode, 0b1101111).eq), 0b1, sel = compare(opcode, 0b0010111).eq)
+wire v120_[1]
+v120_ = mux(mux(compare(opcode, 0b1100111).eq, 0b0, sel = compare(opcode, 0b1101111).eq), 0b0, sel = compare(opcode, 0b0010111).eq)
+wire v121_[1]
+v121_ = mux(mux(compare(opcode, 0b1101111).eq, 0b0, sel = compare(opcode, 0b0010111).eq), 0b0, sel = compare(opcode, 0b0110111).eq)
+wire v122_[1]
+v122_ = mux(mux(compare(opcode, 0b0010111).eq, 0b0, sel = compare(opcode, 0b0110111).eq), 0b0, sel = compare(opcode, 0b1100011).eq)
+wire v123_[1]
+v123_ = mux(mux(mux(v117_, 0b0, sel = compare(opcode, 0b0010111).eq), 0b0, sel = compare(opcode, 0b0110111).eq), 0b0, sel = compare(opcode, 0b1100011).eq)
+wire v124_[1]
+v124_ = mux(mux(mux(v118_, 0b1, sel = compare(opcode, 0b0110111).eq), 0b0, sel = compare(opcode, 0b1100011).eq), 0b0, sel = compare(opcode, 0b0100011).eq)
+wire v125_[1]
+v125_ = mux(mux(mux(v119_, 0b1, sel = compare(opcode, 0b0110111).eq), 0b0, sel = compare(opcode, 0b1100011).eq), 0b1, sel = compare(opcode, 0b0100011).eq)
+wire v126_[4]
+v126_ = mux(mux(mux(0b0000, 0b1111, sel = compare(opcode, 0b0110111).eq), 0b0000, sel = compare(opcode, 0b1100011).eq), 0b0000, sel = compare(opcode, 0b0100011).eq)
+wire v127_[1]
+v127_ = mux(mux(mux(v120_, 0b0, sel = compare(opcode, 0b0110111).eq), 0b0, sel = compare(opcode, 0b1100011).eq), 0b0, sel = compare(opcode, 0b0100011).eq)
+wire v128_[1]
+v128_ = mux(mux(compare(opcode, 0b1100011).eq, 0b0, sel = compare(opcode, 0b0100011).eq), 0b0, sel = compare(opcode, 0b0000011).eq)
+wire v129_[1]
+v129_ = mux(mux(mux(v121_, 0b0, sel = compare(opcode, 0b1100011).eq), 0b0, sel = compare(opcode, 0b0100011).eq), 0b0, sel = compare(opcode, 0b0000011).eq)
+wire v130_[4]
+v130_ = mux(mux(v126_, 0b0000, sel = compare(opcode, 0b0000011).eq), mux({0b0, f3}, {f7b, f3}, sel = compare(f3, 0b101).eq), sel = compare(opcode, 0b0010011).eq)
+wire v131_[1]
+v131_ = mux(mux(mux(v122_, 0b0, sel = compare(opcode, 0b0100011).eq), 0b0, sel = compare(opcode, 0b0000011).eq), 0b0, sel = compare(opcode, 0b0010011).eq)
+wire v132_[1]
+v132_ = mux(mux(compare(opcode, 0b0100011).eq, 0b0, sel = compare(opcode, 0b0000011).eq), 0b0, sel = compare(opcode, 0b0010011).eq)
+wire v133_[1]
+v133_ = mux(mux(mux(v123_, 0b0, sel = compare(opcode, 0b0100011).eq), 0b0, sel = compare(opcode, 0b0000011).eq), 0b0, sel = compare(opcode, 0b0010011).eq)
+reg_write = mux(mux(mux(v124_, 0b1, sel = compare(opcode, 0b0000011).eq), 0b1, sel = compare(opcode, 0b0010011).eq), 0b1, sel = compare(opcode, 0b0110011).eq)
+alu_src = mux(mux(mux(v125_, 0b1, sel = compare(opcode, 0b0000011).eq), 0b1, sel = compare(opcode, 0b0010011).eq), 0b0, sel = compare(opcode, 0b0110011).eq)
+alu_op = mux(v130_, {f7b, f3}, sel = compare(opcode, 0b0110011).eq)
+a_pc = mux(v131_, 0b0, sel = compare(opcode, 0b0110011).eq)
+mem_read = mux(mux(compare(opcode, 0b0000011).eq, 0b0, sel = compare(opcode, 0b0010011).eq), 0b0, sel = compare(opcode, 0b0110011).eq)
+mem_write = mux(v132_, 0b0, sel = compare(opcode, 0b0110011).eq)
+branch = mux(mux(v128_, 0b0, sel = compare(opcode, 0b0010011).eq), 0b0, sel = compare(opcode, 0b0110011).eq)
+jump = mux(mux(v129_, 0b0, sel = compare(opcode, 0b0010011).eq), 0b0, sel = compare(opcode, 0b0110011).eq)
+jalr = mux(mux(mux(v127_, 0b0, sel = compare(opcode, 0b0000011).eq), 0b0, sel = compare(opcode, 0b0010011).eq), 0b0, sel = compare(opcode, 0b0110011).eq)
+sys = mux(v133_, 0b0, sel = compare(opcode, 0b0110011).eq)
+}
+component cpu(clk, reset, halt, instr[32], d_rdata[32]) -> (pc_out[32], d_addr[32], d_wdata[32], d_be[4], sys) {
+wire pc[32]
+wire pc4[32], next_pc[32], imm[32], rd1[32], rd2[32], alu_a[32], alu_b[32], alu_y[32], wb[32]
+wire reg_write[1], rf_we[1], alu_src[1], m_ext[1], a_pc[1], mem_read[1], mem_write[1], branch[1], jump[1], jalr[1]
+wire alu_op[4]
+wire f3[3]
+wire take[1]
+wire ld_shift[32], ld_val[32]
+f3 = instr[14:12]
+dec = decoder_(instr = instr)
+reg_write = dec.reg_write
+alu_src = dec.alu_src
+alu_op = dec.alu_op
+m_ext = dec.m_ext
+a_pc = dec.a_pc
+mem_read = dec.mem_read
+mem_write = dec.mem_write
+branch = dec.branch
+jump = dec.jump
+jalr = dec.jalr
+sys = dec.sys
+ig = imm_gen(instr = instr)
+imm = ig.imm
+rf_we = reg_write & ~halt
+rf = regfile(clk = clk, we = rf_we, rs1 = instr[19:15], rs2 = instr[24:20], rd = instr[11:7], wd = wb)
+rd1 = rf.rd1
+rd2 = rf.rd2
+alu_a = mux(rd1, pc, sel = a_pc)
+alu_b = mux(rd2, imm, sel = alu_src)
+ex = alu(a = alu_a, b = alu_b, op = alu_op, m = m_ext)
+alu_y = ex.y
+branch_cond = branch_cond(rd1 = rd1, rd2 = rd2, f3 = f3)
+take = branch_cond.take
+pc4 = add(pc, 0x00000004)
+next_pc = mux(mux(pc4, add(pc, imm), sel = jump | (branch & take)), {alu_y[31:1], 0b0}, sel = jalr)
+pc = dff(mux(mux(pc, next_pc, sel = ~halt), 0x00000000, sel = reset), clk)
+pc_out = pc
+d_addr = alu_y
+d_wdata = mux({rd2[7:0], rd2[7:0], rd2[7:0], rd2[7:0]}, {rd2[15:0], rd2[15:0]}, rd2, rd2, sel = f3[1:0])
+wire v134_[4]
+v134_ = mux(mux(0b0001, 0b0010, 0b0100, 0b1000, sel = alu_y[1:0]), mux(0b1100, 0b0011, sel = ~alu_y[1]), 0b1111, 0b1111, sel = f3[1:0])
+d_be = mux(0b0000, v134_, sel = mem_write & ~halt)
+ld_shift = mux(d_rdata, {0x00, d_rdata[31:8]}, {0x0000, d_rdata[31:16]}, {0x000000, d_rdata[31:24]}, sel = alu_y[1:0])
+ld_val = mux({ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0][7], ld_shift[7:0]}, {ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0][15], ld_shift[15:0]}, ld_shift, ld_shift, {0x000000, ld_shift[7:0]}, {0x0000, ld_shift[15:0]}, ld_shift, ld_shift, sel = f3)
+wb = mux(mux(alu_y, ld_val, sel = mem_read), pc4, sel = jump | jalr)
+}
+circuit "A RISC-V computer"
+
+# An RV32IM processor (all of RV32I, and RV32M's multiply and divide) with
+# its program in a rom, 4 KB of ram, a 64 x 64 colour screen, a 64 x 16
+# text screen, a hex display, switches and a keypad. Assembly opens an
+# assembler: pick a program or write your own, Assemble and run, and watch
+# it on the screens. The rom starts with hello.s. Double-click core to go
+# inside the processor; rv32im.vhd beside this file has the memory map.
+clock clk
+input reset
+input sw[8]
+keypad key
+output display[32]
+output halted
+output pc[32]
+wire ram_b0[8], ram_b8[8], ram_b16[8], ram_b24[8]
+wire pixels[8]
+wire chars[8]
+wire pc_i[32], instr[32], d_addr[32], d_wdata[32], d_rdata[32], ram_q[32]
+wire d_be[4]
+wire sys[1], halt[1]
+wire area[4]
+wire word[10]
+wire px_at[12]
+wire ch_at[10]
+wire px_q[8], ch_q[8], st_byte[8]
+wire io_we[1]
+wire disp_r[32]
+wire halt_r[1]
+wire cycles[32]
+core = cpu(clk = clk, reset = reset, halt = halt, instr = instr, d_rdata = d_rdata)
+pc_i = core.pc_out
+d_addr = core.d_addr
+d_wdata = core.d_wdata
+d_be = core.d_be
+sys = core.sys
+instr = rom(pc_i[11:2], bits = 32, data = "2137 1537 50513 35B7 8C000EF 1537 F50513 35B7 8058593 78000EF 1537 4150513 35B7 C058593 64000EF 23B7 4000F13 293 313 335E13 5E1E13 32DE93 2E9E93 1DE6E33 62CEB3 4EDE93 3EFE93 1DE6E33 1C38023 138393 130313 FDE348E3 128293 FDE2C2E3 42B7 82A303 2630333 62A023 FF5FF06F 54283 28A63 558023 150513 158593 FEDFF06F 8067 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
+area = d_addr[15:12]
+word = d_addr[11:2]
+px_at = d_addr[11:0]
+ch_at = d_addr[9:0]
+ram_b0 = ram(word, d_wdata[7:0], compare(area, 0b0001).eq & d_be[0], clk, data = "48 6F 49 56 6E 33 20 63 6F 64 6E 64 6D 74 62 69 0 70 65 69 65 73 20 20 70 20 77 77 73 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
+ram_b8 = ram(word, d_wdata[15:8], compare(area, 0b0001).eq & d_be[1], clk, data = "65 2C 53 21 20 32 70 65 72 72 20 20 75 65 79 72 46 20 20 74 73 77 74 64 6C 73 73 20 77 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
+ram_b16 = ram(word, d_wdata[23:16], compare(area, 0b0001).eq & d_be[2], clk, data = "6C 20 43 0 52 49 72 73 2C 61 61 73 6C 64 20 65 6C 74 73 63 20 29 68 69 61 68 20 2A 2E 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
+ram_b24 = ram(word, d_wdata[31:24], compare(area, 0b0001).eq & d_be[3], clk, data = "6C 52 2D 41 56 4D 6F 73 20 77 6E 69 61 20 57 2E 69 68 77 68 28 3A 65 73 79 6F 73 20 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
+ram_q = {ram_b24, ram_b16, ram_b8, ram_b0}
+pixels = screen(px_at, st_byte, (compare(area, 0b0010).eq & ~compare(d_be, 0b0000).eq), clk, width = 64)
+px_q = pixels
+chars = screen(ch_at, st_byte, (compare(area, 0b0011).eq & ~compare(d_be, 0b0000).eq), clk, width = 64, text = 1)
+ch_q = chars
+st_byte = mux(d_wdata[7:0], d_wdata[15:8], d_wdata[23:16], d_wdata[31:24], sel = d_addr[1:0])
+io_we = compare(area, 0b0100).eq & ~compare(d_be, 0b0000).eq
+io = io(d_wdata = d_wdata, io_we = io_we, d_addr = d_addr, reset = reset, clk = clk, sys = sys)
+disp_r = io.disp_r
+halt_r = io.halt_r
+cycles = io.cycles
+halt = halt_r
+d_rdata = mux(0x00000000, ram_q, {px_q, px_q, px_q, px_q}, {ch_q, ch_q, ch_q, ch_q}, mux(disp_r, 0x00000000, {0x000000, sw}, {0b000000000000000000000000000, key}, cycles, 0x00000000, 0x00000000, 0x00000000, sel = d_addr[4:2]), 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, sel = area)
+display = disp_r
+halted = halt_r
+pc = pc_i
+component ops(a[32], b[32], shamt[5], op[4], dq[32], dr[32], m) -> (y[32]) {
+wire m112_[32]
+m112_ = mul(a, b)
+wire m113_[32]
+m113_ = mul(a, b, signed = 1)
+wire m114_[32]
+m114_ = mul(a, b, sa = 1)
+wire m115_[32]
+m115_ = mul(a, b)
+wire v116_[32]
+v116_ = mux(add(a, b), mux(a, {a[30:0], 0b0}, {a[29:0], 0b00}, {a[28:0], 0b000}, {a[27:0], 0b0000}, {a[26:0], 0b00000}, {a[25:0], 0b000000}, {a[24:0], 0b0000000}, {a[23:0], 0x00}, {a[22:0], 0b000000000}, {a[21:0], 0b0000000000}, {a[20:0], 0b00000000000}, {a[19:0], 0x000}, {a[18:0], 0b0000000000000}, {a[17:0], 0b00000000000000}, {a[16:0], 0b000000000000000}, {a[15:0], 0x0000}, {a[14:0], 0b00000000000000000}, {a[13:0], 0b000000000000000000}, {a[12:0], 0b0000000000000000000}, {a[11:0], 0x00000}, {a[10:0], 0b000000000000000000000}, {a[9:0], 0b0000000000000000000000}, {a[8:0], 0b00000000000000000000000}, {a[7:0], 0x000000}, {a[6:0], 0b0000000000000000000000000}, {a[5:0], 0b00000000000000000000000000}, {a[4:0], 0b000000000000000000000000000}, {a[3:0], 0x0000000}, {a[2:0], 0b00000000000000000000000000000}, {a[1:0], 0b000000000000000000000000000000}, {a[0], 0b0000000000000000000000000000000}, sel = shamt), mux(0x00000000, 0x00000001, sel = compare({~a[31], a[30:0]}, {~b[31], b[30:0]}).lt), mux(0x00000000, 0x00000001, sel = compare(a, b).lt), a ^ b, mux(a, {0b0, a[31:1]}, {0b00, a[31:2]}, {0b000, a[31:3]}, {0b0000, a[31:4]}, {0b00000, a[31:5]}, {0b000000, a[31:6]}, {0b0000000, a[31:7]}, {0x00, a[31:8]}, {0b000000000, a[31:9]}, {0b0000000000, a[31:10]}, {0b00000000000, a[31:11]}, {0x000, a[31:12]}, {0b0000000000000, a[31:13]}, {0b00000000000000, a[31:14]}, {0b000000000000000, a[31:15]}, {0x0000, a[31:16]}, {0b00000000000000000, a[31:17]}, {0b000000000000000000, a[31:18]}, {0b0000000000000000000, a[31:19]}, {0x00000, a[31:20]}, {0b000000000000000000000, a[31:21]}, {0b0000000000000000000000, a[31:22]}, {0b00000000000000000000000, a[31:23]}, {0x000000, a[31:24]}, {0b0000000000000000000000000, a[31:25]}, {0b00000000000000000000000000, a[31:26]}, {0b000000000000000000000000000, a[31:27]}, {0x0000000, a[31:28]}, {0b00000000000000000000000000000, a[31:29]}, {0b000000000000000000000000000000, a[31:30]}, {0b0000000000000000000000000000000, a[31]}, sel = shamt), a | b, a & b, add(a, ~b, cin = 1), 0x00000000, 0x00000000, 0x00000000, 0x00000000, mux(a, {a[31], a[31:1]}, {a[31], a[31], a[31:2]}, {a[31], a[31], a[31], a[31:3]}, {a[31], a[31], a[31], a[31], a[31:4]}, {a[31], a[31], a[31], a[31], a[31], a[31:5]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31:6]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:7]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:8]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:9]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:10]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:11]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:12]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:13]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:14]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:15]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:16]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:17]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:18]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:19]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:20]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:21]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:22]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:23]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:24]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:25]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:26]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:27]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:28]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:29]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31:30]}, {a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31], a[31]}, sel = shamt), 0x00000000, b, sel = op)
+y = mux(v116_, mux(m112_, m113_.hi, m114_.hi, m115_.hi, dq, dq, dr, dr, sel = op[2:0]), sel = m)
+}
+component branch_cond(rd1[32], rd2[32], f3[3]) -> (take) {
+take = mux(compare(rd1, rd2).eq, ~compare(rd1, rd2).eq, 0b0, 0b0, compare({~rd1[31], rd1[30:0]}, {~rd2[31], rd2[30:0]}).lt, ~compare({~rd1[31], rd1[30:0]}, {~rd2[31], rd2[30:0]}).lt, compare(rd1, rd2).lt, ~compare(rd1, rd2).lt, sel = f3)
+}
+component io(d_wdata[32], io_we, d_addr[32], reset, clk, sys) -> (disp_r[32], halt_r, cycles[32]) {
+disp_r = dff(mux(mux(disp_r, d_wdata, sel = io_we & compare(d_addr[4:2], 0b000).eq), 0x00000000, sel = reset), clk)
+halt_r = dff(mux(mux(halt_r, 0b1, sel = (io_we & compare(d_addr[4:2], 0b001).eq & d_wdata[0]) | sys), 0b0, sel = reset), clk)
+cycles = dff(mux(mux(cycles, add(cycles, 0x00000001), sel = ~halt_r), 0x00000000, sel = reset), clk)
+}

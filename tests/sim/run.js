@@ -7,7 +7,7 @@ const { execFileSync } = require("child_process");
 const WireSim = require("../../src/wire_sim.js");
 const [wire, file, cyc = "1000", ...rest] = process.argv.slice(2);
 const names = rest.filter(a => !a.includes("=")), sets = rest.filter(a => a.includes("="));
-const D = JSON.parse(execFileSync(wire, ["--json", file], { stdio: ["ignore", "pipe", "ignore"] }).toString());
+const D = JSON.parse(execFileSync(wire, ["--json", file], { stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 }).toString());
 const sim = WireSim.createSync(D);
 const mask = w => w >= 32 ? 0xFFFFFFFF : ((1 << w) >>> 0) - 1;
 D.nets.forEach((n, i) => { sim.setV(i, 0); sim.setK(i, mask(n.w)); });

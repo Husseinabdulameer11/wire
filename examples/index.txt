@@ -74,3 +74,6 @@ chu/ch11/xilinx_rom_sync_template
 screen/patterns
 screen/sketch
 screen/computer
+
+== A RISC-V computer | An RV32IM processor with screens, a display, switches and a keypad. Its page has an assembler: write a program, run it, and watch it draw.
+riscv/rv32im

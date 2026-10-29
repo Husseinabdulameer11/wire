@@ -1,0 +1,6 @@
+circuit "A text screen"
+clock clk
+input a[9], c[16], we
+output q[16]
+s = screen(a, c, we, clk, width = 32, text = 1, data = "4148 0F69")
+q = s
