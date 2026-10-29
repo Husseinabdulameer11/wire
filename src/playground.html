@@ -305,6 +305,7 @@ const KINDS = {
   xor: { label: "XOR", group: "gates", n: 2 }, xnor: { label: "XNOR", group: "gates", n: 2 },
   mux:     { label: "Mux", group: "blocks", n: 2 },
   add:     { label: "Adder", group: "blocks", prefix: "add" },
+  mul:     { label: "Multiplier", group: "blocks", prefix: "mul" },
   compare: { label: "Compare", group: "blocks", prefix: "cmp" },
   dff:     { label: "D flip-flop", group: "blocks", prefix: "ff" },
   tff:     { label: "T flip-flop", group: "blocks", prefix: "tff" },
@@ -340,6 +341,7 @@ const insOf = (p, m = model) => {
   if (GATE_NAMES[k]) return Array.from({ length: p.n || 2 }, (_, i) => String(i));
   if (k === "mux") return [...Array.from({ length: p.n || 2 }, (_, i) => "d" + i), "sel"];
   if (k === "add") return p.cin ? ["a", "b", "cin"] : ["a", "b"];
+  if (k === "mul") return ["a", "b"];
   if (k === "compare") return ["a", "b"];
   if (k === "dff") return ["d", "clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : [])];
   if (k === "counter") return ["clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : [])];
@@ -355,6 +357,7 @@ const outsOf = (p, m = model) => {
   const k = p.kind;
   if (SINK.has(k)) return [];
   if (k === "add") return ["sum", "cout"];
+  if (k === "mul") return ["lo", "hi"];
   if (k === "compare") return ["lt", "eq", "gt"];
   if (k === "dff" || k === "tff" || k === "jkff") return ["q", "nq"];
   if (k === "encoder") return ["out", "valid"];
@@ -382,6 +385,7 @@ const ICONS = {
   xnor: '<path d="M4 9H13M4 17H13M33 13H36"/><path d="M7 4Q12 13 7 22"/><path class="f" d="M10 4Q22 4 29 13Q22 22 10 22Q15 13 10 4Z"/><circle class="f" cx="31" cy="13" r="2.4"/>',
   mux: '<path d="M4 8H13M4 18H13M28 13H36M20 24V20"/><path class="f" d="M13 3L28 8V18L13 23Z"/>',
   add: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M15 13H25M20 8V18"/>',
+  mul: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M16.5 9.5L23.5 16.5M23.5 9.5L16.5 16.5"/>',
   compare: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M15 10H25M15 16H25"/>',
   dff: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M9 14L14 18L9 22"/><text x="17" y="14">D</text>',
   counter: '<rect class="f" x="7" y="3" width="26" height="20" rx="2"/><text x="10" y="17">+1</text>',
@@ -498,6 +502,7 @@ function sheetLines(m, sh) {
     else if (k === "jkff") body.push(`${p.name} = jkff(${from(p, "j")}, ${from(p, "k")}, ${from(p, "clk")}${p.rst ? opt("rst", "rst") : ""})`);
     else if (k === "mux") body.push(`${p.name} = mux(${insOf(p, m).slice(0, -1).map(pin => from(p, pin)).join(", ")}, sel = ${from(p, "sel")})`);
     else if (k === "add") body.push(`${p.name} = add(${from(p, "a")}, ${from(p, "b")}${p.cin ? opt("cin", "cin") : ""})`);
+    else if (k === "mul") body.push(`${p.name} = mul(${from(p, "a")}, ${from(p, "b")}${p.sa && p.sb ? ", signed = 1" : p.sa ? ", sa = 1" : p.sb ? ", sb = 1" : ""})`);
     else if (k === "compare") body.push(`${p.name} = compare(${from(p, "a")}, ${from(p, "b")})`);
     else if (k === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
     else if (k === "counter") body.push(`${p.name} = counter(${from(p, "clk")}, bits = ${p.bits || 4}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
@@ -1183,6 +1188,7 @@ function showProps() {
   if (k === "tff" || k === "jkff") tick("Reset input", "rst");
   if (k === "decoder") tick("Enable input", "en");
   if (k === "add") tick("Carry in", "cin");
+  if (k === "mul") { tick("a is signed", "sa"); tick("b is signed", "sb"); }
   const del = document.createElement("button");
   del.className = "del";
   del.textContent = "Delete";
@@ -1401,6 +1407,7 @@ function buildSheet(D, scope, lay, comps) {
     if (GATE_NAMES[k]) p.n = n.in.length;
     if (k === "mux") p.n = n.in.length - 1;
     if (k === "add") p.cin = n.inNames.includes("cin");
+    if (k === "mul") { p.sa = !!n.sa; p.sb = !!n.sb; }
     if (k === "dff" || k === "counter") { p.en = n.inNames.includes("en"); p.rst = n.inNames.includes("rst"); }
     if (k === "tff" || k === "jkff") p.rst = n.inNames.includes("rst");
     if (k === "dff") p.w = D.nets[n.out[0]].w;   /* in a loop its width must be written */

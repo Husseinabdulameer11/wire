@@ -64,7 +64,8 @@ const OP = {
   drop: 0x1a, select: 0x1b, get: 0x20, set: 0x21, tee: 0x22, load: 0x28, store: 0x36,
   i32: 0x41, eqz: 0x45, eq: 0x46, ne: 0x47, lt_u: 0x49, gt_u: 0x4b, clz: 0x67, add: 0x6a,
   sub: 0x6b, and: 0x71, or: 0x72, xor: 0x73, shl: 0x74, shr_u: 0x76,
-  wrap: 0xa7, i64shr_u: 0x88, i64add: 0x7c, i64ext_u: 0xad, i64: 0x42
+  wrap: 0xa7, i64shr_u: 0x88, i64add: 0x7c, i64ext_u: 0xad, i64: 0x42,
+  shr_s: 0x75, i64mul: 0x7e, i64ext_s: 0xac
 };
 const VOID = 0x40, I32 = 0x7f, I64 = 0x7e;
 
@@ -391,6 +392,23 @@ function compile(D) {
       if (c >= 0) f.ld(V(c)).op(OP.i64ext_u).op(OP.i64add);
       f.tee(Ls).op(OP.wrap).set(Lv).k(-1).set(Lk);
       f.get(Ls).op(OP.i64).u_(w) /* w < 64: same byte as signed */.op(OP.i64shr_u).op(OP.wrap).k(1).op(OP.and).set(La).k(-1).set(Lb);
+      f.else_(); zero(); f.k(0).set(La).k(0).set(Lb); f.end();
+      out(n.out[0]);
+      f.get(La).set(Lv).get(Lb).set(Lk);
+      out(n.out[1]); return;
+    }
+    case "mul": {
+      /* the 2w-bit product in an i64: each input widened, as signed (sa, sb) or not */
+      const a = n.in[0], b = n.in[1], w = width(a), m = mask32(w);
+      const wide = (net, sgn) => {
+        f.ld(V(net));
+        if (sgn && w < 32) f.k(32 - w).op(OP.shl).k(32 - w).op(OP.shr_s);
+        f.op(sgn ? OP.i64ext_s : OP.i64ext_u);
+      };
+      known(a); known(b).op(OP.and).if_();
+      wide(a, n.sa); wide(b, n.sb); f.op(OP.i64mul).set(Ls);
+      f.get(Ls).op(OP.wrap).k(m).op(OP.and).set(Lv).k(-1).set(Lk);
+      f.get(Ls).op(OP.i64).u_(w).op(OP.i64shr_u).op(OP.wrap).k(m).op(OP.and).set(La).k(-1).set(Lb);
       f.else_(); zero(); f.k(0).set(La).k(0).set(Lb); f.end();
       out(n.out[0]);
       f.get(La).set(Lv).get(Lb).set(Lk);

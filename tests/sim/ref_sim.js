@@ -111,6 +111,13 @@ function evalNode(n) {
     const s = a.v + b.v + (c ? c.v : 0);
     return setOut(n, 0, s, 0xFFFFFFFF) | setOut(n, 1, w >= 32 ? (s > 0xFFFFFFFF ? 1 : 0) : (s >>> w) & 1, 1);
   }
+  case "mul": {   /* added: the 2w-bit product, sa / sb: that input is signed */
+    const a = rd(n, 0), b = rd(n, 1), w = a.w;
+    if (!known(a) || !known(b)) return setOut(n, 0, 0, 0) | setOut(n, 1, 0, 0);
+    const val = (x, sgn) => { let v = BigInt(x.v); if (sgn && (x.v >>> (w - 1)) & 1) v -= 1n << BigInt(w); return v; };
+    const p = BigInt.asUintN(2 * w, val(a, n.sa) * val(b, n.sb));
+    return setOut(n, 0, Number(p & BigInt(mask(w))), 0xFFFFFFFF) | setOut(n, 1, Number((p >> BigInt(w)) & BigInt(mask(w))), 0xFFFFFFFF);
+  }
   case "compare": {
     const a = rd(n, 0), b = rd(n, 1);
     if (!known(a) || !known(b)) return setOut(n, 0, 0, 0) | setOut(n, 1, 0, 0) | setOut(n, 2, 0, 0);

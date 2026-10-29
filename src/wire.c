@@ -146,7 +146,7 @@ static int find(int n)
 
 enum {
     K_AND, K_OR, K_NAND, K_NOR, K_XOR, K_XNOR, K_NOT, K_BUF,
-    K_MUX, K_DEMUX, K_DECODER, K_ENCODER, K_ADD, K_COMPARE,
+    K_MUX, K_DEMUX, K_DECODER, K_ENCODER, K_ADD, K_COMPARE, K_MUL,
     K_DFF, K_TFF, K_JKFF, K_COUNTER,
     K_TRI, K_ROM, K_RAM,
     /* not callable: */
@@ -160,7 +160,7 @@ enum {
 
 static const char *kind_names[K_COUNT] = {
     "and", "or", "nand", "nor", "xor", "xnor", "not", "buf",
-    "mux", "demux", "decoder", "encoder", "add", "compare",
+    "mux", "demux", "decoder", "encoder", "add", "compare", "mul",
     "dff", "tff", "jkff", "counter",
     "tri", "rom", "ram",
     "input", "button", "clock", "keypad", "output", "led", "seg7", "hex",
@@ -178,6 +178,7 @@ typedef struct {
     int inst, file;               /* which instance it belongs to; its source file */
     unsigned long value;          /* const */
     int bits;                     /* counter */
+    int sgn;                      /* mul: 1 a is signed, 2 b is signed */
     const char *opt; int optlen;  /* led colour */
     long hz;                      /* clock, in hundredths */
     int membits, memabits;        /* rom, ram: bits per word, address bits */
@@ -354,6 +355,7 @@ typedef struct {
     gram_node *load, *d, *down;    /* counter */
     gram_node *data;               /* rom, ram: the `data = "..."` or `file = "..."` setting */
     int bits;
+    int sgn;                       /* mul: 1 a is signed, 2 b is signed */
     int screen, screenw;           /* screen(): a ram shown as pixels, and its width */
     /* computed: */
     int nin; gram_node *in[MAXIO]; char inname[MAXIO][NAMEW]; int inw[MAXIO];
@@ -541,6 +543,11 @@ static void analyze(gram_node *call, Call *c, int check)
                 if (v->rule != WIRE_R_number) fail(v, "bits must be a number");
                 c->bits = number(v);
                 if (c->bits < 1 || c->bits > MAXW) fail(v, "a %s has 1 to %d bits", c->kname, MAXW);
+            } else if (c->kind == K_MUL && (same(k, "signed", 6) || same(k, "sa", 2) || same(k, "sb", 2))) {
+                int bit = same(k, "sa", 2) ? 1 : same(k, "sb", 2) ? 2 : 3;
+                if (v->rule != WIRE_R_number || (number(v) != 0 && number(v) != 1))
+                    fail(v, "%.*s is 0 or 1: mul(a, b, %.*s = 1)", TEXT(k), TEXT(k));
+                if (number(v)) c->sgn |= bit; else c->sgn &= ~bit;
             } else if (same(k, "width", 5) && c->screen) {
                 if (v->rule != WIRE_R_number) fail(v, "width must be a number");
                 c->screenw = number(v);
@@ -627,6 +634,17 @@ static void analyze(gram_node *call, Call *c, int check)
         if (c->cin) { if (check) want_width(c, c->cin, 1, "cin"); add_in(c, c->cin, "cin", 1); }
         add_out(c, "sum", w);
         add_out(c, "cout", 1);
+        break;
+    case K_MUL:
+        /* the whole product, 2w bits: the low half is the value, .hi the high half */
+        need_args(c, 2, 2, "two inputs: mul(a, b)");
+        w = argw(c->pos[0]);
+        if (argw(c->pos[1]) > w) w = argw(c->pos[1]);
+        if (check) { want_width(c, c->pos[0], w, "both inputs"); want_width(c, c->pos[1], w, "both inputs"); }
+        add_in(c, c->pos[0], "a", w);
+        add_in(c, c->pos[1], "b", w);
+        add_out(c, "lo", w);
+        add_out(c, "hi", w);
         break;
     case K_COMPARE:
         need_args(c, 2, 2, "two inputs");
@@ -1061,6 +1079,7 @@ static Node *build_call(gram_node *call, int dst, Sym *s)
     n = &nodes[k];
     name_node(n, s);
     n->bits = c.bits ? c.bits : 4;
+    n->sgn = c.sgn;
     if (c.kind == K_ROM || c.kind == K_RAM) {
         n->membits = c.outw[0];
         n->memabits = c.inw[0];
@@ -1427,6 +1446,7 @@ static void write_json(void)
         }
         if (n->kind == K_CONST) fprintf(jf, ",\"value\":%lu", n->value);
         if (n->kind == K_COUNTER) fprintf(jf, ",\"bits\":%d", n->bits);
+        if (n->kind == K_MUL && n->sgn) fprintf(jf, ",\"sa\":%d,\"sb\":%d", n->sgn & 1, n->sgn >> 1 & 1);
         if (n->kind == K_ROM || n->kind == K_RAM) {
             long a = 0, e, last, m;
             int seg = 0;
@@ -2037,11 +2057,15 @@ static void finish(void)
             for (k = 0; k < n->nout; k++)
                 if (n->range[k][0] == taps[j].hi && n->range[k][1] == taps[j].lo) dup = k;
             if (dup >= 0) join(n->out[dup], taps[j].out);
-            else if (n->nout < MAXIO) {
+            else {
+                if (n->nout == MAXIO) {   /* full: carry on in another splitter of the same bus */
+                    n = new_node(K_SPLIT, taps[j].at);
+                    node_in(n, "in", src);
+                }
                 n->range[n->nout][0] = taps[j].hi;
                 n->range[n->nout][1] = taps[j].lo;
                 node_out(n, "", taps[j].out);
-            } else fail(taps[j].at, "too many slices of one bus");
+            }
             taps[j].src = -1;
         }
     }

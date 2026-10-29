@@ -264,6 +264,7 @@ number like `5` takes whatever width it is used at, and it must fit.
 | `encoder(x)` | value, `.valid` | priority encoder: index of the highest 1 |
 | `add(a, b, cin = c)` | sum, `.cout` | `cin` is optional |
 | `compare(a, b)` | `.lt`, `.eq`, `.gt` | unsigned |
+| `mul(a, b, signed = 1)` | low half, `.hi` | the whole product, 2w bits: the value is the low half, `.hi` the high half; `signed = 1` both signed, `sa = 1` or `sb = 1` one of them (RISC-V's MUL, MULH, MULHSU, MULHU) |
 | `dff(d, clk, en = e, rst = r)` | q, `.nq` | rising edge; any width (`reg` is the same) |
 | `tff(t, clk, rst = r)` | q, `.nq` | |
 | `jkff(j, k, clk, rst = r)` | q, `.nq` | |
@@ -482,21 +483,48 @@ circuit from Wire to VHDL and back:
   given; a process of logic (every signal given a value on every path)
   becomes gates. Inside: `if`/`elsif`/`else`, `case`, `for` loops with
   `exit`, variables and `null`. An input used as a clock becomes a Wire
-  `clock`, with Run and Step on the page.
+  `clock`, with Run and Step on the page. A big process (a dozen parts or
+  more) next to other processes or chips is drawn as a **chip of its own**,
+  named after its label (or `process_42`, its line), with the signals it
+  reads as inputs and the ones it gives values to as outputs: a state
+  machine shows as its state register and a next-state chip, and the
+  circuit around a big process stays readable. Open the chip for its logic.
+- **Rams.** An array signal written in one clocked process at one address
+  (`if we = '1' then mem(to_integer(a)) <= d; end if;`) and read only at that
+  address becomes a ram part, not a register per element. It may be written
+  a byte at a time, with each write its own ram part: `mem(i)(7 downto 0) <=
+  ...` under `if be(0) = '1'`, inside an `if we = '1'` as deep as you like, as
+  long as the writes give every bit of a word once. One process can write
+  several rams, and a read can be part of a longer expression
+  (`mem3(i) & mem2(i) & mem1(i) & mem0(i)`).
 - **Types:** enumerations (`type state is (idle, run, done)`, for state
   machines, coded in binary) and arrays (`type regs is array (0 to 3) of
   std_logic_vector(7 downto 0)`): a constant array read with a signal is a
   rom, a signal array is a register per element.
 - **Functions** with `return` anywhere but in a loop, put in place where they
   are called.
-- **Expressions:** `and or xor nand nor xnor not`, `= /= < <= > >=`, `+ -`
+- **Expressions:** `and or xor nand nor xnor not`, `= /= < <= > >=`, `+ - *`
   (with `ieee.numeric_std`, or `std_logic_unsigned`), `&`, bits and slices
   (also picked by a signal: `x(to_integer(i))`, on either side of `<=`),
   aggregates like `(others => '0')`, `unsigned() signed()
   std_logic_vector() to_unsigned() to_signed() to_integer() resize()`, and
   shifts (`shift_left`, `shift_right`, `sll`, `srl`, `sra`, `rol`, `ror`).
+- **Multiplication** gives the whole product, as wide as both sides
+  together, as numeric_std does: `signed(a) * signed(b)` of two 32-bit values
+  is 64 bits, one `mul` part. Operands widened by a bit, as RISC-V cores
+  write MULHSU (`signed(a(31) & a) * signed('0' & b)`), are still one part;
+  wider operands (up to 64 bits) are multiplied 32 bits at a time and added
+  up. `/`, `mod` and `rem` work on constant integers only (Vivado too only
+  divides by constants).
+- **Values wider than 32 bits** (up to 128) work in signals and variables,
+  slices, `&`, `resize`, the conversions, logic, comparisons, `+ - *`,
+  shifts by a constant, `when ... else`, `with ... select` and processes, so
+  `variable p : signed(65 downto 0)` and a 64-bit multiply-accumulate
+  register read as they are. A Wire wire has up to 32 bits, so such a signal
+  is a wire per 32 bits on the page: `prod(63 downto 0)` is `prod_31_0` and
+  `prod_63_32`. Ports are up to 32 bits.
 
-Not yet: `'Z'` (tri-state), values wider than 32 bits, procedures, `wait`
+Not yet: `'Z'` (tri-state), ports wider than 32 bits, procedures, `wait`
 and connecting part of a port (`x(0) => a`). A file that uses one says so,
 at its line:
 

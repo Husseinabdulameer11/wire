@@ -260,6 +260,16 @@ static void sim_out(int net, unsigned long v, unsigned long k, int keepz, int *c
 
 static int sim_known(int net) { net = find(net); return sk[net] == wmask(net_w(net)); }
 
+/* a times b, w bits each (sgn: 1 a is signed, 2 b is signed), the 2w-bit product */
+static unsigned long long mul_product(unsigned long a, unsigned long b, int w, int sgn)
+{
+    unsigned long long m = w >= 32 ? 0xffffffffull : (1ull << w) - 1;
+    long long x = (long long)(a & m), y = (long long)(b & m);
+    if ((sgn & 1) && (x >> (w - 1) & 1)) x -= (long long)(m + 1);
+    if ((sgn & 2) && (y >> (w - 1) & 1)) y -= (long long)(m + 1);
+    return ((unsigned long long)x * (unsigned long long)y) & (w >= 32 ? ~0ull : (1ull << 2 * w) - 1);
+}
+
 static void sim_node(int j, int *changed)
 {
     Node *n = &nodes[j];
@@ -347,6 +357,15 @@ static void sim_node(int j, int *changed)
             unsigned long long s = (unsigned long long)sv[IN(0)] + sv[IN(1)] + (c >= 0 ? sv[c] : 0);
             sim_out(OUT(0), (unsigned long)s, ~0ul, 0, changed);
             sim_out(OUT(1), (unsigned long)(s >> w) & 1, ~0ul, 0, changed);
+        } else { sim_out(OUT(0), 0, 0, 0, changed); sim_out(OUT(1), 0, 0, 0, changed); }
+        return;
+    }
+    case K_MUL: {
+        int w = net_w(IN(0));
+        if (sim_known(IN(0)) && sim_known(IN(1))) {
+            unsigned long long p = mul_product(sv[IN(0)], sv[IN(1)], w, n->sgn);
+            sim_out(OUT(0), (unsigned long)(p & 0xffffffffull), ~0ul, 0, changed);
+            sim_out(OUT(1), (unsigned long)(p >> w), ~0ul, 0, changed);
         } else { sim_out(OUT(0), 0, 0, 0, changed); sim_out(OUT(1), 0, 0, 0, changed); }
         return;
     }
@@ -608,6 +627,18 @@ static void vassign_u(VBuf *b, const char *ind, int net, const char *expr)
     else vbf(b, "%s%s <= std_logic_vector(%s);\n", ind, N(net), expr);
 }
 
+/* an input of a mul, as a signed value one bit wider: its sign (or a 0) on top */
+static const char *mul_operand(int net, int w, int sgn, char *buf, size_t cap)
+{
+    const char *x;
+    net = find(net);
+    x = N(net);
+    if (!sgn) snprintf(buf, cap, w == 1 || vis_const(net) ? "signed'('0' & %s)" : "signed('0' & %s)", x);
+    else if (w == 1) snprintf(buf, cap, "signed'(%s & %s)", x, x);
+    else snprintf(buf, cap, vis_const(net) ? "resize(signed'(%s), %d)" : "resize(signed(%s), %d)", x, w + 1);
+    return buf;
+}
+
 static void emit_node(VBuf *b, VBuf *decl, int j)
 {
     Node *n = &nodes[j];
@@ -708,6 +739,26 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
         snprintf(sum, sizeof sum, "%s(%d downto 0)", var, w - 1);
         vassign_u(b, "    ", o, sum);
         if (vreaders[co]) vbf(b, "    %s <= %s(%d);\n", N(co), var, w);
+        vbf(b, "  end process;\n");
+        return;
+    }
+    case K_MUL: {
+        /* both inputs one bit wider, as signed: then every mix of signed and
+         * unsigned is one signed multiplication, 2w + 2 bits */
+        int a = find(n->in[0]), bb = find(n->in[1]), hi = find(n->out[1]), f = 1;
+        char var[200];
+        snprintf(var, sizeof var, "%s", vname_take("prod", NULL));
+        vbf(b, "  process (");
+        vsens_add(b, a, &f); vsens_add(b, bb, &f);
+        if (f) vbf(b, "%s", N(a));
+        vbf(b, ")\n    variable %s : signed(%d downto 0);\n  begin\n", var, 2 * w + 1);
+        vbf(b, "    %s := %s * %s;\n", var, mul_operand(a, w, n->sgn & 1, t1, sizeof t1), mul_operand(bb, w, n->sgn & 2, t2, sizeof t2));
+        if (w == 1) vbf(b, "    %s <= %s(0);\n", N(o), var);
+        else vbf(b, "    %s <= std_logic_vector(%s(%d downto 0));\n", N(o), var, w - 1);
+        if (vreaders[hi]) {
+            if (w == 1) vbf(b, "    %s <= %s(1);\n", N(hi), var);
+            else vbf(b, "    %s <= std_logic_vector(%s(%d downto %d));\n", N(hi), var, 2 * w - 1, w);
+        }
         vbf(b, "  end process;\n");
         return;
     }

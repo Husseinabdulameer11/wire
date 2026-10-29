@@ -1,0 +1,4 @@
+# expect: mul_signed.wire:3:24: error: signed is 0 or 1: mul(a, b, signed = 1)
+input a[4], b[4]
+o = mul(a, b, signed = 2)
+output o

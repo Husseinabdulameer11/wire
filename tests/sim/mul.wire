@@ -1,0 +1,30 @@
+circuit "Multipliers"
+
+# the whole product: the value is the low half, .hi the high half
+input a[8], b[8], x[32], y[32], p, q, s[3], t[3]
+
+uu = mul(a, b)
+ss = mul(a, b, signed = 1)
+su = mul(a, b, sa = 1)
+us = mul(a, b, sb = 1)
+w  = mul(x, y, signed = 1)
+wu = mul(x, y)
+one = mul(p, q, signed = 1)
+k  = mul(s, 0b101, sb = 1)
+r  = mul(t, s, signed = 1, sa = 0)
+
+output lo8, hi8, slo, shi, suh, ush, mulh, mullo, mulhu, ob, obh, kh, kl, rh
+lo8 = uu
+hi8 = uu.hi
+slo = ss
+shi = ss.hi
+suh = su.hi
+ush = us.hi
+mulh = w.hi
+mullo = w
+mulhu = wu.hi
+ob = one
+obh = one.hi
+kh = k.hi
+kl = k
+rh = r.hi

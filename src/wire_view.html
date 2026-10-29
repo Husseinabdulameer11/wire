@@ -460,9 +460,9 @@ function geom(n) {
     g.disp = { x: 36, y: 24, w: dw, h: dh };
     n.in.forEach((_, i) => left(30 + i * 20, n.inNames[i]));
     right(30, "q");
-  } else if (k === "decoder" || k === "encoder" || k === "add" || k === "compare" || SEQ.has(k) || MEMS.has(k)) {
+  } else if (k === "decoder" || k === "encoder" || k === "add" || k === "mul" || k === "compare" || SEQ.has(k) || MEMS.has(k)) {
     g.w = SEQ.has(k) ? 60 : MEMS.has(k) ? 80 : 50;
-    const top = SEQ.has(k) || k === "add" ? 20 : 30;     /* room for the title on top */
+    const top = SEQ.has(k) || k === "add" || k === "mul" ? 20 : 30;     /* room for the title on top */
     const rows = Math.max(ni, no, SEQ.has(k) ? 3 : 2);
     g.h = rows * 20 + top + (MEMS.has(k) ? 10 : 0);
     n.in.forEach((_, i) => left(top + i * 20, n.inNames[i]));
@@ -717,7 +717,9 @@ function layout(V) {
     for (const l of seq) {
       const col = layers[l], key = new Map();
       col.forEach(item => {
-        const nb = fwd ? leftOf(item) : rightOf(item);
+        /* nothing on that side (a constant, an input): go by the other side */
+        let nb = fwd ? leftOf(item) : rightOf(item);
+        if (!nb.length) nb = fwd ? rightOf(item) : leftOf(item);
         key.set(item, nb.length ? nb.reduce((s, [o]) => s + pos.get(o), 0) / nb.length : pos.get(item));
       });
       col.sort((a, b) => key.get(a) - key.get(b));
@@ -762,7 +764,8 @@ function layout(V) {
     return it.g.h / 2;
   };
   const desired = (it, fwd) => {
-    const nb = fwd ? leftOf(it) : rightOf(it);
+    let nb = fwd ? leftOf(it) : rightOf(it);
+    if (!nb.length && !it.dummy && !isSrc(it)) { nb = fwd ? rightOf(it) : leftOf(it); fwd = !fwd; }   /* a constant: by what it feeds */
     if (!nb.length) return it.y;
     let s = 0;
     nb.forEach(([o, off]) => { s += o.y + off - (it.dummy ? 0 : portY(it, o, fwd)); });
@@ -772,6 +775,13 @@ function layout(V) {
     const fwd = it % 2 === 0, idx = layers.map((_, i) => i);
     (fwd ? idx : idx.reverse()).forEach(l => place(layers[l], layers[l].map(x => desired(x, fwd))));
   }
+  /* constants last: next to what they feed, where that ended up */
+  layers.forEach(col => {
+    if (!col.some(it => it.kind === "const")) return;
+    const want = new Map(col.map(it => [it, it.kind === "const" ? desired(it, false) : it.y]));
+    col.sort((a, b) => want.get(a) - want.get(b));
+    place(col, col.map(it => want.get(it)));
+  });
   let minY = Infinity;
   layers.forEach(col => col.forEach(it => { minY = Math.min(minY, it.y); }));
   layers.forEach(col => col.forEach(it => { it.y -= minY; }));
@@ -1104,7 +1114,7 @@ function buildPart(n) {
     const open = el("path", { class: "chip-open", d: `M${g.w - 13} ${g.h - 5}h8v-8M${g.w - 5} ${g.h - 5}l-6 -6` }, root);
     root.classList.add("chip");
     root.setAttribute("aria-label", `Open ${n.name || n.comp}`);
-    label(n.name || "", g.w / 2, -7);
+    label(n.name && n.name !== n.comp ? n.name : "", g.w / 2, -7);   /* named like its chip: once is enough */
   } else if (k === "input" || k === "output" || k === "pin_in" || k === "pin_out") {
     const isIn = k === "input" || k === "pin_in", isPin = k === "pin_in" || k === "pin_out";
     const net = nets[isIn ? n.out[0] : n.in[0]];
@@ -1210,12 +1220,16 @@ function buildPart(n) {
     root.setAttribute("aria-label", `Show the pixels of ${n.name || "the screen"} as memory`);
     if (shown) label(shown, g.w / 2, -7);
   } else {
-    /* boxes: decoder, encoder, add, compare, flip-flops, counter */
+    /* boxes: decoder, encoder, add, mul, compare, flip-flops, counter */
     el("rect", { class: "part-body", x: 0, y: 0, width: g.w, height: g.h, rx: 2 }, root);
-    const title = { decoder: "DEC", encoder: "ENC", add: "+", compare: "CMP", dff: "D", tff: "T", jkff: "JK", counter: "CTR", rom: "ROM", ram: "RAM" }[k];
-    const mid = SEQ.has(k) || k === "add";   /* plenty of room in the middle; others go on top */
-    const tt = el("text", { class: "part-text", x: g.w / 2, y: mid ? g.h / 2 + 4 : 14, "text-anchor": "middle", style: "font-weight:600;font-size:" + (k === "add" ? 18 : 12) + "px" }, root);
+    const title = { decoder: "DEC", encoder: "ENC", add: "+", mul: "×", compare: "CMP", dff: "D", tff: "T", jkff: "JK", counter: "CTR", rom: "ROM", ram: "RAM" }[k];
+    const mid = SEQ.has(k) || k === "add" || k === "mul";   /* plenty of room in the middle; others go on top */
+    const tt = el("text", { class: "part-text", x: g.w / 2, y: mid ? g.h / 2 + 4 : 14, "text-anchor": "middle", style: "font-weight:600;font-size:" + (k === "add" || k === "mul" ? 18 : 12) + "px" }, root);
     tt.textContent = title;
+    if (k === "mul" && (n.sa || n.sb)) {   /* which sides are signed */
+      const st = el("text", { class: "part-small", x: g.w / 2, y: g.h - 5, "text-anchor": "middle" }, root);
+      st.textContent = n.sa && n.sb ? "signed" : n.sa ? "a signed" : "b signed";
+    }
     g.ins.forEach(p => {
       if (p.name === "clk") el("path", { class: "part-line", d: `M0 ${p.y - 5}L7 ${p.y}L0 ${p.y + 5}` }, root);
       else { const t = el("text", { class: "part-small", x: 4, y: p.y + 3 }, root); t.textContent = p.name; }
@@ -1678,7 +1692,7 @@ let tableOpen = false, tableRows = [], tableChip = null, tableToken = 0;
 /* The truth table is for what is on screen: the circuit, or, inside a chip,
  * that chip on its own (see chipTable). */
 /* parts that have a truth table of their own when selected */
-const LOGIC = new Set([...GATES, "not", "buf", "mux", "demux", "decoder", "encoder", "add", "compare", "rom", "tri", "split", "merge", "bus", "const"]);
+const LOGIC = new Set([...GATES, "not", "buf", "mux", "demux", "decoder", "encoder", "add", "mul", "compare", "rom", "tri", "split", "merge", "bus", "const"]);
 function buildTable() {
   tableToken++;
   tableChip = null;
@@ -2156,7 +2170,7 @@ function bookSubject() {
 const SEARCH = {
   and: ["AND gate", "AND"], or: ["OR gate", "OR"], nand: ["NAND"], nor: ["NOR"], xor: ["XOR"], xnor: ["XNOR"],
   not: ["inverter", "NOT gate"], buf: ["buffer"], tri: ["tri-state"], bus: ["bus"], mux: ["multiplexer"],
-  demux: ["demultiplexer"], decoder: ["decoder"], encoder: ["encoder"], add: ["adder"], compare: ["comparator"],
+  demux: ["demultiplexer"], decoder: ["decoder"], encoder: ["encoder"], add: ["adder"], mul: ["multiplier", "multiplication"], compare: ["comparator"],
   dff: ["D flip-flop", "flip-flop"], tff: ["T flip-flop"], jkff: ["JK flip-flop", "JK"], counter: ["counter"],
   rom: ["ROM"], ram: ["RAM"], seg7: ["7-segment", "seven-segment"], hex: ["7-segment", "hexadecimal"],
   keypad: ["keypad", "keyboard"], button: ["debounc", "button"], clock: ["clock"], led: ["LED"]
