@@ -1,0 +1,8 @@
+# expect: there is no wire called r0
+circuit "t"
+clock clk (hz = 4)
+output pc[4]
+count = counter(clk, bits = 4)
+word = rom(count, bits = 8)
+pc = count
+cpu x (isa = "tiny8.isa", text = word, regs = "r%d")

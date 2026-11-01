@@ -91,11 +91,15 @@ build/wire_grammar.h: src/wire.gram $(GRAMGEN) | need-gram build
 build/vhdl_grammar.h: src/vhdl.gram $(GRAMGEN) | need-gram build
 	$(GRAMGEN) src/vhdl.gram vhdl build
 
+# the instruction-set files that cpu points at (build/isa_grammar.h)
+build/isa_grammar.h: src/isa.gram $(GRAMGEN) | need-gram build
+	$(GRAMGEN) src/isa.gram isa build
+
 # the HTML viewer, baked into the binary as a string
-build/wire_view.h: src/wire_view.html src/wire_sim.js src/wire_inside.js $(EMBED)
+build/wire_view.h: src/wire_view.html src/wire_sim.js src/wire_inside.js src/wire_asm.js src/wire_asmpanel.js $(EMBED)
 	$(EMBED) src/wire_view.html wire_view > $@
 
-$(WIRE): $(SRC) src/wire_vhdl.c src/wire_vhdl_in.c build/wire_grammar.h build/vhdl_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram
+$(WIRE): $(SRC) src/wire_vhdl.c src/wire_vhdl_in.c build/wire_grammar.h build/vhdl_grammar.h build/isa_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram
 	$(CC) $(CFLAGS) -Wall -Wextra -DWIRE_VERSION='"$(VERSION)"' -Isrc -Ibuild $(GRAM_INC) \
 	    $(SRC) $(GRAM_LIB) $(LDFLAGS) -o $@
 
@@ -114,9 +118,10 @@ test: $(WIRE)
 	     || { echo "examples/notes/sap1.wire: the SAP-1 did not compute 16 + 20 + 24 - 32 = 28"; exit 1; }; \
 	   node tests/sim/run.js $(WIRE) tests/vhdl_in/rv32im.vhd 2000 out_port | grep -q "out_port = 965487436" \
 	     || { echo "tests/vhdl_in/rv32im.vhd: the RV32IM core did not finish its program with 0x398C2B4C"; exit 1; }; \
+	   node tests/asm/asmtest.js $(WIRE) || exit 1; \
 	   node tools/riscv.js $(WIRE) --check || exit 1; \
 	   node tests/riscv/run.js $(WIRE) || exit 1; \
-	   if command -v riscv64-unknown-elf-as >/dev/null 2>&1; then node tests/riscv/gnu.js || exit 1; \
+	   if command -v riscv64-unknown-elf-as >/dev/null 2>&1; then node tests/riscv/gnu.js $(WIRE) || exit 1; \
 	   else echo "riscv: no riscv64-unknown-elf-as, so the assembler is not checked against GNU as"; fi; \
 	   node tests/sim/screen.js $(WIRE) examples/screen/computer.wire | tail -n +2 | diff -q - tests/sim/computer.screen >/dev/null \
 	     || { echo "examples/screen/computer.wire: the computer did not draw tests/sim/computer.screen"; exit 1; }; \
@@ -142,7 +147,7 @@ WEB_FLAGS = -sMODULARIZE=1 -sEXPORT_NAME=WireCompiler -sEXIT_RUNTIME=1 \
             -sENVIRONMENT=web,node
 web: build/web/wire.js
 
-build/web/wire.js: src/wire_web.c $(SRC) src/wire_vhdl.c src/wire_vhdl_in.c build/wire_grammar.h build/vhdl_grammar.h build/wire_view.h | need-gram
+build/web/wire.js: src/wire_web.c $(SRC) src/wire_vhdl.c src/wire_vhdl_in.c build/wire_grammar.h build/vhdl_grammar.h build/isa_grammar.h build/wire_view.h | need-gram
 	@command -v $(EMCC) >/dev/null 2>&1 || { echo "wire: make web needs Emscripten (emcc)"; exit 1; }
 	@test -n "$(GRAM_C)" || { echo "wire: make web compiles gram too, so it needs gram's source: make web GRAM=path/to/gram"; exit 1; }
 	mkdir -p build/web

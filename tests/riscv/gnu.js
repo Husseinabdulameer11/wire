@@ -4,13 +4,15 @@
  * words. make test runs it when riscv64-unknown-elf-as is installed
  * (Ubuntu: apt install binutils-riscv64-unknown-elf).
  *
- *   node tests/riscv/gnu.js */
+ *   node tests/riscv/gnu.js build/wire */
 "use strict";
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
-const RVAsm = require(path.join(__dirname, "..", "..", "examples", "riscv", "asm", "rvasm.js"));
+const wire = process.argv[2];
+if (!wire) { console.error("usage: node tests/riscv/gnu.js path/to/wire"); process.exit(2); }
+const RVAsm = require(path.join(__dirname, "..", "..", "tools", "isa.js"))(wire, path.join(__dirname, "..", "..", "examples", "riscv", "rv32im.isa"));
 
 const R = "add sub sll slt sltu xor srl sra or and mul mulh mulhsu mulhu div divu rem remu".split(" ");
 const I = "addi slti sltiu xori ori andi".split(" "), SH = "slli srli srai".split(" ");

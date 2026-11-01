@@ -22,12 +22,12 @@ function build(web, out, books = [], wire = null) {
   const walk = (d, keep) => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
     e.isDirectory() ? walk(path.join(d, e.name), keep) : keep(e.name) ? [path.join(d, e.name)] : []);
 
-  /* every example and what it reads (its lib/ and rom files, and the
+  /* every example and what it reads (its lib/ and rom files, its .isa instruction sets, and the
    * add-on a page of it gets: name.addon.js), at its path
    * under examples/; the standard library at wire/lib/. No .vhd files: the
    * VHDL of a circuit you change is the one Wire makes for it. */
   const files = {};
-  for (const f of walk(ex, n => /\.(wire|hex)$|\.addon\.js$/.test(n))) files[path.relative(root, f).split(path.sep).join("/")] = fs.readFileSync(f, "utf8");
+  for (const f of walk(ex, n => /\.(wire|hex|isa)$|\.addon\.js$/.test(n))) files[path.relative(root, f).split(path.sep).join("/")] = fs.readFileSync(f, "utf8");
   for (const f of walk(path.join(root, "lib"), n => n.endsWith(".wire"))) files["wire/lib/" + path.basename(f)] = fs.readFileSync(f, "utf8");
 
   /* the books: a pdf next to the page (copied, for --book) and its topics,

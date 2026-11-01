@@ -21,6 +21,7 @@
 #include <stdarg.h>
 #include "gram.h"
 #include "wire_grammar.h"
+#include "isa_grammar.h"
 #include "wire_view.h"
 
 #ifndef WIRE_VERSION
@@ -1283,6 +1284,11 @@ static int build(gram_node *e, int dst, int want)
 /* ---- statements -------------------------------------------------------- */
 
 static const char *title; static int titlelen;
+static gram_node *cpu_stmt;      /* cpu name (...): how the page can program this circuit */
+static void write_cpu(void);
+static void put(int c, void *ctx);
+static gram_node *cpu_opt(const char *key);
+static void check_cpu(void);
 
 static void declare(gram_node *d)
 {
@@ -1408,7 +1414,9 @@ static void write_json(void)
         else jstr(files[i].text, (int)files[i].len);
         fputc('}', jf);
     }
-    fputs("],\"insts\":[", jf);
+    fputc(']', jf);
+    write_cpu();
+    fputs(",\"insts\":[", jf);
     for (i = 0; i < ninsts; i++) {
         Inst *in = &insts[i];
         if (i) fputs(",\n", jf);
@@ -1649,6 +1657,264 @@ static int write_html(const char *path)
     return fclose(jf) == 0;
 }
 
+
+/* ---- cpu: how a circuit is programmed ------------------------------------ */
+/* cpu rv (isa = "rv32im.isa", text = instr, data = {...}, pc = pc) names the
+ * program memory and the file that describes the instructions (isa.gram). The
+ * file is read here, so a mistake in it is found with a line number, and its
+ * syntax tree goes into the page, where wire_asm.js assembles programs with
+ * it. Which parts are meant is checked now, against the circuit. */
+
+static char *isa_text; static size_t isa_len; static const char *isa_path;
+static gram_node *isa_tree;
+static int isa_width = 32, isa_unit, isa_nreg;
+static unsigned char *isa_mem;
+
+static gram_node *cpu_opt(const char *key)
+{
+    gram_node *o;
+    if (!cpu_stmt) return NULL;
+    for (o = cpu_stmt->child->next; o; o = o->next)
+        if (same(o->child, key, (int)strlen(key))) return o->child->next;
+    return NULL;
+}
+
+static void parse_isa(const char *path, char *text, size_t len)
+{
+    static gram_arena ia;
+    gram_grammar *g;
+    gram_error err;
+    size_t cap = (size_t)6 << 20;   /* the grammar and the tree of a few hundred lines */
+    gram_node *st;
+    if (!isa_mem) isa_mem = (unsigned char *)malloc(cap);
+    if (!isa_mem) { fprintf(stderr, "out of memory\n"); exit(1); }
+    gram_arena_init(&ia, isa_mem, cap);
+    g = gram_compile(&ia, ISA_GRAMMAR, &err);
+    if (!g) { fputs("grammar:", stderr); gram_error_print(&err, put, stderr); exit(1); }
+    isa_text = text; isa_len = len; isa_path = path;
+    isa_tree = gram_parse(g, "isa", text, len, &ia, &err);
+    if (!isa_tree) { fprintf(stderr, "%s:", path); gram_error_print(&err, put, stderr); fputc('\n', stderr); exit(1); }
+    /* its header: the width of an instruction, the address unit, the registers */
+    isa_width = 32; isa_unit = 0; isa_nreg = 0;
+    for (st = isa_tree->child; st; st = st->next) {
+        if (st->rule == ISA_R_header && st->child->next) {
+            gram_node *o;
+            for (o = st->child->next->child; o; o = o->next) {
+                int fixed;
+                gram_node *k = o->child, *v = k->next;
+                if (v->rule != ISA_R_number) continue;
+                if (same(k, "width", 5)) isa_width = (int)literal(v, &fixed);
+                if (same(k, "unit", 4)) isa_unit = (int)literal(v, &fixed);
+            }
+        } else if (st->rule == ISA_R_regs) {
+            int fixed;
+            long a = (long)literal(st->child->next, &fixed), b = (long)literal(st->child->next->next, &fixed);
+            if (b >= a && b - a + 1 > isa_nreg) isa_nreg = (int)(b - a + 1);
+        }
+    }
+    if (!isa_unit) isa_unit = isa_width;
+}
+
+/* the file a cpu names, found next to the circuit like file = "..." */
+static char *read_isa(gram_node *v)
+{
+    const char *src = files[file_of(v)].name;
+    int dl = 0, i;
+    char *path, *text;
+    size_t len, nl = v->len - 2;
+    for (i = 0; src[i]; i++) if (src[i] == '/' || src[i] == '\\') dl = i + 1;
+    if (nl && (v->text[1] == '/' || v->text[1] == '\\' || (nl > 1 && v->text[2] == ':'))) dl = 0;
+    path = (char *)malloc((size_t)dl + nl + 1);
+    memcpy(path, src, (size_t)dl);
+    memcpy(path + dl, v->text + 1, nl);
+    path[dl + nl] = 0;
+    text = read_file(path, &len);
+    if (!text) fail(v, "cannot read %s", path);
+    parse_isa(path, text, len);
+    return path;
+}
+
+static Node *top_memory(const gram_node *id, int ram_only)
+{
+    int i;
+    for (i = 0; i < nnodes; i++) {
+        Node *n = &nodes[i];
+        if (n->dead || n->inst != 0 || !n->name || (int)id->len != n->nlen || memcmp(id->text, n->name, id->len)) continue;
+        if (n->kind == K_RAM || (n->kind == K_ROM && !ram_only)) return n;
+    }
+    return NULL;
+}
+
+/* a wire or output of the circuit, by name */
+static int has_signal(const char *name, int len)
+{
+    int i;
+    for (i = 0; i < nnets; i++)
+        if (nets[i].name && nets[i].nlen == len && !memcmp(nets[i].name, name, (size_t)len)) return 1;
+    for (i = 0; i < nnodes; i++)
+        if (!nodes[i].dead && nodes[i].inst == 0 && nodes[i].kind == K_OUTPUT && nodes[i].name && nodes[i].nlen == len
+            && !memcmp(nodes[i].name, name, (size_t)len)) return 1;
+    return 0;
+}
+
+static void check_cpu(void)
+{
+    gram_node *o, *v, *id;
+    Node *tm;
+    int bits, abits;
+    if (!cpu_stmt) return;
+    id = cpu_stmt->child;
+    for (o = id->next; o; o = o->next) {
+        static const char *known[] = { "isa", "pc", "text", "text_base", "data", "data_base", "regs", "halt" };
+        int k, ok = 0, kinds;
+        gram_node *key = o->child;
+        for (k = 0; k < 8; k++) if (same(key, known[k], (int)strlen(known[k]))) ok = 1;
+        if (!ok) fail(key, "cpu has no setting called %.*s (it has isa, text, text_base, data, data_base, pc, regs, halt)", TEXT(key));
+        for (k = 0; k < 8; k++) if (same(key, known[k], (int)strlen(known[k]))) { gram_node *p; for (p = id->next; p != o; p = p->next) if (same(p->child, known[k], (int)strlen(known[k]))) fail(key, "%s is given twice", known[k]); }
+        v = key->next;
+        kinds = v->rule;
+        if ((same(key, "isa", 3) || same(key, "regs", 4)) && kinds != WIRE_R_string)
+            fail(v, "%.*s is a name in quotes, e.g. %.*s = \"%s\"", TEXT(key), TEXT(key), same(key, "isa", 3) ? "rv32im.isa" : "regs_%d");
+        if ((same(key, "text_base", 9) || same(key, "data_base", 9)) && kinds != WIRE_R_number)
+            fail(v, "%.*s is an address, e.g. %.*s = 0x1000", TEXT(key), TEXT(key));
+        if ((same(key, "pc", 2) || same(key, "halt", 4) || same(key, "text", 4)) && kinds != WIRE_R_ident)
+            fail(v, "%.*s is the name of a part of the circuit", TEXT(key));
+        if (same(key, "data", 4) && kinds != WIRE_R_ident && kinds != WIRE_R_list)
+            fail(v, "data is the name of a ram, or its byte lanes in braces: {ram_b24, ram_b16, ram_b8, ram_b0}");
+    }
+    if (!cpu_opt("isa")) fail(id, "cpu %.*s needs isa = \"file.isa\", the file that describes its instructions", TEXT(id));
+    if (!cpu_opt("text")) fail(id, "cpu %.*s needs text = the rom or ram that holds the program", TEXT(id));
+    read_isa(cpu_opt("isa"));
+
+    v = cpu_opt("text");
+    tm = top_memory(v, 0);
+    if (!tm) fail(v, "cpu %.*s: there is no rom or ram called %.*s at the top of the circuit "
+                     "(a memory is named by assigning it: %.*s = rom(...))", TEXT(id), TEXT(v), TEXT(v));
+    if (tm->membits != isa_width)
+        fail(v, "cpu %.*s: %.*s holds %d bits in each word, but its instructions are %d bits (width in %s)",
+             TEXT(id), TEXT(v), tm->membits, isa_width, isa_path);
+    abits = tm->memabits; bits = tm->membits; (void)abits; (void)bits;
+
+    v = cpu_opt("data");
+    if (v) {
+        gram_node *l;
+        int lanes = 0, lbits = 0, labits = 0;
+        for (l = v->rule == WIRE_R_list ? v->child : v; l; l = v->rule == WIRE_R_list ? l->next : NULL) {
+            Node *m = top_memory(l, 1);
+            if (!m) fail(l, "cpu %.*s: there is no ram called %.*s at the top of the circuit", TEXT(id), TEXT(l));
+            if (lanes && (m->membits != lbits || m->memabits != labits))
+                fail(l, "cpu %.*s: the data rams must all be the same size; %.*s is %d bits wide with %d address bits, the others %d and %d",
+                     TEXT(id), TEXT(l), m->membits, m->memabits, lbits, labits);
+            lanes++; lbits = m->membits; labits = m->memabits;
+        }
+        if ((lanes * lbits) % isa_unit)
+            fail(v, "cpu %.*s: the data memory is %d bits wide, which is not a whole number of the %d-bit units addresses count in",
+                 TEXT(id), lanes * lbits, isa_unit);
+    }
+    for (o = id->next; o; o = o->next)
+        if (same(o->child, "pc", 2) || same(o->child, "halt", 4)) {
+            gram_node *n = o->child->next;
+            if (!has_signal(n->text, (int)n->len))
+                fail(n, "cpu %.*s: there is no wire or output called %.*s", TEXT(id), TEXT(n));
+        }
+    v = cpu_opt("regs");
+    if (v) {
+        char name[128];
+        const char *p = v->text + 1, *pct = NULL;
+        int n = (int)v->len - 2, i, k;
+        for (i = 0; i + 1 < n; i++) if (p[i] == '%' && p[i + 1] == 'd') { pct = p + i; break; }
+        if (!pct) fail(v, "regs is a name with %%d where the register's number goes, e.g. \"regs_%%d\"");
+        for (k = 0; k < isa_nreg; k++) {
+            int l = snprintf(name, sizeof name, "%.*s%d%.*s", (int)(pct - p), p, k, n - (int)(pct - p) - 2, pct + 2);
+            if (!has_signal(name, l))
+                fail(v, "cpu %.*s: the instruction set has %d registers, but there is no wire called %s", TEXT(id), isa_nreg, name);
+        }
+    }
+}
+
+/* the syntax tree of the .isa, as JSON; each statement says its line */
+static void jtree(const gram_node *n, int stmt)
+{
+    const gram_node *c;
+    fputs("{\"t\":", jf);
+    jcstr(n->tag);
+    if (stmt) {
+        size_t line = 0;
+        gram_locate(isa_text, isa_len, (size_t)(n->text - isa_text), &line, NULL);
+        fprintf(jf, ",\"l\":%lu", (unsigned long)line);
+    }
+    if (!n->nchildren) { fputs(",\"x\":", jf); jstr(n->text, (int)n->len); }
+    else {
+        fputs(",\"c\":[", jf);
+        for (c = n->child; c; c = c->next) { if (c != n->child) fputc(',', jf); jtree(c, n == isa_tree); }
+        fputc(']', jf);
+    }
+    fputc('}', jf);
+}
+
+static void jopt_str(const char *key, const gram_node *v)
+{
+    if (!v) return;
+    fprintf(jf, ",\"%s\":", key);
+    if (v->rule == WIRE_R_string) jstr(v->text + 1, (int)v->len - 2);
+    else if (v->rule == WIRE_R_number) { int fixed; fprintf(jf, "%lu", literal(v, &fixed)); }
+    else jstr(v->text, (int)v->len);
+}
+
+static void write_cpu(void)
+{
+    gram_node *v;
+    if (!cpu_stmt) return;
+    fputs(",\"cpu\":{\"name\":", jf);
+    jstr(cpu_stmt->child->text, (int)cpu_stmt->child->len);
+    fprintf(jf, ",\"line\":%d,\"unit\":%d,\"width\":%d,\"isa\":{\"file\":", line_of(cpu_stmt), isa_unit, isa_width);
+    jcstr(isa_path);
+    fputs(",\"source\":", jf);
+    jstr(isa_text, (int)isa_len);
+    fputs(",\"tree\":", jf);
+    jtree(isa_tree, 0);
+    fputc('}', jf);
+    jopt_str("text", cpu_opt("text"));
+    jopt_str("textBase", cpu_opt("text_base"));
+    jopt_str("dataBase", cpu_opt("data_base"));
+    jopt_str("pc", cpu_opt("pc"));
+    jopt_str("halt", cpu_opt("halt"));
+    jopt_str("regs", cpu_opt("regs"));
+    v = cpu_opt("data");
+    if (v) {
+        gram_node *l;
+        int first = 1;
+        fputs(",\"data\":[", jf);
+        /* the lanes are written most significant first, like {a, b}; the page wants the lowest first */
+        if (v->rule == WIRE_R_list) {
+            int n = 0, k;
+            for (l = v->child; l; l = l->next) n++;
+            for (k = n - 1; k >= 0; k--) {
+                int j = 0;
+                for (l = v->child; l && j < k; l = l->next) j++;
+                if (!first) fputc(',', jf);
+                first = 0;
+                jstr(l->text, (int)l->len);
+            }
+        } else jstr(v->text, (int)v->len);
+        fputc(']', jf);
+    }
+    fputc('}', jf);
+}
+
+/* wire --isa-json file.isa: the syntax tree of an instruction set (for tests and tools) */
+static int isa_json(const char *path)
+{
+    size_t len;
+    char *text = read_file(path, &len);
+    if (!text) { perror(path); return 1; }
+    parse_isa(path, text, len);
+    jf = stdout;
+    jtree(isa_tree, 0);
+    putchar('\n');
+    return 0;
+}
+
 /* ---- main -------------------------------------------------------------- */
 
 static char *read_file(const char *path, size_t *len)
@@ -1811,6 +2077,10 @@ static void compile_scope(gram_node *first, int top)
         if (st->rule == WIRE_R_title) {
             if (title) fail(st, "the circuit already has a name");
             title = st->child->text; titlelen = (int)st->child->len;
+        } else if (st->rule == WIRE_R_cpu) {
+            if (!top) fail(st, "put cpu at the top of the circuit, not inside a component");
+            if (cpu_stmt) fail(st, "the circuit already has a cpu, on line %d", line_of(cpu_stmt));
+            cpu_stmt = st;
         } else if (st->rule == WIRE_R_decl) {
             if (!top && !same(st->child, "wire", 4) && !same(st->child, "bus", 3))
                 fail(st, "inside a component, declare only wires and buses; its inputs and outputs "
@@ -2125,6 +2395,8 @@ static void finish(void)
         if (!n->w) n->w = 1;
     }
 
+    check_cpu();   /* before the count is printed: its errors come first */
+
     canon = (int *)malloc(sizeof(int) * (size_t)(nnets + 1));
     for (i = 0, j = 0; i < nnets; i++)
         canon[i] = (find(i) == i && (nets[i].drivers || nets[i].readers)) ? j++ : -1;
@@ -2361,7 +2633,7 @@ int main(int argc, char **argv)
     gram_grammar *g;
     gram_node *prog;
     const char *out = NULL;
-    int i, json = 0, tree = 0, check = 0, to_vhdl = 0, to_wire = 0;
+    int i, json = 0, tree = 0, check = 0, to_vhdl = 0, to_wire = 0, isa_only = 0;
     char *text, *def = NULL;
     size_t len;
 
@@ -2395,6 +2667,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--to-vhdl")) to_vhdl = 1;
         else if (!strcmp(argv[i], "--to-wire")) to_wire = 1;
         else if (!strcmp(argv[i], "--check")) check = 1;
+        else if (!strcmp(argv[i], "--isa-json")) isa_only = 1;
         else if (!strcmp(argv[i], "-t")) tree = 1;
         else if (!strcmp(argv[i], "-I") && i + 1 < argc && nincdirs < 16) incdirs[nincdirs++] = argv[++i];
         else if ((!strcmp(argv[i], "--book") || !strcmp(argv[i], "--book-url")) && i + 1 < argc) {
@@ -2413,6 +2686,7 @@ int main(int argc, char **argv)
     }
     if (i != argc - 1) return usage();
     src_name = argv[i];
+    if (isa_only) return isa_json(src_name);
     text = read_file(src_name, &len);
     if (!text) { perror(src_name); return 1; }
     find_exedir(argv[0]);

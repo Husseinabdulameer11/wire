@@ -77,6 +77,10 @@ if (ROUND) {
     const r = spawnSync(wire, ["--to-vhdl", "-o", path.join(d, top + ".vhd"), f], { encoding: "utf8", maxBuffer: 1 << 28 });
     if (r.status !== 0) { console.log(`FAIL ${f}\n  ${(r.stderr || "").trim()}`); process.exit(1); }
     fs.copyFileSync(f, path.join(d, top + ".wire"));
+    /* a cpu statement names an .isa file next to the circuit; the VHDL Wire
+     * writes points at it the same way, so it must be next to the .vhd too */
+    for (const n of fs.readdirSync(path.dirname(f)))
+      if (n.endsWith(".isa")) fs.copyFileSync(path.join(path.dirname(f), n), path.join(d, n));
     files.push(path.join(d, top + ".vhd"));
   }
   GEN = false; VIN = true;

@@ -1,0 +1,24 @@
+# tiny8 - a made-up 8-bit CPU: four registers, 16 instructions of 1 byte,
+# a program counter that counts words. This is all a user has to write to
+# get an assembler for their own CPU.
+
+isa "tiny8" (width = 8)
+
+reg r[0..3]
+data byte 1
+
+format RR  = op:4 rd:2 rs:2
+format RI  = op:4 rd:2 imm[1:0]
+format JMP = op:4 addr[3:0]
+format BR  = op:4 rs:2 off[1:0]
+
+add  rd:reg, rs:reg    = RR(op = 0x1)
+sub  rd:reg, rs:reg    = RR(op = 0x2)
+mov  rd:reg, rs:reg    = RR(op = 0x3)
+ldi  rd:reg, imm:u2    = RI(op = 0x4)
+jmp  addr:u4           = JMP(op = 0x8)
+jz   rs:reg, off:rel2  = BR(op = 0x9)   # skip: -2 to +1 words from itself
+hlt                    = JMP(op = 0xF, addr = 0)
+
+pseudo nop             = mov r0, r0
+pseudo clr rd:reg      = sub rd, rd

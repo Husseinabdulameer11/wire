@@ -2,7 +2,7 @@
 # Semicolons are optional; `#` and `//` start comments.
 
 program  <- stmt* ;
-stmt     <^ title / import / component / decl / assign / connect ;
+stmt     <^ title / import / component / cpu / decl / assign / connect ;
 
 title    <- ~CIRCUIT string ~';'? ;
 import   <- ~IMPORT string ~';'? ;
@@ -14,6 +14,15 @@ plist    <- ~'(' (pdecl (~',' pdecl)*)? ~')' ;
 pdecl    <- ident range? ;
 body     <- ~'{' cstmt* ~'}' ;
 cstmt    <^ decl / assign / connect ;
+
+# cpu rv (isa = "rv32im.isa", text = instr, data = {ram_b24, ram_b16, ram_b8, ram_b0}, pc = pc)
+# says which part is the program memory and which file describes the
+# instructions, so the page can offer an assembler for this circuit.
+# (cpu is not a keyword: a wire may still be called cpu.)
+cpu      <- ~CPU ident ~'(' copt (~',' copt)* ~')' ~';'? ;
+copt     <- ident ~'=' cval ;
+cval     <^ list / number / string / ident ;
+list     <- ~'{' ident (~',' ident)* ~'}' ;
 
 # input a, b[4]      led ok, err (color = red)      clock clk (hz = 2)
 # bus data[8]: a wire that several tri() outputs may drive
@@ -51,6 +60,7 @@ dkind    <= ('input' / 'output' / 'wire' / 'led' / 'seg7' / 'hex'
 CIRCUIT  <= 'circuit' ![A-Za-z0-9_] ;
 IMPORT   <= 'import' ![A-Za-z0-9_] ;
 COMPONENT <= 'component' ![A-Za-z0-9_] ;
+CPU      <= 'cpu' ![A-Za-z0-9_] ;
 keyword  <= ('input' / 'output' / 'wire' / 'led' / 'seg7' / 'hex'
             / 'button' / 'clock' / 'bus' / 'keypad'
             / 'circuit' / 'import' / 'component') ![A-Za-z0-9_] ;

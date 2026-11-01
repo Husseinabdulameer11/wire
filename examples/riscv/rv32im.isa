@@ -1,0 +1,129 @@
+# RV32IM - the instruction set of examples/riscv, in the .isa language.
+# It describes what rvasm.js has written into its code: the same encodings,
+# the same pseudo-instructions, the same words out.
+
+isa "rv32im" (width = 32, unit = 8, endian = little)
+
+reg x[0..31]
+names zero, ra, sp, gp, tp, t0, t1, t2, s0, s1, a0, a1, a2, a3, a4, a5, a6, a7,
+      s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, t3, t4, t5, t6
+alias fp = s0
+
+data byte 1, half 2, word 4
+
+# %hi and %lo split a 32-bit value for lui + addi (the +0x800 makes up for
+# the sign of the low half)
+func %hi(x) = ((x + 0x800) >> 12) & 0xFFFFF
+func %lo(x) = %sext(x, 12)
+
+# ---- formats (bit 31 first) --------------------------------------------
+format R  = funct7:7 rs2:5 rs1:5 funct3:3 rd:5 opcode:7
+format I  = imm[11:0] rs1:5 funct3:3 rd:5 opcode:7
+format SH = funct7:7 shamt:5 rs1:5 funct3:3 rd:5 opcode:7
+format S  = imm[11:5] rs2:5 rs1:5 funct3:3 imm[4:0] opcode:7
+format B  = imm[12|10:5] rs2:5 rs1:5 funct3:3 imm[4:1|11] opcode:7
+format U  = imm[19:0] rd:5 opcode:7
+format J  = imm[20|10:1|11|19:12] rd:5 opcode:7
+
+# ---- RV32I and RV32M: register-register --------------------------------
+add    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x00, funct3 = 0, opcode = 0x33)
+sub    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x20, funct3 = 0, opcode = 0x33)
+sll    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x00, funct3 = 1, opcode = 0x33)
+slt    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x00, funct3 = 2, opcode = 0x33)
+sltu   rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x00, funct3 = 3, opcode = 0x33)
+xor    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x00, funct3 = 4, opcode = 0x33)
+srl    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x00, funct3 = 5, opcode = 0x33)
+sra    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x20, funct3 = 5, opcode = 0x33)
+or     rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x00, funct3 = 6, opcode = 0x33)
+and    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x00, funct3 = 7, opcode = 0x33)
+mul    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x01, funct3 = 0, opcode = 0x33)
+mulh   rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x01, funct3 = 1, opcode = 0x33)
+mulhsu rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x01, funct3 = 2, opcode = 0x33)
+mulhu  rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x01, funct3 = 3, opcode = 0x33)
+div    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x01, funct3 = 4, opcode = 0x33)
+divu   rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x01, funct3 = 5, opcode = 0x33)
+rem    rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x01, funct3 = 6, opcode = 0x33)
+remu   rd:reg, rs1:reg, rs2:reg = R(funct7 = 0x01, funct3 = 7, opcode = 0x33)
+
+# ---- register-immediate -------------------------------------------------
+addi   rd:reg, rs1:reg, imm:s12 = I(funct3 = 0, opcode = 0x13)
+slti   rd:reg, rs1:reg, imm:s12 = I(funct3 = 2, opcode = 0x13)
+sltiu  rd:reg, rs1:reg, imm:s12 = I(funct3 = 3, opcode = 0x13)
+xori   rd:reg, rs1:reg, imm:s12 = I(funct3 = 4, opcode = 0x13)
+ori    rd:reg, rs1:reg, imm:s12 = I(funct3 = 6, opcode = 0x13)
+andi   rd:reg, rs1:reg, imm:s12 = I(funct3 = 7, opcode = 0x13)
+slli   rd:reg, rs1:reg, shamt:u5 = SH(funct7 = 0x00, funct3 = 1, opcode = 0x13)
+srli   rd:reg, rs1:reg, shamt:u5 = SH(funct7 = 0x00, funct3 = 5, opcode = 0x13)
+srai   rd:reg, rs1:reg, shamt:u5 = SH(funct7 = 0x20, funct3 = 5, opcode = 0x13)
+
+# ---- loads and stores: lw a0, 8(sp) ------------------------------------
+lb     rd:reg, imm:s12(rs1:reg) = I(funct3 = 0, opcode = 0x03)
+lh     rd:reg, imm:s12(rs1:reg) = I(funct3 = 1, opcode = 0x03)
+lw     rd:reg, imm:s12(rs1:reg) = I(funct3 = 2, opcode = 0x03)
+lbu    rd:reg, imm:s12(rs1:reg) = I(funct3 = 4, opcode = 0x03)
+lhu    rd:reg, imm:s12(rs1:reg) = I(funct3 = 5, opcode = 0x03)
+sb     rs2:reg, imm:s12(rs1:reg) = S(funct3 = 0, opcode = 0x23)
+sh     rs2:reg, imm:s12(rs1:reg) = S(funct3 = 1, opcode = 0x23)
+sw     rs2:reg, imm:s12(rs1:reg) = S(funct3 = 2, opcode = 0x23)
+
+# ---- branches and jumps -------------------------------------------------
+beq    rs1:reg, rs2:reg, imm:rel13@2 = B(funct3 = 0, opcode = 0x63)
+bne    rs1:reg, rs2:reg, imm:rel13@2 = B(funct3 = 1, opcode = 0x63)
+blt    rs1:reg, rs2:reg, imm:rel13@2 = B(funct3 = 4, opcode = 0x63)
+bge    rs1:reg, rs2:reg, imm:rel13@2 = B(funct3 = 5, opcode = 0x63)
+bltu   rs1:reg, rs2:reg, imm:rel13@2 = B(funct3 = 6, opcode = 0x63)
+bgeu   rs1:reg, rs2:reg, imm:rel13@2 = B(funct3 = 7, opcode = 0x63)
+lui    rd:reg, imm:b20 = U(opcode = 0x37)
+auipc  rd:reg, imm:b20 = U(opcode = 0x17)
+jal    rd:reg, imm:rel21@2 = J(opcode = 0x6F)
+jalr   rd:reg, rs1:reg, imm:s12 = I(funct3 = 0, opcode = 0x67)
+jalr   rd:reg, imm:s12(rs1:reg) = I(funct3 = 0, opcode = 0x67)
+ecall  = I(imm = 0, rs1 = 0, funct3 = 0, rd = 0, opcode = 0x73)
+ebreak = I(imm = 1, rs1 = 0, funct3 = 0, rd = 0, opcode = 0x73)
+# fence takes (and ignores) its sets: fence, fence rw, fence rw, rw
+fence  = I(imm = 0x0FF, rs1 = 0, funct3 = 0, rd = 0, opcode = 0x0F)
+fence  a:any = I(imm = 0x0FF, rs1 = 0, funct3 = 0, rd = 0, opcode = 0x0F)
+fence  a:any, b:any = I(imm = 0x0FF, rs1 = 0, funct3 = 0, rd = 0, opcode = 0x0F)
+
+# ---- pseudo-instructions ------------------------------------------------
+pseudo nop                         = addi x0, x0, 0
+pseudo mv    rd:reg, rs:reg        = addi rd, rs, 0
+pseudo not   rd:reg, rs:reg        = xori rd, rs, -1
+pseudo neg   rd:reg, rs:reg        = sub rd, x0, rs
+pseudo seqz  rd:reg, rs:reg        = sltiu rd, rs, 1
+pseudo snez  rd:reg, rs:reg        = sltu rd, x0, rs
+pseudo sltz  rd:reg, rs:reg        = slt rd, rs, x0
+pseudo sgtz  rd:reg, rs:reg        = slt rd, x0, rs
+
+# li: one instruction when the value fits 12 bits, lui alone when the low 12
+# bits are zero, else lui + addi. The first pass chooses, so addresses hold.
+pseudo li    rd:reg, v:b32         = addi rd, x0, v              if v fits s12
+pseudo li    rd:reg, v:b32         = lui rd, %hi(v)              if %lo(v) == 0
+pseudo li    rd:reg, v:b32         = lui rd, %hi(v) ; addi rd, rd, %lo(v)
+pseudo la    rd:reg, v:b32         = lui rd, %hi(v) ; addi rd, rd, %lo(v)
+
+# lw a0, label: the address is built in the destination register first
+pseudo lb    rd:reg, t:b32         = auipc rd, %hi(t - pc) ; lb  rd, %lo(t - pc)(rd)
+pseudo lh    rd:reg, t:b32         = auipc rd, %hi(t - pc) ; lh  rd, %lo(t - pc)(rd)
+pseudo lw    rd:reg, t:b32         = auipc rd, %hi(t - pc) ; lw  rd, %lo(t - pc)(rd)
+pseudo lbu   rd:reg, t:b32         = auipc rd, %hi(t - pc) ; lbu rd, %lo(t - pc)(rd)
+pseudo lhu   rd:reg, t:b32         = auipc rd, %hi(t - pc) ; lhu rd, %lo(t - pc)(rd)
+
+pseudo beqz  rs:reg, t:rel13@2     = beq  rs, x0, t
+pseudo bnez  rs:reg, t:rel13@2     = bne  rs, x0, t
+pseudo blez  rs:reg, t:rel13@2     = bge  x0, rs, t
+pseudo bgez  rs:reg, t:rel13@2     = bge  rs, x0, t
+pseudo bltz  rs:reg, t:rel13@2     = blt  rs, x0, t
+pseudo bgtz  rs:reg, t:rel13@2     = blt  x0, rs, t
+pseudo bgt   rs:reg, rt:reg, t:rel13@2 = blt  rt, rs, t
+pseudo ble   rs:reg, rt:reg, t:rel13@2 = bge  rt, rs, t
+pseudo bgtu  rs:reg, rt:reg, t:rel13@2 = bltu rt, rs, t
+pseudo bleu  rs:reg, rt:reg, t:rel13@2 = bgeu rt, rs, t
+
+pseudo j     t:rel21@2             = jal x0, t
+pseudo jal   t:rel21@2             = jal ra, t
+pseudo call  t:rel21@2             = jal ra, t
+pseudo tail  t:rel21@2             = jal x0, t
+pseudo jr    rs:reg                = jalr x0, 0(rs)
+pseudo jalr  rs:reg                = jalr ra, 0(rs)
+pseudo ret                         = jalr x0, 0(ra)
