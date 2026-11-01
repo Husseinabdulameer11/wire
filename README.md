@@ -411,13 +411,16 @@ circuit in VHDL beside it (`.vhd`). `examples/index.txt` gives the order.
   one of the programs in `programs/` (hello, fib, primes, bounce, keys) or
   write your own in RISC-V assembly, press **Assemble and run**, and watch
   it on the screens, which the panel shows big, with the registers and a
-  listing where the instruction being run is lit. The assembler
-  (`asm/rvasm.js`) knows all of RV32IM, the usual pseudo-instructions (`li
-  la mv call ret j beqz bgt ...`) and `.data .text .word .half .byte .asciz
-  .space .align .equ`; `make test` checks it against GNU as when that is
-  installed. `rv32im.wire` and the add-on are made from the VHDL, the
-  programs and `asm/` by `node tools/riscv.js build/wire` (`make test` says
-  if they are out of date), and `tests/riscv/run.js` runs every program, and
+  listing where the instruction being run is lit. Its assembler is the one every CPU gets (see [An assembler for any
+  CPU](#an-assembler-for-any-cpu)): `rv32im.isa` describes all of RV32IM, the
+  usual pseudo-instructions (`li la mv call ret j beqz bgt ...`) and the
+  directives `.data .text .word .half .byte .asciz .space .align .equ`;
+  `make test` checks it against GNU as when that is installed. The `cpu`
+  statement in `rv32im.wire` comes from an attribute in `rv32im.vhd`; the
+  add-on adds the programs and the screens (`asm/screens.js`). `rv32im.wire`
+  and the add-on are made from the VHDL, the programs and `asm/` by `node
+  tools/riscv.js build/wire` (`make test` says if they are out of date), and
+  `tests/riscv/run.js` runs every program, and
   `tests/riscv/isa.s` (each instruction on edge values), in the circuit and
   in `tests/riscv/ref.js`, the same computer written plainly from the
   RISC-V spec, and checks the registers, the ram and the screens agree.
@@ -639,6 +642,94 @@ the standard library that ships with Wire (`lib/`, installed to
 
 The standard library has `adders.wire`: `half_adder`, `full_adder` built from
 two half adders, `add4` (ripple carry) and `add8` built from two `add4`s.
+
+### An assembler for any CPU
+
+A circuit that is a CPU can have an **Assembly** panel in its page: write a
+program, press **Assemble and run**, and the words go into the circuit's
+program memory. Two things make that work for any CPU, not one built in:
+
+1. **An instruction set**, in a `.isa` file: what the instructions are
+   called and how each is written in bits.
+2. **A `cpu` statement** in the circuit, saying which part holds the program
+   and which file describes the instructions.
+
+With no `cpu` statement a circuit has no Assembly panel.
+
+```
+cpu rv32im (isa = "rv32im.isa", text = instr,
+            data = {ram_b24, ram_b16, ram_b8, ram_b0}, data_base = 0x1000,
+            pc = pc, halt = halted, regs = "regs_%d")
+```
+
+| setting | meaning |
+|---|---|
+| `isa` | the file, found next to the circuit like `file = "..."` (required) |
+| `text` | the rom (or ram) that holds the program, named by assigning it: `instr = rom(...)`; its words must be as wide as an instruction (required) |
+| `text_base` | the address of its first word (0) |
+| `data` | the ram `.data` goes into, or its byte lanes, most significant first like `{a, b}` |
+| `data_base` | the address of the first byte of `.data` |
+| `pc` | a wire or output with the address of the running instruction: the listing lights it |
+| `halt` | a wire or output that goes to 1 when the program is done: Run stops |
+| `regs` | a name with `%d` for the register's number: the Registers tab shows those wires |
+
+`cpu` is not a keyword (a wire can still be called `cpu`). Wire checks the
+settings against the circuit, so a part that is not there, or a memory whose
+words are not as wide as an instruction, is an error with a line number. A
+mistake in the `.isa` is found too: its grammar is `src/isa.gram`.
+
+**In VHDL** the same is an attribute of the top architecture, with the
+settings as `name=value;` in a string, and the ram array (or arrays) for
+`data`; Wire writes it for a circuit that has a `cpu`, and reads it back:
+
+```vhdl
+attribute wire_cpu : string;
+attribute wire_cpu of rtl : architecture is
+  "isa=rv32im.isa; text=instr; data=ram; data_base=0x1000; pc=pc; halt=halted; regs=regs_%d";
+```
+
+**In the playground's drawing**, click empty space: the Assembler box has
+the same settings, and **Instruction set** (above) opens the `.isa` file
+for a CPU of your own (it comes along in **Copy link**). An example that has
+a `cpu` statement brings its own `.isa` file.
+
+**The instruction set.** A `.isa` file is a header and statements, in any
+order; `#` starts a comment. `examples/riscv/rv32im.isa` is a whole one, and
+this is a CPU of four registers and one-byte instructions:
+
+```
+isa "tiny8" (width = 8)                # width of an instruction; unit = 8 for byte addresses
+
+reg r[0..3]                            # r0 r1 r2 r3 (more names: names a, b, c;  alias fp = s0)
+format RR  = op:4 rd:2 rs:2            # bit fields, most significant first
+format RI  = op:4 rd:2 imm[1:0]        # imm[a:b|c] takes bits a to b, then c, of a value
+format JMP = op:4 addr[3:0]
+
+add  rd:reg, rs:reg  = RR(op = 0x1)    # how it is written = its format, its fixed fields
+ldi  rd:reg, imm:u2  = RI(op = 0x4)
+jmp  addr:u4         = JMP(op = 0x8)
+hlt                  = JMP(op = 0xF, addr = 0)
+
+pseudo nop           = mov r0, r0      # becomes real instructions; `pc` is its address
+pseudo clr rd:reg    = sub rd, rd
+```
+
+An operand is `name:kind`: `reg`; `sN` a signed, `uN` an unsigned or `bN` either
+kind of N-bit value; `relN@A` a label as the distance from the instruction, N
+bits, a multiple of A; `any` is accepted and ignored. `imm:s12(rs1:reg)` is
+written `8(sp)`. An instruction or pseudo-instruction can be given several
+times with different operands (the first that fits is used), and a pseudo
+can say `if v fits s12` or `if %lo(v) == 0` to choose; `func %hi(x) = ...`
+defines functions to use in programs as `%hi(label)`. Programs have the
+sections `.text` and `.data`, labels, `.equ`, `.align`, `.space`, `.ascii`,
+`.asciz`, and the data directives the file gives with `data byte 1, half 2,
+word 4`. `src/wire_asm.js` is the assembler (the page and the tests use the
+same file); `wire --isa-json file.isa` prints a `.isa` as the tree it reads.
+`tests/asm` checks it, and `tests/riscv` runs every RISC-V program in the
+circuit.
+
+An example can add to the panel from its add-on, through `wirePage.asm`
+(`programs`, `speed`, `addTab`): see `examples/riscv/asm/screens.js`.
 
 ### Add-ons
 

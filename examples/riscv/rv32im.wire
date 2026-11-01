@@ -401,6 +401,7 @@ output pc[32]
 wire ram_b0[8], ram_b8[8], ram_b16[8], ram_b24[8]
 wire pixels[8]
 wire chars[8]
+cpu rv32im (isa = "rv32im.isa", text = instr, data = {ram_b24, ram_b16, ram_b8, ram_b0}, data_base = 0x1000, pc = pc, halt = halted, regs = "regs_%d")
 wire pc_i[32], instr[32], d_addr[32], d_wdata[32], d_rdata[32], ram_q[32]
 wire d_be[4]
 wire sys[1], halt[1]

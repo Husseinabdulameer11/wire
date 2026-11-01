@@ -467,6 +467,10 @@ architecture rtl of rv32im is
   attribute wire_screen of chars : signal is 64;
   attribute wire_text : integer;
   attribute wire_text of chars : signal is 1;
+  -- how it is programmed: Wire's assembler (Assembly) puts a program in the
+  -- rom (instr) and its .data in the ram's byte lanes, from rv32im.isa
+  attribute wire_cpu : string;
+  attribute wire_cpu of rtl : architecture is "isa=rv32im.isa; text=instr; data=ram; data_base=0x1000; pc=pc; halt=halted; regs=regs_%d";
 
   signal pc_i, instr, d_addr, d_wdata, d_rdata, ram_q : std_logic_vector(31 downto 0);
   signal d_be : std_logic_vector(3 downto 0);

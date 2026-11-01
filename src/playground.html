@@ -185,6 +185,18 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
   #side { border-right: 0; }
   main[data-pane="side"] #view, main[data-pane="circuit"] #side { visibility: hidden; }
 }
+#props .cpubox { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+#props .cpubox h3 { font-size: 14px; margin: 0 0 6px; }
+#props .cpubox .row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+#props .cpubox label { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--ink-soft); }
+#props .cpubox input[type=text] { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); width: 11em; }
+#isadlg { width: min(640px, 94vw); border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); padding: 14px 16px; }
+#isadlg::backdrop { background: rgba(0,0,0,.35); }
+#isadlg h2 { margin: 0 0 6px; font-size: 17px; }
+#isadlg p { margin: 0 0 8px; font-size: 13px; color: var(--ink-soft); }
+#isadlg textarea { width: 100%; box-sizing: border-box; height: 46vh; font: 13px/1.5 "IBM Plex Mono", ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); white-space: pre; tab-size: 4; }
+#isadlg .bar { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+#isadlg .bar input { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); width: 12em; }
 </style>
 </head>
 <body>
@@ -209,6 +221,7 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
     <button id="new" title="Start a new circuit">New</button>
     <button id="savewire" title="Download the Wire source">Save .wire</button>
     <button id="savevhd" title="Download the circuit as VHDL-93, ready for Vivado">Save .vhd</button>
+    <button id="isabtn" title="The instruction set of a CPU you made: Assembly in the circuit assembles for it (a cpu statement names the file)">Instruction set</button>
     <button id="share" title="Copy a link that opens this circuit">Copy link</button>
   </div>
   <div class="spacer"></div>
@@ -218,6 +231,14 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
     <a href="https://github.com/Husseinabdulameer11/wire" target="_blank" rel="noopener">GitHub</a>
   </nav>
 </header>
+<dialog id="isadlg" aria-labelledby="isahead">
+  <h2 id="isahead">Instruction set</h2>
+  <p>Describe the instructions of your CPU here, and a <code>cpu</code> statement (in Wire), <code>wire_cpu</code> (in VHDL) or the Assembler settings (in the drawing) points the circuit's Assembly panel at it. The README, "An assembler for any CPU", has the language.</p>
+  <div class="bar"><label>File <input id="isaname" type="text" spellcheck="false" autocapitalize="off" aria-label="Instruction set file name"></label>
+    <button id="isaex" type="button">Insert an example</button></div>
+  <textarea id="isatext" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="The instruction set"></textarea>
+  <div class="bar"><button id="isadone" type="button">Done</button></div>
+</dialog>
 <div id="signal" role="presentation"></div>
 <div id="tabs" role="tablist" aria-label="Show">
   <button role="tab" id="tab-side" aria-selected="true" aria-controls="side">Parts</button>
@@ -535,6 +556,18 @@ function sheetLines(m, sh) {
   const sinks = sh.parts.filter(p => SINK.has(p.kind)).map(p => `${p.name} = ${from(p, "in")}`);
   return { body, sinks };
 }
+/* the Assembler settings of the drawing, as Wire's cpu statement */
+function cpuText(c) {
+  const n = fileName(), o = [`isa = "${c.isa}"`, `text = ${c.text}`];
+  const lanes = (c.data || []).filter(Boolean);
+  if (lanes.length) o.push(`data = {${lanes.join(", ")}}`);
+  if (c.textBase) o.push(`text_base = ${c.textBase}`);
+  if (c.dataBase) o.push(`data_base = ${c.dataBase}`);
+  if (c.pc) o.push(`pc = ${c.pc}`);
+  if (c.halt) o.push(`halt = ${c.halt}`);
+  if (c.regs) o.push(`regs = "${c.regs}"`);
+  return `cpu ${/^[A-Za-z_]/.test(n) ? n : "c" + n} (${o.join(", ")})`;
+}
 const DECL = { input: "input ", button: "button", clock: "clock ", output: "output", led: "led   ", hex: "hex   ", seg7: "seg7  " };
 const bitsOf = p => (p.bits || 1) > 1 ? `[${p.bits}]` : "";
 function componentText(m, name) {
@@ -554,6 +587,7 @@ function circuitText(m, sh, title, chips) {
   const { body, sinks } = sheetLines(m, sh);
   if (body.length) lines.push("", ...body);
   if (sinks.length) lines.push("", ...sinks);
+  if (sh === m && m.cpu && m.cpu.isa && m.cpu.text) lines.push("", cpuText(m.cpu));
   return lines.join("\n") + "\n";
 }
 /* the whole drawing as Wire: every chip you drew, then the main sheet */
@@ -586,6 +620,11 @@ async function wire(args, mainPath, mainText) {
   });
   const put = (p, text) => { m.FS.mkdirTree(p.slice(0, p.lastIndexOf("/")) || "/"); m.FS.writeFile(p, text); };
   for (const [p, text] of Object.entries(FILES)) put(p.startsWith("wire/lib/") ? "/" + p : "/r/" + p, text);
+  if (isaUser.text) {   /* beside the circuit, where the cpu statement looks */
+    const at = mainPath.slice(0, mainPath.lastIndexOf("/") + 1);
+    put("/r/" + isaUser.name, isaUser.text);
+    if (at) put("/r/" + at + isaUser.name, isaUser.text);
+  }
   put("/r/" + mainPath, mainText);
   m.FS.chdir("/r");
   let code;
@@ -606,7 +645,8 @@ let mode = "draw";             /* draw: the drawing; write: the code editor */
 let lang = "wire";             /* what the code editor holds: wire or vhdl */
 let dir = "";                  /* the example's folder, where its imports are */
 let dirty = false;             /* the circuit was changed since it was loaded */
-const views = { draw: null, wire: null, vhdl: null };   /* draw: a drawing; wire, vhdl: { text, dir } */
+const views = { draw: null, wire: null, vhdl: null };
+let isaUser = { name: "my_cpu.isa", text: "" };   /* the instruction set file a cpu statement names (an example has its own) */   /* draw: a drawing; wire, vhdl: { text, dir } */
 let source = "draw";           /* the view that holds the circuit */
 const STORE = "wire-playground-3";
 const viewKey = () => mode === "draw" ? "draw" : lang;
@@ -639,7 +679,7 @@ function edited() {
 }
 function persist() {
   syncView();
-  try { localStorage.setItem(STORE, JSON.stringify({ mode, lang, name: $("name").value, views, source, dirty })); } catch (e) {}
+  try { localStorage.setItem(STORE, JSON.stringify({ mode, lang, name: $("name").value, views, source, dirty, isa: isaUser })); } catch (e) {}
 }
 
 /* ============================================================== compiling */
@@ -1028,6 +1068,41 @@ for (const [kind, k] of Object.entries(KINDS)) {
     paletteButton(kind, k.label, ICONS[kind], `Drag the ${k.label.toLowerCase()} onto the circuit, or click it and then the circuit`));
 }
 
+/* ---- Assembler: which parts of the circuit a program goes into */
+function cpuSection() {
+  const wrap = document.createElement("div");
+  wrap.className = "cpubox";
+  const h = document.createElement("h3");
+  const on = Object.assign(document.createElement("input"), { type: "checkbox", checked: !!model.cpu });
+  h.append(on, " Assembler (this circuit is a CPU you program)");
+  wrap.append(h);
+  on.onchange = () => {
+    if (!on.checked) { change(m => { m.cpu = null; }); return; }
+    const mem = sheet(model).parts.find(p => p.kind === "rom");
+    change(m => { m.cpu = { isa: isaUser.name, text: mem ? mem.name : "", textBase: 0, data: [], dataBase: 0, pc: "", halt: "", regs: "" }; });
+  };
+  if (!model.cpu) return wrap;
+  const names = k => sheet(model).parts.filter(p => k.includes(p.kind)).map(p => p.name);
+  const list = document.createElement("datalist"); list.id = "cpunames";
+  names(["rom", "ram", "output"]).forEach(n => list.append(new Option(n)));
+  wrap.append(list);
+  const row = document.createElement("div"); row.className = "row"; wrap.append(row);
+  const num = v => { const n = Number(String(v).trim()); return Number.isFinite(n) && n >= 0 ? n : 0; };
+  const field = (label, value, set, tip) => {
+    const l = document.createElement("label"), i = Object.assign(document.createElement("input"), { type: "text", value, spellcheck: false });
+    i.setAttribute("list", "cpunames"); i.setAttribute("autocapitalize", "off"); l.title = tip || "";
+    i.addEventListener("change", () => change(m => set(m.cpu, i.value.trim())));
+    l.append(label, i); row.append(l);
+  };
+  field("Instruction set file", model.cpu.isa, (c, v) => { c.isa = v; isaUser.name = v; }, "The file that describes the instructions; Instruction set (above) edits it");
+  field("Program goes in (rom)", model.cpu.text, (c, v) => { c.text = v; }, "The rom or ram that holds the program: its words are instructions");
+  field("Data rams, top byte first", (model.cpu.data || []).join(", "), (c, v) => { c.data = v ? v.split(/[\s,]+/) : []; }, "The rams .data goes into: one, or the byte lanes of a word, most significant first");
+  field("Data starts at", "0x" + (model.cpu.dataBase || 0).toString(16), (c, v) => { c.dataBase = num(v); }, "The address of the first byte of .data, like 0x1000");
+  field("Program counter", model.cpu.pc, (c, v) => { c.pc = v; }, "An output that shows the address of the running instruction: the listing lights it");
+  field("Stops when (output)", model.cpu.halt, (c, v) => { c.halt = v; }, "An output that goes to 1 when the program is done: Run stops");
+  field("Register wires", model.cpu.regs, (c, v) => { c.regs = v; }, "A name with %d for the register number, like regs_%d; the Registers tab shows them");
+  return wrap;
+}
 /* ---- the selected part */
 function showProps() {
   const box = $("props");
@@ -1038,6 +1113,7 @@ function showProps() {
     s.className = "how";
     s.textContent = "Click a part in the circuit to rename it or change its size.";
     box.append(s);
+    if (model && sheet(model) === model) box.append(cpuSection());
     return;
   }
   const k = p.kind, kind = KINDS[k];
@@ -1461,7 +1537,10 @@ function netlistToModel(D, lay, defs, dir) {
   for (const c of Object.keys(chips)) delete comps[c];
   const text = defs.filter(d => !d.comp || !chips[d.comp]).map(d => d.text).join("\n\n");
   if (Object.keys(comps).length && !text) return { why: "Wire could not find where its chips are written" };
-  return { model: { title: D.title || "My circuit", next: main.next, parts: main.parts, links: main.links,
+  const dc = D.cpu;
+  const cpu = dc ? { isa: dc.isa.file.slice(dc.isa.file.lastIndexOf("/") + 1), text: dc.text, textBase: dc.textBase || 0,
+                     data: (dc.data || []).slice().reverse(), dataBase: dc.dataBase || 0, pc: dc.pc || "", halt: dc.halt || "", regs: dc.regs || "" } : null;
+  return { model: { title: D.title || "My circuit", cpu, next: main.next, parts: main.parts, links: main.links,
                     defs: Object.keys(comps).length ? text : "", dir: Object.keys(comps).length ? dir : "", comps, chips, at: null, path: [] } };
 }
 async function makeView(to) {
@@ -1480,7 +1559,9 @@ async function makeView(to) {
       const w = await wire(["--to-wire", path], path, t.text);
       wtext = w.code === 0 ? w.out : "";
     }
-    const m = netlistToModel(JSON.parse(r.out), lay, wireDefs(wtext), from === "wire" ? t.dir : "");
+    const nl = JSON.parse(r.out);
+    if (nl.cpu && !isaUser.text.trim()) isaUser = { name: nl.cpu.isa.file.slice(nl.cpu.isa.file.lastIndexOf("/") + 1), text: nl.cpu.isa.source };
+    const m = netlistToModel(nl, lay, wireDefs(wtext), from === "wire" ? t.dir : "");
     if (m.why) return m;
     const p2 = pathFor("wire", m.model.dir), c = await wire(["--check", p2], p2, genCode(m.model));
     if (c.code !== 0) return { why: "the drawing cannot show it (" + firstError(c, p2) + ")" };
@@ -1678,12 +1759,47 @@ $("share").onclick = async () => {
   const q = new URLSearchParams({ n: fileName() });
   if (mode === "draw") q.set("m", toB64(JSON.stringify(model)));
   else { q.set("c", toB64(src.value)); if (dir) q.set("d", dir); if (lang === "vhdl") q.set("l", "vhdl"); }
+  if (isaUser.text) { q.set("i", toB64(isaUser.text)); q.set("in", isaUser.name); }
   const url = location.href.replace(/#.*$/, "") + "#" + q.toString();
   history_replace(url);
   try { await navigator.clipboard.writeText(url); flash($("share"), "Link copied"); }
   catch (e) { flash($("share"), "Link is in the address bar"); }
 };
 function history_replace(url) { window.history.replaceState(null, "", url); }
+
+/* ---- the instruction set of a CPU you made */
+const TINY8_ISA = `# tiny8: a made-up 8-bit CPU. Four registers, one-byte instructions.
+isa "tiny8" (width = 8)
+
+reg r[0..3]
+format RR  = op:4 rd:2 rs:2
+format RI  = op:4 rd:2 imm[1:0]
+format JMP = op:4 addr[3:0]
+
+add  rd:reg, rs:reg  = RR(op = 0x1)
+sub  rd:reg, rs:reg  = RR(op = 0x2)
+mov  rd:reg, rs:reg  = RR(op = 0x3)
+ldi  rd:reg, imm:u2  = RI(op = 0x4)
+jmp  addr:u4         = JMP(op = 0x8)
+hlt                  = JMP(op = 0xF, addr = 0)
+
+pseudo nop           = mov r0, r0
+pseudo clr rd:reg    = sub rd, rd
+`;
+const isaDlg = $("isadlg");
+$("isabtn").onclick = () => {
+  $("isaname").value = isaUser.name; $("isatext").value = isaUser.text;
+  isaDlg.showModal(); $("isatext").focus();
+};
+$("isadone").onclick = () => isaDlg.close();
+$("isaex").onclick = () => { $("isatext").value = TINY8_ISA; $("isatext").dispatchEvent(new Event("input")); };
+$("isatext").addEventListener("input", () => { isaUser.text = $("isatext").value; persist(); schedule(); });
+$("isaname").addEventListener("change", () => {
+  const v = $("isaname").value.trim();
+  if (!/^[\w.-]+$/.test(v)) { $("isaname").value = isaUser.name; return; }
+  isaUser.name = v;
+  if (mode === "draw" && model.cpu) change(m => { m.cpu.isa = v; }); else { persist(); schedule(); }
+});
 
 /* ---- phones: two tabs */
 function pane(which) {
@@ -1717,6 +1833,9 @@ function validModel(m) {
   try { saved = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) {}
   try { if (!saved) old = JSON.parse(localStorage.getItem("wire-playground-2") || "null"); } catch (e) {}
   let m = "draw";
+  if (saved && saved.isa && typeof saved.isa.text === "string")
+    isaUser = { name: /^[\w.-]+$/.test(saved.isa.name || "") ? saved.isa.name : "my_cpu.isa", text: saved.isa.text };
+  if (q.get("i")) { try { isaUser = { name: /^[\w.-]+$/.test(q.get("in") || "") ? q.get("in") : "my_cpu.isa", text: fromB64(q.get("i")) }; } catch (e) {} }
   if (saved && saved.views) {
     views.draw = validModel(saved.views.draw) ? saved.views.draw : null;
     views.wire = okText(saved.views.wire);

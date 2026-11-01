@@ -2491,6 +2491,9 @@ static void vi_inst(gram_node *st)
 }
 
 static void vi_statement(gram_node *st);
+static const gram_node *vi_cpu_at;   /* attribute wire_cpu: its value, and the text of it */
+static char *vi_cpu_spec;
+static void vi_emit_cpu(const VEnt *e);
 
 /* an entity's ports and generics, as instances see them (with vi_over's values, for a copy) */
 static void vi_set_ctx(int ctx)
@@ -2636,6 +2639,7 @@ static void vi_ent_emit(VEnt *e)
             continue;
         vi_statement(k);
     }
+    if (vi_cpu_spec && vi_cpu_at->text >= e->arch->text && vi_cpu_at->text < e->arch->text + e->arch->len) vi_emit_cpu(e);
     if (!e->top) vi_emitp(e->arch->text + e->arch->len - 1, "}");
     e->done = 1;
     vi_over = NULL;
@@ -4042,6 +4046,85 @@ static void vi_ram_emit(VSym *s)
     }
 }
 
+
+/* attribute wire_cpu of rtl : architecture is "isa=rv32im.isa; text=instr; data=ram; data_base=0x1000; pc=pc; halt=halted; regs=regs_%d";
+ * becomes Wire's cpu statement (see wire.gram). text, pc and halt are
+ * signals or ports; data is the ram array (or several, most significant byte
+ * first), which becomes its byte lanes; isa and regs are text; the bases are
+ * numbers. */
+static VSym *vi_find_str(const char *s, int n)
+{
+    gram_node tmp;
+    memset(&tmp, 0, sizeof tmp);
+    tmp.text = s; tmp.len = (size_t)n;
+    return vi_find(&tmp);
+}
+
+static void vi_emit_cpu(const VEnt *e)
+{
+    static const char *keys[] = { "isa", "text", "data", "text_base", "data_base", "pc", "halt", "regs" };
+    char *val[8] = { 0 }, *p = vi_cpu_spec, *q;
+    VBuf out = { 0, 0, 0 };
+    int k, first = 1;
+    if (!vi_cpu_spec) return;
+    if (!e->top) vi_fail(vi_cpu_at, "wire_cpu goes in the architecture of the top entity, the one nobody uses");
+    while (*p) {
+        char *end = strchr(p, ';'), *eq;
+        int len = end ? (int)(end - p) : (int)strlen(p), kl;
+        while (len && (*p == ' ' || *p == '\t')) { p++; len--; }
+        while (len && (p[len - 1] == ' ' || p[len - 1] == '\t')) len--;
+        eq = len ? (char *)memchr(p, '=', (size_t)len) : NULL;
+        if (len && !eq) vi_fail(vi_cpu_at, "wire_cpu: write each setting as name=value, separated by ;");
+        if (len) {
+            char *v;
+            int vl = len - (int)(eq - p) - 1;
+            kl = (int)(eq - p);
+            while (kl && (p[kl - 1] == ' ' || p[kl - 1] == '\t')) kl--;
+            for (k = 0; k < 8; k++) if ((int)strlen(keys[k]) == kl && !memcmp(keys[k], p, (size_t)kl)) break;
+            if (k == 8) vi_fail(vi_cpu_at, "wire_cpu has no setting called %.*s (it has isa, text, data, text_base, data_base, pc, halt, regs)", kl, p);
+            v = eq + 1; while (vl && (*v == ' ' || *v == '\t')) { v++; vl--; }
+            while (vl && (v[vl - 1] == ' ' || v[vl - 1] == '\t')) vl--;
+            val[k] = vi_fmt("%.*s", vl, v);
+        }
+        if (!end) break;
+        p = end + 1;
+    }
+    if (!val[0]) vi_fail(vi_cpu_at, "wire_cpu needs isa=file.isa, the file that describes the instructions");
+    if (!val[1]) vi_fail(vi_cpu_at, "wire_cpu needs text=, the signal the program memory (a rom) drives");
+    vbf(&out, "cpu %s (isa = \"%s\"", e->wname, val[0]);
+    for (k = 1; k < 8; k++) {
+        if (!val[k]) continue;
+        if (k == 7) { vbf(&out, ", regs = \"%s\"", val[k]); continue; }
+        if (k == 3 || k == 4) { vbf(&out, ", %s = %s", keys[k], val[k]); continue; }
+        if (k == 2) {   /* ram arrays, most significant first: their lanes, most significant first */
+            VBuf lanes = { 0, 0, 0 };
+            int n = 0;
+            for (q = val[k]; *q;) {
+                char *c = strchr(q, ',');
+                int l = c ? (int)(c - q) : (int)strlen(q);
+                VSym *s;
+                while (l && *q == ' ') { q++; l--; }
+                while (l && q[l - 1] == ' ') l--;
+                s = vi_find_str(q, l);
+                if (!s) vi_fail(vi_cpu_at, "wire_cpu: %.*s is not declared", l, q);
+                if (!s->ramproc) vi_fail(vi_cpu_at, "wire_cpu: %.*s is not a ram (an array written by one clocked process)", l, q);
+                for (first = s->nlanes - 1; first >= 0; first--) vbf(&lanes, "%s%s", n++ ? ", " : "", s->lanes[first].wname);
+                if (!c) break;
+                q = c + 1;
+            }
+            vbf(&out, ", data = {%s}", lanes.s ? lanes.s : "");
+            continue;
+        }
+        {   /* text, pc, halt: a signal or port, by its Wire name */
+            VSym *s = vi_find_str(val[k], (int)strlen(val[k]));
+            if (!s) vi_fail(vi_cpu_at, "wire_cpu: %s is not declared", val[k]);
+            vbf(&out, ", %s = %s", keys[k], s->wname);
+        }
+    }
+    vb_add(&out, ")", 1);
+    vi_emit(vi_cpu_at, "%s", out.s);
+}
+
 static void vi_statement(gram_node *st)
 {
     vi_stmt_at = st->text;
@@ -4322,6 +4405,11 @@ static void vi_decls(gram_node *first)   /* signal and constant declarations, fr
                                 VT(id), VT(id), VT(id));
                     s->screenw = (int)w;
                 }
+            } else if (vi_is(an, "wire_cpu")) {   /* the circuit can be programmed: Wire's cpu statement */
+                if (val->len < 2 || val->text[0] != '"')
+                    vi_fail(val, "wire_cpu is a string: \"isa=name.isa; text=instr; data=ram; pc=pc\"");
+                vi_cpu_at = val;
+                vi_cpu_spec = vi_fmt("%.*s", (int)val->len - 2, val->text + 1);
             } else if (vi_is(an, "wire_text")) {   /* the screen shows characters */
                 for (id = ids->child; id; id = id->next) {
                     VSym *s = vi_find(id);

@@ -9,9 +9,13 @@
  *                     "-- program:" and "-- data:" lines)
  *   rv32im.wire       wire --to-wire rv32im.vhd, with a title, comments, and
  *                     the keypad (VHDL has no keypad: key is a port there)
- *   rv32im.addon.js   the page's Assembly panel: asm/rvasm.js, the programs
- *                     in programs/, and asm/panel.js, in one script (wire
- *                     puts name.addon.js into the page of name.wire) */
+ *   rv32im.addon.js   what is special about this computer in the page's
+ *                     Assembly panel: the programs in programs/ and
+ *                     asm/screens.js, in one script (wire puts name.addon.js
+ *                     into the page of name.wire). The panel itself and the
+ *                     assembler are the page's (src/wire_asmpanel.js,
+ *                     src/wire_asm.js), told what to do by rv32im.isa and the
+ *                     cpu statement, which comes from rv32im.vhd. */
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -21,7 +25,7 @@ const [wire, flag] = process.argv.slice(2);
 if (!wire) { console.error("usage: node tools/riscv.js path/to/wire [--check]"); process.exit(2); }
 const dir = path.join(__dirname, "..", "examples", "riscv");
 const at = f => path.join(dir, f);
-const RVAsm = require(at("asm/rvasm.js"));
+const RVAsm = require("./isa.js")(wire, at("rv32im.isa"));
 const ROM_WORDS = 1024, RAM_BASE = 0x1000, RAM_BYTES = 4096;
 
 /* the program in the rom: words, and the ram's words from its .data */
@@ -57,8 +61,10 @@ vhd = fill(fill(vhd, "program", hello.text), "data", hello.data);
 /* the Wire, from the VHDL as it will be */
 const tmp = fs.mkdtempSync(path.join(require("os").tmpdir(), "riscv-"));
 fs.writeFileSync(path.join(tmp, "rv32im.vhd"), vhd);
+fs.copyFileSync(at("rv32im.isa"), path.join(tmp, "rv32im.isa"));   /* the cpu statement is checked against it */
 let w = execFileSync(wire, ["--to-wire", path.join(tmp, "rv32im.vhd")], { stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 26 }).toString();
 fs.rmSync(tmp, { recursive: true });
+w = w.replace(/\r\n/g, "\n");   /* on Windows wire's stdout is text mode: CR LF; the file is kept with LF (.gitattributes) */
 if (!/^input key\[5\]$/m.test(w)) throw new Error("the Wire of rv32im.vhd has no input key[5] to make a keypad");
 if (!/^circuit "rv32im"$/m.test(w)) throw new Error('the Wire of rv32im.vhd has no circuit "rv32im"');
 w = w.replace(/^input key\[5\]$/m, "keypad key")
@@ -76,15 +82,14 @@ w = `# rv32im.wire: made by \`node tools/riscv.js build/wire\` from rv32im.vhd (
 
 ` + w;
 
-/* the add-on: the assembler, the programs and the panel, in one script */
+/* the add-on: the programs and the screens, in one script */
 const progs = {};
 programs.forEach(p => { progs[p] = fs.readFileSync(at("programs/" + p), "utf8"); });
-const addon = `/* rv32im.addon.js: made by \`node tools/riscv.js build/wire\` from asm/rvasm.js,
- * programs/*.s and asm/panel.js. Change those and run it again. wire puts
- * this script into the page of rv32im.wire, after the viewer. */
-${fs.readFileSync(at("asm/rvasm.js"), "utf8")}
+const addon = `/* rv32im.addon.js: made by \`node tools/riscv.js build/wire\` from programs/*.s
+ * and asm/screens.js. Change those and run it again. wire puts this script
+ * into the page of rv32im.wire, after the viewer. */
 const RV_PROGRAMS = ${JSON.stringify(progs, null, 1)};
-${fs.readFileSync(at("asm/panel.js"), "utf8")}`;
+${fs.readFileSync(at("asm/screens.js"), "utf8")}`;
 
 const out = { "rv32im.vhd": vhd, "rv32im.wire": w, "rv32im.addon.js": addon };
 const stale = Object.keys(out).filter(f => !fs.existsSync(at(f)) || fs.readFileSync(at(f), "utf8") !== out[f]);

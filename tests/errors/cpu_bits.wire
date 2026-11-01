@@ -1,0 +1,8 @@
+# expect: holds 4 bits in each word, but its instructions are 8 bits
+circuit "t"
+clock clk (hz = 4)
+output pc[4]
+count = counter(clk, bits = 4)
+word = rom(count, bits = 4)
+pc = count
+cpu x (isa = "tiny8.isa", text = word)

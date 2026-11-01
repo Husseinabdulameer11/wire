@@ -159,6 +159,9 @@ static char vk01[200];     /* this entity's known01 function, once it needs one 
 static int vnamed;         /* counter for nets with no name */
 static int vrams;
 static int vscreens;               /* attribute wire_screen declared in this architecture */
+static char *vcpu_text;            /* the signal the cpu's program rom drives, in VHDL */
+static char *vcpu_lane[64];        /* the VHDL arrays of its data rams, most significant first */
+static void vemit_cpu_attr(VBuf *decl);
 static int vtexts;                 /* ... and wire_text */
 
 static int net_w(int net) { return nets[find(net)].w ? nets[find(net)].w : 1; }
@@ -845,6 +848,14 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
         snprintf(tname, sizeof tname, "%s", vname_take(t1, NULL));
         snprintf(t1, sizeof t1, "%s_words", base);
         snprintf(mname, sizeof mname, "%s", vname_take(t1, NULL));
+        if (cpu_stmt && n->inst == 0 && n->name) {   /* a part the cpu statement names: remember its VHDL name */
+            gram_node *tv = cpu_opt("text"), *dv = cpu_opt("data"), *l;
+            int idx = 0;
+            if (tv && same(tv, n->name, n->nlen)) vcpu_text = vdup(N(o));
+            if (dv)
+                for (l = dv->rule == WIRE_R_list ? dv->child : dv; l && idx < 64; l = dv->rule == WIRE_R_list ? l->next : NULL, idx++)
+                    if (same(l, n->name, n->nlen)) vcpu_lane[idx] = vdup(mname);
+        }
         if (n->screenw)
             vbf(decl, "  -- the pixels of a %d x %d screen, address {y, x}: on a board, a video\n"
                       "  -- circuit (VGA) would read them out; wire_screen is how Wire knows\n", n->screenw, words / n->screenw);
@@ -1162,6 +1173,7 @@ static void vemit_entity(int inst, const char *ename)
     else vbf(&vout, "-- component %s\n", vcomps[vcomp_find(insts[inst].comp)].entity);
     vb_add(&vout, ports.s ? ports.s : "", ports.n);
     vbf(&vout, "\narchitecture rtl of %s is\n", ename);
+    if (inst == 0 && cpu_stmt) vemit_cpu_attr(&decl);
     if (decl.s) vb_add(&vout, decl.s, decl.n);
     vbf(&vout, "begin\n");
     if (body.s) vb_add(&vout, body.s, body.n);
@@ -1177,6 +1189,47 @@ static void vemit_entity(int inst, const char *ename)
     free(pnames);
     free(pnode);
     free(body.s); free(decl.s); free(ports.s);
+}
+
+
+/* the cpu statement, as attribute wire_cpu of the architecture (wire_vhdl_in.c reads it back) */
+/* the VHDL name of the wire (or output) a cpu setting names: what drives or carries it */
+static const char *vcpu_wire(const gram_node *v, char *buf, size_t n)
+{
+    int i;
+    for (i = 0; i < nnets; i++)
+        if (nets[i].name && nets[i].nlen == (int)v->len && !memcmp(nets[i].name, v->text, v->len)) return N(i);
+    vhdl_ident(v->text, (int)v->len, buf, n);
+    return buf;
+}
+
+static void vemit_cpu_attr(VBuf *decl)
+{
+    gram_node *v, *l;
+    VBuf s = { 0, 0, 0 };
+    char id[256];
+    int idx = 0;
+    v = cpu_opt("isa");
+    vbf(&s, "isa=%.*s", (int)v->len - 2, v->text + 1);
+    v = cpu_opt("text");
+    vhdl_ident(v->text, (int)v->len, id, sizeof id);
+    vbf(&s, "; text=%s", vcpu_text ? vcpu_text : id);
+    v = cpu_opt("data");
+    if (v) {
+        vbf(&s, "; data=");
+        for (l = v->rule == WIRE_R_list ? v->child : v; l && idx < 64; l = v->rule == WIRE_R_list ? l->next : NULL, idx++) {
+            vhdl_ident(l->text, (int)l->len, id, sizeof id);
+            vbf(&s, "%s%s", idx ? ", " : "", vcpu_lane[idx] ? vcpu_lane[idx] : id);
+        }
+    }
+    if ((v = cpu_opt("text_base"))) vbf(&s, "; text_base=%.*s", (int)v->len, v->text);
+    if ((v = cpu_opt("data_base"))) vbf(&s, "; data_base=%.*s", (int)v->len, v->text);
+    if ((v = cpu_opt("pc"))) vbf(&s, "; pc=%s", vcpu_wire(v, id, sizeof id));
+    if ((v = cpu_opt("halt"))) vbf(&s, "; halt=%s", vcpu_wire(v, id, sizeof id));
+    if ((v = cpu_opt("regs"))) vbf(&s, "; regs=%.*s", (int)v->len - 2, v->text + 1);
+    vbf(decl, "  -- how the circuit is programmed: Wire's cpu statement\n"
+              "  attribute wire_cpu : string;\n  attribute wire_cpu of rtl : architecture is \"%s\";\n", s.s);
+    free(s.s);
 }
 
 /* components first (an entity must be read before it is used), each from

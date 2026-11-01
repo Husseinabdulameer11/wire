@@ -1,0 +1,100 @@
+# isa - the language an instruction set is described in (a .isa file).
+# Wire's assembler reads one of these and the circuit's `cpu` binding, and can
+# then assemble programs for any CPU. `#` starts a comment.
+#
+#   isa "tiny8" (width = 8)                 one word per instruction, 8 bits
+#   reg r[0..3]                             registers r0 r1 r2 r3
+#   format RR = op:4 rd:2 rs:2              bit layout, most significant first
+#   add rd:reg, rs:reg = RR(op = 0x1)       an instruction
+#   pseudo clr rd:reg = xor rd, rd          a pseudo-instruction
+#
+# A `.isa` file is a header and then any number of statements, in any order.
+
+isa      <- header stmt* ;
+header   <- ~ISA string opts? ;
+opts     <- ~'(' opt (~',' opt)* ~')' ;
+opt      <- ident ~'=' (number / ident / string) ;
+
+stmt     <^ regs / names / alias / format / datadef / func / pseudo / instr ;
+
+# reg x[0..31]            the registers x0 ... x31, numbered from the first
+# names zero, ra, sp      other names for registers 0, 1, 2, ... in order
+# alias fp = s0           one more name for a register (by name or number)
+regs     <- ~REG ident ~'[' number ~'..' number ~']' ;
+names    <- ~NAMES ident (~',' ident)* ;
+alias    <- ~ALIAS ident ~'=' (ident / number) ;
+
+# format B = imm[12|10:5] rs2:5 rs1:5 funct3:3 imm[4:1|11] opcode:7
+# name:5 is a field 5 bits wide. name[a:b|c] takes bits a down to b, then bit c,
+# of a value (an immediate): its bits can be spread over the word.
+format   <- ~FORMAT ident ~'=' field+ ;
+field    <^ slicefield / widthfield ;
+widthfield <- ident ~':' number ;
+slicefield <- ident ~'[' slice (~'|' slice)* ~']' ;
+slice    <- number (~':' number)? ;
+
+# data byte 1, half 2, word 4       what .byte .half .word reserve, in address units
+datadef  <- ~DATA dentry (~',' dentry)* ;
+dentry   <- ident number ;
+
+# func %hi(x) = ((x + 0x800) >> 12) & 0xFFFFF       usable as %hi(...) in programs
+func     <- ~FUNC fname ~'(' ident ~')' ~'=' expr ;
+
+# lw rd:reg, imm:s12(rs1:reg) = I(funct3 = 2, opcode = 3)
+# The operands say what the program writes; the format says where each goes.
+# Kinds: reg   sN signed N bits   uN unsigned   bN either   relN@A pc-relative,
+# N bits, a multiple of A   any (accepted, not encoded). The same name may come more than once (overloads):
+# the first whose shape fits, and whose `if` holds, is used.
+instr    <- ident pattern? ~'=' ident ~'(' assign (~',' assign)* ~')' guard? ;
+pattern  <- operand (~',' operand)* ;
+operand  <- ident ~':' kind (~'(' ident ~':' kind ~')')? ;
+assign   <- ident ~'=' expr ;
+
+# pseudo li rd:reg, v:b32 = lui rd, %hi(v) ; addi rd, rd, %lo(v)
+# It becomes those instructions, with the operand names replaced. `pc` is the
+# address of the pseudo-instruction. `if` picks between overloads.
+pseudo   <- ~PSEUDO ident pattern? ~'=' asmop (~';' asmop)* guard? ;
+asmop    <- ident (arg (~',' arg)*)? ;
+arg      <- expr (~'(' expr ~')')? ;
+
+# if v fits s12        if %lo(v) == 0
+guard    <- ~IF cond ;
+cond     <- expr (cmpop expr / ~FITS kind)? ;
+cmpop    <= '==' / '!=' / '<=' / '>=' / '<' / '>' ;
+
+# Operators, loosest first: |  ^  &  << >>  + -  *  then unary - ~
+expr     <^ orx ;
+orx      <^ xorx (~'|' xorx)* ;
+xorx     <^ andx (~'^' andx)* ;
+andx     <^ shiftx (~'&' shiftx)* ;
+shiftx   <^ sumx (('<<' / '>>') sumx)* ;
+sumx     <^ prodx (('+' / '-') prodx)* ;
+prodx    <^ unary (~'*' unary)* ;
+unary    <^ neg / inv / primary ;
+neg      <- ~'-' unary ;
+inv      <- ~'~' unary ;
+primary  <^ call / char / number / ident / ~'(' expr ~')' ;
+call     <- fname ~'(' (expr (~',' expr)*)? ~')' ;
+
+# ---- tokens ------------------------------------------------------------
+kind     <= ('reg' / 'any' / 'rel' [0-9]+ ('@' [0-9]+)? / [sub] [0-9]+) ![A-Za-z0-9_] ;
+fname    <= '%' [A-Za-z_] [A-Za-z0-9_]* ;
+number   <= '0b' [01_]+ / '0x' [0-9a-fA-F_]+ / [0-9]+ ;
+char     <= '\'' ('\\' . / [^\\']) '\'' ;
+string   <= '"' [^"\n]* '"' ;
+ident    <= !keyword [A-Za-z_] [A-Za-z0-9_.]* ;
+
+ISA      <= 'isa' ![A-Za-z0-9_] ;
+REG      <= 'reg' ![A-Za-z0-9_] ;
+NAMES    <= 'names' ![A-Za-z0-9_] ;
+ALIAS    <= 'alias' ![A-Za-z0-9_] ;
+FORMAT   <= 'format' ![A-Za-z0-9_] ;
+DATA     <= 'data' ![A-Za-z0-9_] ;
+FUNC     <= 'func' ![A-Za-z0-9_] ;
+PSEUDO   <= 'pseudo' ![A-Za-z0-9_] ;
+IF       <= 'if' ![A-Za-z0-9_] ;
+FITS     <= 'fits' ![A-Za-z0-9_] ;
+keyword  <= ('isa' / 'reg' / 'names' / 'alias' / 'format' / 'data' / 'func'
+            / 'pseudo' / 'if' / 'fits') ![A-Za-z0-9_] ;
+
+skip     <= ([ \t\r\n] / '#' [^\n]*)* ;

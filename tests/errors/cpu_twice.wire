@@ -1,0 +1,9 @@
+# expect: the circuit already has a cpu
+circuit "t"
+clock clk (hz = 4)
+output pc[4]
+count = counter(clk, bits = 4)
+word = rom(count, bits = 8)
+pc = count
+cpu x (isa = "tiny8.isa", text = word)
+cpu y (isa = "tiny8.isa", text = word)

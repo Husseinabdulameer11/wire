@@ -1,0 +1,8 @@
+# expect: there is no rom or ram called nope at the top of the circuit
+circuit "t"
+clock clk (hz = 4)
+output pc[4]
+count = counter(clk, bits = 4)
+word = rom(count, bits = 8)
+pc = count
+cpu x (isa = "tiny8.isa", text = nope)

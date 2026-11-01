@@ -15,11 +15,11 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 const root = path.join(__dirname, "..", "..");
 const WireSim = require(path.join(root, "src", "wire_sim.js"));
-const RVAsm = require(path.join(root, "examples", "riscv", "asm", "rvasm.js"));
 const ref = require("./ref.js");
 
 const [wire, ...given] = process.argv.slice(2);
 if (!wire) { console.error("usage: node tests/riscv/run.js path/to/wire [prog.s ...]"); process.exit(2); }
+const RVAsm = require(path.join(root, "tools", "isa.js"))(wire, path.join(root, "examples", "riscv", "rv32im.isa"));
 const progDir = path.join(root, "examples", "riscv", "programs");
 const files = given.length ? given : [...fs.readdirSync(progDir).filter(f => f.endsWith(".s")).sort().map(f => path.join(progDir, f)),
                                       path.join(__dirname, "isa.s")];

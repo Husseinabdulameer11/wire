@@ -1,0 +1,10 @@
+# expect: syntax error
+circuit "t"
+input a
+output y
+component inner(x) -> (z) {
+    cpu c (isa = "tiny8.isa", text = w)
+    z = x
+}
+u = inner(x = a)
+y = u
