@@ -645,16 +645,39 @@ two half adders, `add4` (ripple carry) and `add8` built from two `add4`s.
 
 ### An assembler for any CPU
 
-A circuit that is a CPU can have an **Assembly** panel in its page: write a
+A circuit that is a CPU gets an **Assembly** panel in its page: write a
 program, press **Assemble and run**, and the words go into the circuit's
-program memory. Two things make that work for any CPU, not one built in:
+program memory. It works for any CPU anyone makes, in Wire, VHDL or the
+playground's drawing, 4 bits wide or 32, with instructions of one word or
+several. Two things make it work:
 
-1. **An instruction set**, in a `.isa` file: what the instructions are
+1. **An instruction set**, in the `.isa` language: what the instructions are
    called and how each is written in bits.
-2. **A `cpu` statement** in the circuit, saying which part holds the program
-   and which file describes the instructions.
+2. **Which part is which**: the memory that holds the program, where
+   `.data` goes, the program counter.
 
-With no `cpu` statement a circuit has no Assembly panel.
+**Wire finds the CPU by itself.** A circuit is a stored-program machine when
+what comes out of a memory can, through any logic and any number of clocks,
+change the address that memory is read at next (a jump moves the program
+counter, an instruction loads the address register). The page looks for that
+(`src/wire_cpu.js`), and only then has an Assembly button: a counter
+stepping through a rom, a FIFO or a UART has none. It also guesses the
+program counter (a register called `pc`, or the one the address comes
+from), a 1-bit `halt` wire, a register file (`regs_0`, `regs_1`, ...) and
+other registers worth showing.
+
+The panel's **Instruction set** tab is where you write the `.isa` for a CPU
+nobody has described yet (it starts with one of the right width to change),
+and **Setup** shows what was found, to change if it guessed wrong. Both are
+kept in your browser (in the playground, with the circuit and its link).
+**Download .isa** saves the instruction set: put it next to the circuit as
+`name.isa` (`sap1.isa` beside `sap1.wire`) and the page starts with it, as
+`examples/notes/sap1.isa` and `examples/screen/computer.isa` do. With one
+memory for program and data (the SAP-1), `.data` goes right after the
+program.
+
+To write the setup into the circuit itself, a **`cpu` statement** says it
+(Setup shows the line to add for what it found):
 
 ```
 cpu rv32im (isa = "rv32im.isa", text = instr,
@@ -665,7 +688,7 @@ cpu rv32im (isa = "rv32im.isa", text = instr,
 | setting | meaning |
 |---|---|
 | `isa` | the file, found next to the circuit like `file = "..."` (required) |
-| `text` | the rom (or ram) that holds the program, named by assigning it: `instr = rom(...)`; its words must be as wide as an instruction (required) |
+| `text` | the rom (or ram) that holds the program, named by assigning it: `instr = rom(...)`; its words must be `width` bits, as the `.isa` says (required) |
 | `text_base` | the address of its first word (0) |
 | `data` | the ram `.data` goes into, or its byte lanes, most significant first like `{a, b}` |
 | `data_base` | the address of the first byte of `.data` |
@@ -688,17 +711,19 @@ attribute wire_cpu of rtl : architecture is
   "isa=rv32im.isa; text=instr; data=ram; data_base=0x1000; pc=pc; halt=halted; regs=regs_%d";
 ```
 
-**In the playground's drawing**, click empty space: the Assembler box has
-the same settings, and **Instruction set** (above) opens the `.isa` file
-for a CPU of your own (it comes along in **Copy link**). An example that has
-a `cpu` statement brings its own `.isa` file.
+**In the playground**, **Instruction set** is in the toolbar only while the
+circuit is a CPU, and opens the page's Instruction set tab; what you write
+there comes along in **Copy link**. In the drawing, click empty space: for a
+CPU the Assembler box keeps the same settings as a `cpu` statement. An
+example that has a `cpu` statement or a `name.isa` brings its own
+instruction set.
 
 **The instruction set.** A `.isa` file is a header and statements, in any
 order; `#` starts a comment. `examples/riscv/rv32im.isa` is a whole one, and
 this is a CPU of four registers and one-byte instructions:
 
 ```
-isa "tiny8" (width = 8)                # width of an instruction; unit = 8 for byte addresses
+isa "tiny8" (width = 8)                # a word of the program memory; unit = 8 for byte addresses
 
 reg r[0..3]                            # r0 r1 r2 r3 (more names: names a, b, c;  alias fp = s0)
 format RR  = op:4 rd:2 rs:2            # bit fields, most significant first
@@ -722,9 +747,32 @@ times with different operands (the first that fits is used), and a pseudo
 can say `if v fits s12` or `if %lo(v) == 0` to choose; `func %hi(x) = ...`
 defines functions to use in programs as `%hi(label)`. Programs have the
 sections `.text` and `.data`, labels, `.equ`, `.align`, `.space`, `.ascii`,
-`.asciz`, and the data directives the file gives with `data byte 1, half 2,
-word 4`. `src/wire_asm.js` is the assembler (the page and the tests use the
-same file); `wire --isa-json file.isa` prints a `.isa` as the tree it reads.
+`.asciz`, `.org`, and the data directives the file gives with `data byte 1,
+half 2, word 4`.
+
+**Instructions longer than a word** (an 8085 or a 6502 has 1, 2 and 3 byte
+instructions): a format may be any whole number of words. It is stored
+first field first, a word after the other, so an address that goes low byte
+first is written with slices:
+
+```
+isa "i8085" (width = 8)
+reg r[0..7]
+names b, c, d, e, h, l, m, a
+format N = op:8
+format A = op:8 a[7:0] a[15:8]          # 3 bytes: the opcode, then the address low byte first
+
+mov dst:reg, src:reg = N(op = 0x40 | (dst << 3) | src)   # a fixed field worked out from operands
+jmp a:u16            = A(op = 0xC3)
+```
+
+A relN operand counts from the instruction; with `rel = next` in the header
+it counts from the one after it (`bne loop` is `d0 fe` on a 6502).
+`tests/asm/i8085.isa` and `tests/asm/m6502.isa` are bigger pieces of both.
+
+`src/wire_asm.js` is the assembler (the page and the tests use the
+same file); `wire --isa-json file.isa` prints a `.isa` as the tree it reads,
+and `src/wire_isaparse.js` reads one into the same tree in the page.
 `tests/asm` checks it, and `tests/riscv` runs every RISC-V program in the
 circuit.
 

@@ -13,7 +13,15 @@
  * Values: 42, -7, 0x2A, 0b101, 'A', a label, label+4, %hi(label) ... whatever
  * the .isa defines with func. Directives: .text .data .ascii .asciz .string
  * .space .zero .align .equ .set .globl (ignored), and the ones the .isa gives
- * with `data` (.byte .half .word). The result has the shape rvasm.js had. */
+ * with `data` (.byte .half .word), and .org (the address from here on).
+ *
+ * An instruction is one word of the program memory (width bits), or several:
+ * a format may be any whole number of words wide (an 8085 or a 6502 has 1, 2
+ * and 3 byte instructions). Such an instruction is stored first field first,
+ * one word after the other, so a little-endian address is written
+ * addr[7:0] addr[15:8]. Addresses count in units (unit bits, the width if not
+ * given); a relN operand is the distance from the instruction, or from the one
+ * after it with rel = next in the header. The result has the shape rvasm.js had. */
 "use strict";
 const WireAsm = (() => {
 
@@ -191,6 +199,8 @@ function load(tree) {
     }
   }
   if (!isa.unit) isa.unit = isa.width;
+  if (!(isa.width > 0) || !(isa.unit > 0) || isa.width % isa.unit) throw new AsmError(`the header: width = ${isa.width} is not a whole number of units (unit = ${isa.unit})`);
+  if (isa.rel !== undefined && isa.rel !== "this" && isa.rel !== "next") throw new AsmError(`the header: rel is this (from the instruction) or next (from the one after it), not ${isa.rel}`);
   isa.regbits = Math.max(1, Math.ceil(Math.log2(isa.nreg || 2)));
   isa.iunits = isa.width / isa.unit;
   /* check every instruction against its format now, so a mistake in the .isa is found at once */
@@ -213,10 +223,14 @@ function checkPseudo(isa, e) {
 function check(isa, e) {
   const f = isa.formats.get(e.format);
   if (!f) fail(`${e.op}: there is no format ${e.format}`);
-  if (f.width !== isa.width) fail(`${e.op}: format ${f.name} is ${f.width} bits, the instruction is ${isa.width}`);
+  if (!f.width || f.width % isa.width) fail(`${e.op}: format ${f.name} is ${f.width} bits, the instruction is ${isa.width} (or a whole number of ${isa.width}-bit words)`);
   const given = new Map();
   for (const o of e.pattern) { given.set(o.name, o.kind); if (o.mem) given.set(o.mem.name, o.mem.kind); }
-  for (const a of e.assigns) { if (given.has(a.name)) fail(`${e.op}: ${a.name} is both an operand and fixed`); given.set(a.name, null); }
+  /* a fixed field may be worked out from operands: op = 0x40 | (d << 3) | s */
+  const used = new Set();
+  const refs = x => { if (!x) return; if (x.k === "s") used.add(x.name); refs(x.a); refs(x.b); (x.args || []).forEach(refs); };
+  for (const a of e.assigns) { if (given.has(a.name)) fail(`${e.op}: ${a.name} is both an operand and fixed`); refs(a.e); }
+  for (const a of e.assigns) given.set(a.name, null);
   for (const [n, k] of [...given]) if (k && k.type === "any") given.delete(n);
   const seen = new Set();
   for (const fl of f.fields) {
@@ -227,7 +241,7 @@ function check(isa, e) {
     if (k && k.type === "reg" && isa.regbits > span) fail(`${e.op}: register ${fl.name} needs ${isa.regbits} bits, the field has ${span}`);
     if (k && k.type !== "reg" && bitsOf(k) > span) fail(`${e.op}: ${fl.name} is ${bitsOf(k)} bits, the field only holds ${span}`);
   }
-  for (const n of given.keys()) if (!seen.has(n)) fail(`${e.op}: ${n} is not a field of format ${f.name}`);
+  for (const n of given.keys()) if (!seen.has(n) && !used.has(n)) fail(`${e.op}: ${n} is not a field of format ${f.name}`);
 }
 
 /* ---- assembling --------------------------------------------------------- */
@@ -381,8 +395,10 @@ function assemble(isa, src, opts = {}) {
   const paren = t => /^[\w.$]+$/.test(t) ? t : "(" + t + ")";
 
   /* one instruction or pseudo-instruction -> its words */
+  let lastSizes = [];
   function instr(op, args, key, depth) {
     if (depth > 4) fail("pseudo-instructions nest too deeply");
+    if (depth === 0) lastSizes = [];
     const { e, bind, text } = pick(op, args, key, pc);
     if (e.pseudo) {
       const words = [];
@@ -394,18 +410,21 @@ function assemble(isa, src, opts = {}) {
       });
       return words;
     }
-    return [encode(e, bind, args)];
+    const w = encode(e, bind, args);
+    lastSizes.push(w.length);
+    return w;
   }
 
   function encode(e, bind, args) {
     const f = isa.formats.get(e.format), vals = new Map();
+    const words = f.width / isa.width;
     for (const o of e.pattern) {
       const put = (name, kind, b) => {
         if (kind.type === "any") return;
         if (kind.type === "reg") { vals.set(name, b); return; }
         let v = val(b.src);
         if (kind.type === "rel") {
-          v -= pc;
+          v -= pc + (isa.rel === "next" ? words * U : 0);
           if (pass === 2) {
             if (v % kind.align) fail(kind.align === 2 ? "a jump target must be at an even address" : `a jump target must be at an address that is a multiple of ${kind.align}`);
             const lo = -(2 ** (kind.bits - 1)), hi = 2 ** (kind.bits - 1) - kind.align;
@@ -422,7 +441,7 @@ function assemble(isa, src, opts = {}) {
       put(o.name, o.kind, bind.get(o.name));
       if (o.mem) put(o.mem.name, o.mem.kind, bind.get(o.mem.name));
     }
-    for (const a of e.assigns) vals.set(a.name, evalE(a.e));
+    for (const a of e.assigns) vals.set(a.name, evalE(a.e, vals));
     let word = 0n;
     for (const fl of f.fields) {
       const v = BigInt.asUintN(f.spans.get(fl.name) || fl.width, BigInt(Math.trunc(vals.get(fl.name))));
@@ -431,19 +450,46 @@ function assemble(isa, src, opts = {}) {
       else { part = 0n; for (const [hi, lo] of fl.slices) part = (part << BigInt(hi - lo + 1)) | ((v >> BigInt(lo)) & ((1n << BigInt(hi - lo + 1)) - 1n)); }
       word = (word << BigInt(fl.width)) | part;
     }
-    return Number(word);
+    /* first field first: the most significant word goes in first */
+    const out = [], wb = BigInt(isa.width), wm = (1n << wb) - 1n;
+    for (let k = words - 1; k >= 0; k--) out.push(Number((word >> (wb * BigInt(k))) & wm));
+    return out;
   }
 
+  /* .data holds units (bytes, when unit is 8) */
+  const umask = isa.unit >= 32 ? 0xFFFFFFFF : 2 ** isa.unit - 1, udig = Math.ceil(isa.unit / 4);
   const emitData = (bytes, ln, srcText) => {
     if (pass === 2) {
-      listing.push({ line: ln, sec: "data", addr: pc, hex: bytes.slice(0, 8).map(b => (b & 255).toString(16).padStart(2, "0")).join(" ") + (bytes.length > 8 ? " …" : ""), src: srcText });
-      bytes.forEach((b, i) => { data[pc - dataBase + i] = b & 255; });
+      listing.push({ line: ln, sec: "data", addr: pc, hex: bytes.slice(0, 8).map(b => ((b & umask) >>> 0).toString(16).padStart(udig, "0")).join(" ") + (bytes.length > 8 ? " …" : ""), src: srcText });
+      bytes.forEach((b, i) => { data[pc - dataBase + i] = (b & umask) >>> 0; });
     }
     pc += bytes.length;
   };
-  const hexw = w => (w >>> 0).toString(16).padStart(isa.width / 4, "0");
+  const hexw = w => (w >>> 0).toString(16).padStart(Math.ceil(isa.width / 4), "0");
+  /* a value as `size` units, in the order of endian */
+  const toUnits = (v, size) => {
+    const out = [], ub = BigInt(isa.unit), big = BigInt.asUintN(size * isa.unit, BigInt(Math.trunc(v)));
+    for (let i = 0; i < size; i++) {
+      const k = isa.endian === "big" ? size - 1 - i : i;
+      out.push(Number((big >> (ub * BigInt(k))) & BigInt(umask)));
+    }
+    return out;
+  };
+  /* units -> words of the program memory, U units each, in the order of endian */
+  const toWords = units => {
+    const out = [];
+    for (let i = 0; i < units.length; i += U) {
+      let w = 0n;
+      for (let j = 0; j < U; j++) {
+        const k = isa.endian === "big" ? j : U - 1 - j;
+        w = (w << BigInt(isa.unit)) | BigInt(units[i + k] || 0);
+      }
+      out.push(Number(w));
+    }
+    return out;
+  };
   let padWord = 0;
-  try { pass = 2; pc = 0; symbols.clear(); padWord = instr("nop", [], "nop", 0)[0] >>> 0; } catch (x) { padWord = 0; }
+  try { pass = 2; pc = 0; symbols.clear(); const nw = instr("nop", [], "nop", 0); padWord = nw.length === 1 ? nw[0] >>> 0 : 0; } catch (x) { padWord = 0; }
 
   for (pass = 1; pass <= 2; pass++) {
     sec = "text"; text = []; data = []; listing = [];
@@ -466,6 +512,13 @@ function assemble(isa, src, opts = {}) {
           switch (op) {
           case ".text": case ".data": swap(op.slice(1)); break;
           case ".globl": case ".global": case ".section": case ".type": case ".size": break;
+          case ".org": {
+            if (a.length !== 1) fail("expected .org address");
+            const v = val(a[0], true);
+            if (sec === "text" && (v - textBase) % U) fail(`.org in .text must be on a whole word (a multiple of ${U} from ${textBase})`);
+            if (v < (sec === "text" ? textBase : dataBase)) fail(`.org ${a[0]} is before the start of .${sec} (${sec === "text" ? textBase : dataBase})`);
+            pc = v; break;
+          }
           case ".equ": case ".set":
             if (a.length !== 2) fail(`expected ${op} NAME, value`);
             if (pass === 1) symbols.set(a[0], val(a[1], true)); break;
@@ -493,10 +546,15 @@ function assemble(isa, src, opts = {}) {
           default: {
             if (!isa.data.has(op)) fail(`there is no directive called ${op}`);
             const size = isa.data.get(op), bytes = [];
-            a.forEach(x => { const v = val(x); for (let i = 0; i < size; i++) bytes.push(isa.endian === "big" ? (v >>> (8 * (size - 1 - i))) & 255 : (v >>> (8 * i)) & 255); });
+            a.forEach(x => bytes.push(...toUnits(val(x), size)));
             if (sec === "text") {
-              if (size !== U) fail(`${op} goes in .data; .text holds words`);
-              a.forEach(x => { const v = val(x) >>> 0; if (pass === 2) { text[(pc - textBase) / U] = v; listing.push({ line: ln, sec: "text", addr: pc, hex: hexw(v), src: srcText }); } pc += U; });
+              if (size % U) fail(`${op} goes in .data; .text holds words (${U} unit${U === 1 ? "" : "s"} each)`);
+              const ws = toWords(bytes);
+              if (pass === 2) {
+                ws.forEach((w, i) => { text[(pc - textBase) / U + i] = w >>> 0; });
+                listing.push({ line: ln, sec: "text", addr: pc, hex: ws.slice(0, 8).map(hexw).join(" ") + (ws.length > 8 ? " …" : ""), src: srcText });
+              }
+              pc += U * ws.length;
             } else emitData(bytes, ln, srcText);
           }
           }
@@ -504,10 +562,16 @@ function assemble(isa, src, opts = {}) {
         }
         if (sec !== "text") fail("instructions go in .text");
         const words = instr(op, a, String(ln), 0);
-        if (pass === 2) words.forEach((w, i) => {
-          text[(pc - textBase) / U + i] = w >>> 0;
-          listing.push({ line: ln, sec: "text", addr: pc + U * i, hex: hexw(w), src: i ? "" : srcText });
-        });
+        if (pass === 2) {
+          words.forEach((w, i) => { text[(pc - textBase) / U + i] = w >>> 0; });
+          /* one row an instruction; a pseudo-instruction that becomes several gets a row each */
+          const sizes = lastSizes.length ? lastSizes : [words.length];
+          let at = 0;
+          sizes.forEach((n, k) => {
+            listing.push({ line: ln, sec: "text", addr: pc + U * at, hex: words.slice(at, at + n).map(hexw).join(" "), src: k ? "" : srcText });
+            at += n;
+          });
+        }
         pc += U * words.length;
       } catch (e) {
         if (!(e instanceof AsmError)) throw e;

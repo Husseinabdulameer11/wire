@@ -1,0 +1,32 @@
+# i8085 - part of the Intel 8085, to check instructions of more than one
+# word: 1, 2 and 3 bytes, a 16-bit address stored low byte first, and
+# registers that go into the opcode itself (mov d, s is 01 ddd sss).
+
+isa "i8085" (width = 8)
+
+reg r[0..7]
+names b, c, d, e, h, l, m, a
+alias sp = 6            # lxi sp: register pair 3, as 6 >> 1
+data byte 1, word 2
+
+format N = op:8
+format I = op:8 v:8
+format A = op:8 a[7:0] a[15:8]
+
+nop                = N(op = 0x00)
+hlt                = N(op = 0x76)
+mov  dst:reg, src:reg = N(op = 0x40 | (dst << 3) | src)
+mvi  dst:reg, v:b8 = I(op = 0x06 | (dst << 3))
+add  src:reg       = N(op = 0x80 | src)
+sub  src:reg       = N(op = 0x90 | src)
+inr  dst:reg       = N(op = 0x04 | (dst << 3))
+dcr  dst:reg       = N(op = 0x05 | (dst << 3))
+lxi  p:reg, a:b16  = A(op = 0x01 | ((p >> 1) << 4))
+lda  a:u16         = A(op = 0x3A)
+sta  a:u16         = A(op = 0x32)
+jmp  a:u16         = A(op = 0xC3)
+jnz  a:u16         = A(op = 0xC2)
+jz   a:u16         = A(op = 0xCA)
+call a:u16         = A(op = 0xCD)
+ret                = N(op = 0xC9)
+out  v:u8          = I(op = 0xD3)

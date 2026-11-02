@@ -1,0 +1,24 @@
+# computer.isa - the instructions of the computer that draws, as computer.vhd
+# lists them: 8 bits, the opcode in the high 4 and an operand in the low 4.
+# The program is in the rom (16 words), the data in the 16-byte ram.
+
+isa "computer" (width = 8)
+
+data byte 1
+
+format M = op:4 arg:4
+
+nop          = M(op = 0x0, arg = 0)
+lda arg:u4   = M(op = 0x1)      # A = ram[a]
+add arg:u4   = M(op = 0x2)      # A = A + ram[a]
+sub arg:u4   = M(op = 0x3)      # A = A - ram[a]
+sta arg:u4   = M(op = 0x4)      # ram[a] = A
+ldi arg:u4   = M(op = 0x5)      # A = n
+jmp arg:u4   = M(op = 0x6)
+jz  arg:u4   = M(op = 0x7)      # if the last result was 0
+out          = M(op = 0x8, arg = 0)
+jc  arg:u4   = M(op = 0x9)      # if the last sub borrowed
+pix arg:u3   = M(op = 0xA)      # pixel A (high 4 bits y, low 4 x) = colour c (red green blue)
+adi arg:u4   = M(op = 0xB)      # A = A + n
+sbi arg:u4   = M(op = 0xC)      # A = A - n
+hlt          = M(op = 0xF, arg = 0)

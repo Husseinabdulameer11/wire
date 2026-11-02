@@ -1,0 +1,16 @@
+# m6502 - a little of the 6502: branches count from the next instruction
+# (rel = next), and lda picks zero page or absolute by the size of its address.
+
+isa "m6502" (width = 8, rel = next)
+
+data byte 1, word 2
+
+format N = op:8
+format B = op:8 v:8
+format W = op:8 a[7:0] a[15:8]
+
+nop             = N(op = 0xEA)
+lda  v:u8       = B(op = 0xA5)   if v fits u8
+lda  a:u16      = W(op = 0xAD)
+bne  v:rel8     = B(op = 0xD0)
+jmp  a:u16      = W(op = 0x4C)

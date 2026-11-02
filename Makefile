@@ -96,7 +96,7 @@ build/isa_grammar.h: src/isa.gram $(GRAMGEN) | need-gram build
 	$(GRAMGEN) src/isa.gram isa build
 
 # the HTML viewer, baked into the binary as a string
-build/wire_view.h: src/wire_view.html src/wire_sim.js src/wire_inside.js src/wire_asm.js src/wire_asmpanel.js $(EMBED)
+build/wire_view.h: src/wire_view.html src/wire_sim.js src/wire_inside.js src/wire_asm.js src/wire_isaparse.js src/wire_cpu.js src/wire_asmpanel.js $(EMBED)
 	$(EMBED) src/wire_view.html wire_view > $@
 
 $(WIRE): $(SRC) src/wire_vhdl.c src/wire_vhdl_in.c build/wire_grammar.h build/vhdl_grammar.h build/isa_grammar.h build/wire_view.h $(GRAM_LIB) | need-gram

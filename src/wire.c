@@ -1861,10 +1861,33 @@ static void jopt_str(const char *key, const gram_node *v)
     else jstr(v->text, (int)v->len);
 }
 
+/* a circuit with no cpu statement: name.isa next to it is the instruction set
+ * the page starts with, when the page finds a CPU in it (wire_cpu.js) */
+static void write_isa_next(void)
+{
+    size_t l = strlen(src_name), n;
+    char *a = (char *)malloc(l + 8), *dot = NULL, *p, *t;
+    if (!a) return;
+    strcpy(a, src_name);
+    for (p = a; *p; p++) if (*p == '.') dot = p; else if (*p == '/' || *p == '\\') dot = NULL;
+    if (dot) *dot = 0;
+    strcat(a, ".isa");
+    t = read_file(a, &n);
+    if (t) {
+        fputs(",\"isaNext\":{\"file\":", jf);
+        jcstr(base_name(a, 1));
+        fputs(",\"source\":", jf);
+        jstr(t, (int)n);
+        fputc('}', jf);
+        free(t);
+    }
+    free(a);
+}
+
 static void write_cpu(void)
 {
     gram_node *v;
-    if (!cpu_stmt) return;
+    if (!cpu_stmt) { write_isa_next(); return; }
     fputs(",\"cpu\":{\"name\":", jf);
     jstr(cpu_stmt->child->text, (int)cpu_stmt->child->len);
     fprintf(jf, ",\"line\":%d,\"unit\":%d,\"width\":%d,\"isa\":{\"file\":", line_of(cpu_stmt), isa_unit, isa_width);

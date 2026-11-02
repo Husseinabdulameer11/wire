@@ -1,0 +1,21 @@
+# sap1.isa - the instructions of the SAP-1 (Malvino), as the control unit
+# of sap1.wire decodes them: the high nibble of a word is the opcode, the
+# low nibble an address in the 16-byte memory. The circuit has no cpu
+# statement (its memory is inside a chip): the page finds the CPU by itself
+# and starts with this file because it is next to the circuit.
+#
+# Programs and their data share the one memory, so .data goes right after
+# the program.
+
+isa "sap1" (width = 8)
+
+data byte 1
+
+format M = op:4 addr:4
+format N = op:4 pad:4
+
+lda addr:u4 = M(op = 0b0000)            # A = memory[addr]
+add addr:u4 = M(op = 0b0001)            # A = A + memory[addr]
+sub addr:u4 = M(op = 0b0010)            # A = A - memory[addr]
+out         = N(op = 0b1110, pad = 0)   # OUT = A
+hlt         = N(op = 0b1111, pad = 0)   # stop the clock

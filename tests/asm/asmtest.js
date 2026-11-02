@@ -149,6 +149,118 @@ const run = (...args) => {   /* wire's stdout is CR LF on Windows (text mode): l
   check(w.status === 0 && /^cpu rv32im \(isa = "rv32im\.isa", text = instr, data = \{ram_b24, ram_b16, ram_b8, ram_b0\}, data_base = 0x1000, pc = pc_i, halt = halted_i, regs = "regs_%d"\)$/.test(back),
         "rv32im: the cpu statement comes back from VHDL (the signals have their VHDL names)", back + w.stderr);
 }
+/* ---- the page reads a .isa itself (wire_isaparse.js): the same tree as wire's, every file */
+const WireIsaParse = require(path.join(root, "src", "wire_isaparse.js"));
+const WireCpu = require(path.join(root, "src", "wire_cpu.js"));
+const walk = (d, keep) => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
+  e.isDirectory() ? walk(path.join(d, e.name), keep) : keep(e.name) ? [path.join(d, e.name)] : []);
+for (const f of ["examples", "tests"].flatMap(d => walk(path.join(root, d), n => n.endsWith(".isa")))) {
+  const c = spawnSync(wire, ["--isa-json", f], { encoding: "utf8", maxBuffer: 1 << 26 });
+  let js = null, why = "";
+  try { js = WireIsaParse.parse(fs.readFileSync(f, "utf8")); } catch (e) { why = e.message; }
+  const rel = path.relative(root, f);
+  if (c.status === 0) check(js && same(JSON.parse(c.stdout), js), `${rel}: the page reads the tree wire reads`, why);
+  else check(!js, `${rel}: the page finds the mistake wire finds`, c.stderr);
+}
+{   /* and says where a mistake is */
+  let e = null;
+  try { WireIsaParse.parse("isa \"t\" (width = 8)\nreg r[0..3\n"); } catch (x) { e = x; }
+  check(e && e.line === 2 && /expected/.test(e.message), "a syntax mistake read in the page has its line", e && e.message);
+}
+const loadText = t => WireAsm.load(WireIsaParse.parse(t));
+const bytes = ws => ws.map(w => (w >>> 0).toString(16).padStart(2, "0")).join(" ");
+
+/* ---- instructions of more than one word: part of an 8085 */
+{
+  const i85 = loadText(fs.readFileSync(path.join(__dirname, "i8085.isa"), "utf8"));
+  const r = WireAsm.assemble(i85, `        lxi  h, 0x2000
+start:  mvi  a, 5
+loop:   dcr  a
+        jnz  loop
+        sta  0x2000
+        mov  b, a
+        lxi  sp, 0x20FF
+        hlt
+`);
+  check(!r.errors.length, "i8085: a program assembles", JSON.stringify(r.errors));
+  check(bytes(r.text) === "21 00 20 3e 05 3d c2 05 00 32 00 20 47 31 ff 20 76", "i8085: 1, 2 and 3 byte instructions, addresses low byte first", bytes(r.text));
+  check(same(r.listing.map(l => [l.addr, l.hex]), [[0, "21 00 20"], [3, "3e 05"], [5, "3d"], [6, "c2 05 00"], [9, "32 00 20"], [12, "47"], [13, "31 ff 20"], [16, "76"]]),
+        "i8085: one listing row an instruction, at its address", JSON.stringify(r.listing.map(l => [l.addr, l.hex])));
+  check(r.symbols.get("loop") === 5, "i8085: labels count bytes across long instructions");
+  const fwd = WireAsm.assemble(i85, "jmp end\nnop\nend: hlt\n");
+  check(bytes(fwd.text) === "c3 04 00 00 76", "i8085: a forward jump over a long instruction", bytes(fwd.text));
+  const e = WireAsm.assemble(i85, "mvi a, 300\n");
+  check(/does not fit in 8 bits/.test((e.errors[0] || {}).msg || ""), "i8085: a byte that is too big", JSON.stringify(e.errors));
+}
+/* ---- branches from the next instruction, and choosing by size: part of a 6502 */
+{
+  const m65 = loadText(fs.readFileSync(path.join(__dirname, "m6502.isa"), "utf8"));
+  const r = WireAsm.assemble(m65, ".equ zp, 0x10\nloop: bne loop\n lda zp\n lda far\n nop\nfar: jmp loop\n.data\nv: .word 0x1234\n");
+  check(!r.errors.length && bytes(r.text) === "d0 fe a5 10 ad 08 00 ea 4c 00 00", "m6502: bne loop is d0 fe; lda picks zero page, and absolute for a label not known yet", bytes(r.text) + JSON.stringify(r.errors));
+  check(bytes(r.data) === "34 12", "m6502: .word, low byte first", bytes(r.data));
+  const o = WireAsm.assemble(m65, "nop\n.org 0x10\nhere: nop\n");
+  check(o.symbols.get("here") === 0x10 && o.text.length === 0x11 && o.text[0x10] === 0xEA, ".org moves the program on", JSON.stringify([...o.symbols]));
+}
+/* ---- a fixed field worked out from operands, and its mistakes */
+{
+  const t = loadText("isa \"t\" (width = 8)\nreg r[0..7]\nformat N = op:8\nmov d:reg, s:reg = N(op = 0x40 | (d << 3) | s)\n");
+  check(bytes(WireAsm.assemble(t, "mov r7, r1\n").text) === "79", "an opcode made from the register numbers", bytes(WireAsm.assemble(t, "mov r7, r1\n").text));
+  let msg = "loaded";
+  try { loadText("isa \"t\" (width = 8)\nformat W = op:8 a:8\nx = W(op = 1, a = 0)\n"); msg = "loaded"; } catch (e) { msg = e.message; }
+  check(msg === "loaded", "a two-word format with an 8-bit width", msg);
+  try { loadText("isa \"t\" (width = 8)\nformat W = op:8 a:4\nx = W(op = 1, a = 0)\n"); } catch (e) { msg = e.message; }
+  check(/12 bits, the instruction is 8 \(or a whole number of 8-bit words\)/.test(msg), "a format that is not whole words", msg);
+  try { loadText("isa \"t\" (width = 8, rel = after)\nformat W = op:8\nx = W(op = 1)\n"); } catch (e) { msg = e.message; }
+  check(/rel is this .* or next/.test(msg), "rel = this or next", msg);
+}
+
+/* ---- finding a CPU in a circuit (wire_cpu.js): the CPUs, and only those */
+{
+  const cpus = new Map();
+  for (const f of walk(path.join(root, "examples"), n => /\.(wire|vhd)$/.test(n)).filter(f => !/[\\/]lib[\\/]/.test(f))) {
+    const j = spawnSync(wire, ["--json", f], { encoding: "utf8", maxBuffer: 1 << 28 });
+    if (j.status !== 0) continue;
+    const r = WireCpu.detect(JSON.parse(j.stdout));
+    if (r) cpus.set(path.relative(path.join(root, "examples"), f).split(path.sep).join("/"), r);
+  }
+  const want = ["notes/sap1.vhd", "notes/sap1.wire", "riscv/rv32im.vhd", "riscv/rv32im.wire", "screen/computer.vhd", "screen/computer.wire"];
+  check(same([...cpus.keys()].sort(), want), "the CPUs among the examples are found, and nothing else is", [...cpus.keys()].sort().join(" "));
+  const rv = cpus.get("riscv/rv32im.wire"), D = JSON.parse(execFileSync(wire, ["--json", path.join(root, "examples", "riscv", "rv32im.wire")], { maxBuffer: 1 << 28 }).toString());
+  check(rv && D.nodes[rv.text].name === "instr" && same(rv.data.map(j => D.nodes[j].name), ["ram_b24", "ram_b16", "ram_b8", "ram_b0"]) && rv.pc === "pc" && rv.halt === "halted" && rv.regs === "regs_%d",
+        "rv32im: the program rom, the data lanes (top first), pc, halt and the registers are found", JSON.stringify(rv && { ...rv, memories: undefined }));
+  const sap = cpus.get("notes/sap1.wire");
+  check(sap && sap.pc === "pc" && sap.halt === "halted" && !sap.data.length, "sap1: one memory inside a chip, its pc and halt", JSON.stringify(sap && { ...sap, memories: undefined }));
+}
+/* ---- the instruction set the page starts a CPU with loads, whatever its width */
+for (const w of [4, 8, 12, 16, 24, 32]) for (const regs of ["", "r%d"]) {
+  const D = { title: "t", nodes: [], nets: regs ? [0, 1, 2, 3].map(i => ({ name: "r" + i, w: 8 })) : [] };
+  let msg = "ok";
+  try { WireAsm.load(WireIsaParse.parse(WireCpu.starter(D, { regs }, w))); } catch (e) { msg = e.message; }
+  check(msg === "ok", `the first instruction set for a ${w}-bit CPU${regs ? " with registers" : ""} loads`, msg);
+}
+/* ---- a CPU with no cpu statement: name.isa next to it is in the page, and a program runs */
+{
+  const sapFile = path.join(root, "examples", "notes", "sap1.wire");
+  const D = JSON.parse(execFileSync(wire, ["--json", sapFile], { maxBuffer: 1 << 28 }).toString());
+  check(D.isaNext && D.isaNext.file === "sap1.isa" && /isa "sap1"/.test(D.isaNext.source), "sap1: sap1.isa next to it goes in the page", JSON.stringify(D.isaNext && D.isaNext.file));
+  const found = WireCpu.detect(D), isa = loadText(D.isaNext.source);
+  const r = WireAsm.assemble(isa, "lda x\nadd y\nout\nhlt\n.data\nx: .byte 7\ny: .byte 35\n", { textBase: 0, dataBase: 4 });
+  check(!r.errors.length && bytes(r.text.concat(r.data)) === "04 15 e0 f0 07 23", "sap1: the program and its data, one after the other", bytes(r.text.concat(r.data)));
+  /* run it in the circuit, as the page would after Assemble */
+  const WireSim = require(path.join(root, "src", "wire_sim.js"));
+  D.nodes[found.text].init = [[0, r.text.concat(r.data)]];
+  const sim = WireSim.createSync(D);
+  const mask = w => w >= 32 ? 0xFFFFFFFF : ((1 << w) >>> 0) - 1;
+  D.nets.forEach((n, i) => { sim.setV(i, 0); sim.setK(i, mask(n.w)); });
+  sim.simulate();
+  const net = name => D.nets.findIndex(n => n.name === name);
+  let c = 0;
+  for (; c < 400 && sim.v(net("halted")) !== 1; c++) sim.toggle(2);
+  check(sim.v(net("halted")) === 1 && sim.v(net("outp")) === 42, "sap1: 7 + 35 runs in the circuit, OUT is 42 and it halts", `outp ${sim.v(net("outp"))}, halted ${sim.v(net("halted"))} after ${c}`);
+  const pc4 = JSON.parse(execFileSync(wire, ["--json", path.join(root, "examples", "notes", "pc4.wire")], { maxBuffer: 1 << 28 }).toString());
+  check(pc4.isaNext === undefined && WireCpu.detect(pc4) === null, "pc4: no CPU, no instruction set");
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log(failures ? `asm: ${failures} of ${checks} checks failed` : `asm: all ${checks} checks pass`);
