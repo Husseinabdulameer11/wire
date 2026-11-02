@@ -60,6 +60,8 @@ body {
 /* the labels on the circuit are not text to select: a drag moves parts, never a selection */
 #sheet, #sheet * { -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
 #sheet.panning { cursor: grabbing; }
+#sheet.grab, #sheet.grab * { cursor: grab !important; }
+#sheet.grab.panning, #sheet.grab.panning * { cursor: grabbing !important; }
 .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
 
 /* the toolbar sits on the sheet like a strip of tape */
@@ -1447,6 +1449,22 @@ function load(V) {
 /* ============================================================ interaction */
 const pointers = new Map();
 let drag = null, pinch = null, selected = null, wiring = null;
+/* drawing: Space held makes a drag move the view; a tap of Space (no drag) still steps the clock */
+let spaceHeld = false, spacePanned = false;
+function spaceDown(e) {
+  e.preventDefault();
+  if (e.repeat || spaceHeld) return true;
+  spaceHeld = true; spacePanned = false;
+  sheet.classList.add("grab");
+  return true;
+}
+function spaceUp(noStep) {
+  if (!spaceHeld) return false;
+  spaceHeld = false;
+  sheet.classList.remove("grab");
+  if (!spacePanned && !noStep && clocks.length) stepClock();
+  return true;
+}
 /* drawing: the parts picked (a box, shift-click, ctrl-a), a wire picked, where the pointer is (for paste) */
 const picked = new Set();
 let pickedWire = null, pointerWorld = null;
@@ -1487,6 +1505,12 @@ sheet.addEventListener("pointerdown", e => {
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), s: view.s, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, vx: view.x, vy: view.y };
     if (drag && drag.press) release(drag.node);
     drag = null; return;
+  }
+  if (EDIT && spaceHeld && e.button === 0) {
+    spacePanned = true;
+    drag = { pan: true, space: true, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false, target: e.target };
+    sheet.classList.add("panning");
+    return;
   }
   const pe = partOf(e.target);
   if (editing() && pe && e.target.dataset && e.target.dataset.pin) {
@@ -1593,6 +1617,7 @@ function endPointer(e) {
   }
   if (!drag) return;
   const d = drag; drag = null;
+  if (d.space) { if (d.moved) hostCall("viewMoved"); return; }
   if (d.box) {
     if (d.el) d.el.remove();
     if (d.moved && d.rect) {
@@ -1639,6 +1664,12 @@ sheet.addEventListener("pointerup", endPointer);
 sheet.addEventListener("pointercancel", endPointer);
 sheet.addEventListener("wheel", e => {
   e.preventDefault();
+  if (EDIT && !e.ctrlKey && !e.metaKey) {
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? sheet.clientHeight : 1;
+    const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * k, dy = (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * k;
+    view.x -= dx; view.y -= dy; applyView();
+    return;
+  }
   const f = Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0015)), s = Math.max(.2, Math.min(4, view.s * f));
   view.x = e.clientX - (e.clientX - view.x) * s / view.s;
   view.y = e.clientY - (e.clientY - view.y) * s / view.s;
@@ -2893,15 +2924,18 @@ $("tidy").onclick = () => {
   if (editing()) hostCall("movedAll", Object.fromEntries(V.items.filter(n => n.name).map(n => [n.name, [n.x, n.y]])));
 };
 addEventListener("resize", applyView);
+addEventListener("blur", () => spaceUp(true));
 /* with a keypad, the keys 0-9 and a-f press it */
 const keypad = nodes.find(n => n.kind === "keypad");
 const hexKey = e => /^[0-9a-f]$/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey ? parseInt(e.key, 16) : -1;
 addEventListener("keyup", e => {
+  if (EDIT && e.key === " ") { e.preventDefault(); spaceUp(); return; }
   if (keypad && sim && hexKey(e) >= 0 && (keypad.state & 16) && (keypad.state & 15) === hexKey(e)) { keypad.state &= 15; simulate(); }
 });
 addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return;
   if (keypad && sim && hexKey(e) >= 0) { if (!e.repeat) { keypad.state = 16 | hexKey(e); simulate(); } return; }
+  if (EDIT && e.key === " ") { spaceDown(e); return; }
   if (e.key === " " && clocks.length) { e.preventDefault(); stepClock(); }
   if (e.key === "f") fit();
   if (e.key === "Escape") {
@@ -2950,11 +2984,13 @@ function drawKey(e) {
 }
 /* the playground hands on the keys pressed while its focus is outside the page */
 window.wireDrawKey = e => {
+  if (EDIT && e.key === " ") return spaceDown(e);
   if (!editing()) return false;
   if (e.key === "Escape") { if (picked.size || pickedWire != null) { setPicks([]); select(null); return true; } return !!hostCall("disarm"); }
   if (e.key === "f" && !e.ctrlKey && !e.metaKey) { fit(); return true; }
   return drawKey(e);
 };
+window.wireDrawKeyUp = e => EDIT && e.key === " " ? spaceUp(!!e.noStep) : false;
 /* the picks of the last page, kept by the playground */
 function restorePicks() {
   if (!editing() || !EDIT.sel || !EDIT.sel.length) return;

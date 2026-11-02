@@ -245,7 +245,7 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
       <div class="parts" data-group="buses"></div>
       <h2 id="chips-h" hidden>Chips</h2>
       <div class="parts" data-group="chips"></div>
-      <p class="how" id="how"><b>Drag a part</b> onto the circuit (or tap it, then tap the circuit). <b>Drag from pin to pin</b> to wire them; drag from an input pin to empty space to unwire it (an unwired input reads 0). Click a part to change it. <b>Drag on empty space</b> to pick several (Shift-click adds one; right-drag moves the view), then drag them together; <b>Delete</b> or <b>Backspace</b> removes what is picked, a wire too. <b>Ctrl+C</b>, <b>V</b>, <b>D</b> copy, paste and duplicate; <b>Ctrl+Z</b> and <b>Ctrl+Shift+Z</b> undo and redo. Keys place parts: <b>A</b> AND, <b>O</b> OR, <b>N</b> NOT, <b>X</b> XOR, <b>I</b> input, <b>U</b> output, <b>L</b> LED, <b>C</b> clock, <b>B</b> button, <b>M</b> mux, <b>D</b> flip-flop, <b>T</b> counter, <b>K</b> constant, <b>S</b> split, <b>J</b> join, <b>H</b> hex digit.</p>
+      <p class="how" id="how"><b>Drag a part</b> onto the circuit (or tap it, then tap the circuit). <b>Drag from pin to pin</b> to wire them; drag from an input pin to empty space to unwire it (an unwired input reads 0). Click a part to change it. <b>Drag on empty space</b> to pick several (Shift-click adds one). <b>Space+drag</b>, two-finger scroll or right-drag moves the view; Ctrl+scroll or a pinch zooms, then drag them together; <b>Delete</b> or <b>Backspace</b> removes what is picked, a wire too. <b>Ctrl+C</b>, <b>V</b>, <b>D</b> copy, paste and duplicate; <b>Ctrl+Z</b> and <b>Ctrl+Shift+Z</b> undo and redo. Keys place parts: <b>A</b> AND, <b>O</b> OR, <b>N</b> NOT, <b>X</b> XOR, <b>I</b> input, <b>U</b> output, <b>L</b> LED, <b>C</b> clock, <b>B</b> button, <b>M</b> mux, <b>D</b> flip-flop, <b>T</b> counter, <b>K</b> constant, <b>S</b> split, <b>J</b> join, <b>H</b> hex digit.</p>
       <h2>Selected part</h2>
       <div id="props"><span class="how">Click a part in the circuit to rename it or change its size.</span></div>
       <div class="tools">
@@ -1877,6 +1877,13 @@ addEventListener("keydown", e => {
   try { const w = frames[front].contentWindow; if (w.wireDrawKey) done = w.wireDrawKey(e); } catch (err) {}
   if (!done && (e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
 });
+addEventListener("keyup", e => {
+  if (mode !== "draw" || e.key !== " ") return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable) return;
+  try { const w = frames[front].contentWindow; if (w.wireDrawKeyUp && w.wireDrawKeyUp(e)) e.preventDefault(); } catch (err) {}
+});
+/* the window loses the keys (another tab): Space is not held any more */
+addEventListener("blur", () => { try { const w = frames[front].contentWindow; if (w.wireDrawKeyUp) w.wireDrawKeyUp({ key: " ", noStep: true }); } catch (err) {} });
 
 /* ===================================== start: a shared link, what you had,
  * else a small drawing to begin from */
