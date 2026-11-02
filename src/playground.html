@@ -245,7 +245,7 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
       <div class="parts" data-group="buses"></div>
       <h2 id="chips-h" hidden>Chips</h2>
       <div class="parts" data-group="chips"></div>
-      <p class="how" id="how"><b>Drag a part</b> onto the circuit (or tap it, then tap the circuit). <b>Drag from pin to pin</b> to wire them; drag from an input pin to empty space to unwire it (an unwired input reads 0). Click a part to change it; <b>Delete</b> removes it.</p>
+      <p class="how" id="how"><b>Drag a part</b> onto the circuit (or tap it, then tap the circuit). <b>Drag from pin to pin</b> to wire them; drag from an input pin to empty space to unwire it (an unwired input reads 0). Click a part to change it. <b>Drag on empty space</b> to pick several (Shift-click adds one; right-drag moves the view), then drag them together; <b>Delete</b> or <b>Backspace</b> removes what is picked, a wire too. <b>Ctrl+C</b>, <b>V</b>, <b>D</b> copy, paste and duplicate; <b>Ctrl+Z</b> and <b>Ctrl+Shift+Z</b> undo and redo. Keys place parts: <b>A</b> AND, <b>O</b> OR, <b>N</b> NOT, <b>X</b> XOR, <b>I</b> input, <b>U</b> output, <b>L</b> LED, <b>C</b> clock, <b>B</b> button, <b>M</b> mux, <b>D</b> flip-flop, <b>T</b> counter, <b>K</b> constant, <b>S</b> split, <b>J</b> join, <b>H</b> hex digit.</p>
       <h2>Selected part</h2>
       <div id="props"><span class="how">Click a part in the circuit to rename it or change its size.</span></div>
       <div class="tools">
@@ -413,7 +413,9 @@ const ICONS = {
 /* ============================================================ the drawing
  * parts: { id, kind, name, x, y, bits?, n?, en?, rst?, cin? }
  * links: { from: { id, pin }, to: { id, pin } }, one per input pin */
-let model = null, undoStack = [];
+let model = null, undoStack = [], redoStack = [];
+let selectedNames = [];        /* the parts picked in the drawing (a box, shift-click), kept across pages */
+let clipboard = null;          /* parts copied in the drawing, and the wires between them */
 let selectedName = null, armed = null;
 const STARTER_DRAWING = () => ({
   title: "My circuit",
@@ -751,7 +753,9 @@ function show(html) {
     try { keep = frames[front].contentWindow.wireEditState ? frames[front].contentWindow.wireEditState() : {}; } catch (e) {}
     const sh = sheet(model);
     if (sh.tidy) keep = {};   /* a chip opened for the first time is laid out afresh */
-    const edit = { pos: sh.tidy ? {} : Object.fromEntries(sh.parts.map(p => [p.name, [p.x, p.y]])), view: keep.view || null, states: keep.states || {} };
+    const sel = selectedNames.length ? selectedNames : selectedName ? [selectedName] : [];
+    const edit = { pos: sh.tidy ? {} : Object.fromEntries(sh.parts.map(p => [p.name, [p.x, p.y]])), view: keep.view || null, states: keep.states || {},
+                   sel: sel.filter(n => sh.parts.some(p => p.name === n)) };
     html = html.replace("<head>", () => "<head><script>window.WIRE_EDIT=" + JSON.stringify(edit).replace(/</g, "\\u003c") + "<\/script>");
   }
   const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
@@ -777,6 +781,7 @@ function change(fn) {
   const before = clone(model);
   fn(model);
   undoStack.push(before);
+  redoStack = [];
   if (undoStack.length > 200) undoStack.shift();
   edited();
   persist();
@@ -786,8 +791,62 @@ function change(fn) {
 }
 function undo() {
   if (!undoStack.length) return;
+  redoStack.push(clone(model));
   model = undoStack.pop();
   edited(); persist(); showGen(); showProps(); compile();
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(clone(model));
+  model = redoStack.pop();
+  edited(); persist(); showGen(); showProps(); compile();
+}
+/* copy and paste in the drawing: the parts, and the wires that run between them */
+function copyParts(names) {
+  const sh = sheet(model), set = new Set(names);
+  const parts = sh.parts.filter(p => set.has(p.name)), ids = new Set(parts.map(p => p.id));
+  if (!parts.length) return false;
+  clipboard = { parts: clone(parts), links: clone(sh.links.filter(l => ids.has(l.from.id) && ids.has(l.to.id))) };
+  return true;
+}
+function pasteParts(x, y) {
+  if (!clipboard || !clipboard.parts.length) return;
+  const minX = Math.min(...clipboard.parts.map(p => p.x)), minY = Math.min(...clipboard.parts.map(p => p.y));
+  /* at the pointer, or a little to the right and below the copied parts */
+  /* at the pointer, or (duplicate) just below the copied parts, clear of them */
+  const maxY = Math.max(...clipboard.parts.map(p => p.y)), h = 60;
+  const dx = x != null ? x - minX : 0, dy = y != null ? y - minY : maxY - minY + h + 20;
+  const made = [];
+  change(m => {
+    const sh = sheet(m), idOf = new Map();
+    clipboard.parts.forEach(p => {
+      if (p.kind === "chip" && !((m.comps && m.comps[p.comp]) || (m.chips && m.chips[p.comp]))) return;   /* a chip this circuit does not have */
+      const q = clone(p);
+      q.id = sh.next++;
+      q.name = freshName(p.kind === "chip" ? "chip" : p.kind);
+      q.x = p.x + dx; q.y = p.y + dy;
+      idOf.set(p.id, q.id);
+      sh.parts.push(q);
+      made.push(q.name);
+    });
+    clipboard.links.forEach(l => {
+      if (!idOf.has(l.from.id) || !idOf.has(l.to.id)) return;
+      sh.links.push({ from: { id: idOf.get(l.from.id), pin: l.from.pin }, to: { id: idOf.get(l.to.id), pin: l.to.pin } });
+    });
+    selectedNames = made;
+    selectedName = made.length === 1 ? made[0] : null;
+  });
+}
+function removeParts(names) {
+  const sh = sheet(model), ids = new Set(sh.parts.filter(p => names.includes(p.name)).map(p => p.id));
+  if (!ids.size) return;
+  change(m => {
+    const s2 = sheet(m);
+    s2.parts = s2.parts.filter(q => !ids.has(q.id));
+    s2.links = s2.links.filter(l => !ids.has(l.from.id) && !ids.has(l.to.id));
+  });
+  selectedName = null; selectedNames = [];
+  showProps();
 }
 
 /* what the circuit page tells us (window.parent.wireCanvas) */
@@ -831,7 +890,7 @@ window.wireCanvas = {
       if (kind === "rom" || kind === "ram") { p.bits = 8; p.abits = 4; p.data = kind === "rom" ? "00" : ""; }
       if (kind === "screen") { p.bits = 1; p.abits = 10; p.sw = 32; p.data = ""; }
       sheet(m).parts.push(p);
-      selectedName = p.name;
+      selectedName = p.name; selectedNames = [p.name];
     });
   },
   tap(x, y) { if (!armed) return false; this.add(armed, x, y); return true; },
@@ -860,12 +919,12 @@ window.wireCanvas = {
   moved(name, x, y) {
     const p = partByName(name);
     if (!p || (p.x === x && p.y === y)) return;
-    undoStack.push(clone(model));
+    undoStack.push(clone(model)); redoStack = [];
     p.x = x; p.y = y;
     persist();
   },
   movedAll(pos) {
-    undoStack.push(clone(model));
+    undoStack.push(clone(model)); redoStack = [];
     sheet(model).parts.forEach(p => { if (pos[p.name]) { p.x = pos[p.name][0]; p.y = pos[p.name][1]; } });
     persist();
   },
@@ -878,8 +937,25 @@ window.wireCanvas = {
     setTimeout(() => goSheet(comp, [...path, comp]), 0);
     return true;
   },
-  remove(name) { removePart(name); },
+  remove(name) { selectedNames = []; removePart(name); },
+  removeMany(names) { removeParts(names); },
+  /* a wire picked in the drawing: every connection from that output */
+  removeWire(out) {
+    const fp = partByName(out.name);
+    if (!fp) return;
+    const pin = out.pin;
+    if (!sheet(model).links.some(l => l.from.id === fp.id && l.from.pin === pin)) return;
+    change(m => { const sh = sheet(m); sh.links = sh.links.filter(l => !(l.from.id === fp.id && l.from.pin === pin)); });
+  },
+  selectedMany(names) { selectedNames = names || []; },
+  copy(names) { copyParts(names); },
+  paste(x, y) { pasteParts(x, y); },
+  duplicate(names) { if (copyParts(names)) pasteParts(null, null); },
+  /* a letter picks a part to place, as the palette does; Escape puts it down */
+  arm(kind) { if (KINDS[kind] && KINDS[kind].group) { if (armed !== kind) arm(kind); } },
+  disarm() { if (!armed) return false; disarm(); return true; },
   undo() { undo(); },
+  redo() { redo(); },
   viewMoved() {}
 };
 function removePart(name) {
@@ -1791,11 +1867,15 @@ function pane(which) {
 $("tab-side").onclick = () => pane("side");
 $("tab-circuit").onclick = () => pane("circuit");
 
-/* undo also from here, unless typing */
+/* the drawing's keys work from here too (clicking the circuit leaves the focus here):
+ * the page does them (Delete, Backspace, copy, paste, letters for parts ...), unless typing */
 addEventListener("keydown", e => {
-  if (mode !== "draw" || !(e.ctrlKey || e.metaKey) || (e.key !== "z" && e.key !== "Z")) return;
-  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
-  e.preventDefault(); undo();
+  if (mode !== "draw") return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable) return;
+  if (document.querySelector("dialog[open]")) return;
+  let done = false;
+  try { const w = frames[front].contentWindow; if (w.wireDrawKey) done = w.wireDrawKey(e); } catch (err) {}
+  if (!done && (e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
 });
 
 /* ===================================== start: a shared link, what you had,

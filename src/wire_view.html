@@ -246,6 +246,8 @@ table.tt td.one { color: var(--on); font-weight: 500; }
 .part.selected .part-body, .part.selected .sel-ring { stroke: var(--hi); }
 .sel-ring { fill: none; stroke: transparent; stroke-width: 2; stroke-dasharray: 4 3; }
 .part.selected .sel-ring { stroke: var(--hi); }
+#selbox { fill: var(--hi-soft); fill-opacity: .35; stroke: var(--hi); stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; }
+.wire.picked { stroke: var(--hi) !important; stroke-width: 4.5; }
 .hit { cursor: pointer; }
 .part.chip { cursor: pointer; }
 .part.chip .part-body { stroke-width: 2; }
@@ -1445,13 +1447,35 @@ function load(V) {
 /* ============================================================ interaction */
 const pointers = new Map();
 let drag = null, pinch = null, selected = null, wiring = null;
+/* drawing: the parts picked (a box, shift-click, ctrl-a), a wire picked, where the pointer is (for paste) */
+const picked = new Set();
+let pickedWire = null, pointerWorld = null;
+function setPicks(list, quiet) {
+  picked.forEach(n => n.el.classList.remove("selected"));
+  picked.clear();
+  list.forEach(n => { if (n && n.name) { picked.add(n); n.el.classList.add("selected"); } });
+  pickWire(null);
+  if (selected && !picked.has(selected)) { selected.el.classList.remove("selected"); selected = null; }
+  if (picked.size === 1) { selected = [...picked][0]; markSource(selected.line); }
+  if (!quiet && editing()) {
+    hostCall("selectedMany", [...picked].map(n => n.name));
+    hostCall("selected", picked.size === 1 ? [...picked][0].name : null);
+  }
+}
+function pickWire(net) {
+  if (pickedWire != null && wireEls.get(pickedWire)) wireEls.get(pickedWire).classList.remove("picked");
+  pickedWire = net;
+  if (net != null && wireEls.get(net)) wireEls.get(net).classList.add("picked");
+}
+const pickedNames = () => [...picked].map(n => n.name);
 function partOf(t) { while (t && t !== sheet) { if (t.classList && t.classList.contains("part")) return t; t = t.parentNode; } return null; }
 
 /* no text selection or native drag starts on the circuit; a selection made
  * elsewhere (Source, VHDL) is dropped, so it is not dragged instead of the part */
 sheet.addEventListener("selectstart", e => e.preventDefault());
 sheet.addEventListener("dragstart", e => e.preventDefault());
-sheet.addEventListener("mousedown", e => { if (e.button === 0) e.preventDefault(); });
+sheet.addEventListener("mousedown", e => { if (e.button === 0 || (EDIT && e.button === 1)) e.preventDefault(); });
+sheet.addEventListener("contextmenu", e => { if (editing()) e.preventDefault(); });
 sheet.addEventListener("pointerdown", e => {
   try { const sel = window.getSelection(); if (sel && !sel.isCollapsed) sel.removeAllRanges(); } catch (err) {}
   sheet.setPointerCapture(e.pointerId);
@@ -1470,6 +1494,26 @@ sheet.addEventListener("pointerdown", e => {
     const n = V.items[+pe.dataset.id], [dir, i] = e.target.dataset.pin.split(":");
     const p = (dir === "in" ? n.g.ins : n.g.outs)[+i];
     wiring = { n, dir, i: +i, x: n.x + p.x, y: n.y + p.y, path: el("path", { id: "wiring" }, world), near: null };
+    return;
+  }
+  if (pe && editing() && e.button === 0) {
+    /* drawing: shift adds a part to the picked ones (or takes it out); a part not picked is picked alone */
+    const n = V.items[+pe.dataset.id], w = toWorld(e.clientX, e.clientY);
+    let toggled = false;
+    if (e.shiftKey && n.name) {
+      const list = [...picked];
+      if (picked.has(n)) list.splice(list.indexOf(n), 1); else list.push(n);
+      setPicks(list); toggled = true;
+    } else if (!picked.has(n)) setPicks([n]);
+    const group = [...picked].filter(m => m.name).map(m => ({ m, ox: w.x - m.x, oy: w.y - m.y }));
+    drag = { node: n, group, toggled, sx: e.clientX, sy: e.clientY, ox: w.x - n.x, oy: w.y - n.y, moved: false, target: e.target };
+    if (n.kind === "button") { drag.press = true; n.node.state = 1; simulate(); }
+    return;
+  }
+  if (!pe && editing() && e.pointerType === "mouse" && e.button === 0) {
+    /* drawing: a box on empty space picks what it touches; the middle or right button pans */
+    const w = toWorld(e.clientX, e.clientY);
+    drag = { box: true, add: e.shiftKey, wx: w.x, wy: w.y, sx: e.clientX, sy: e.clientY, moved: false, target: e.target, el: null };
     return;
   }
   if (pe) {
@@ -1501,11 +1545,28 @@ sheet.addEventListener("pointermove", e => {
     if (wiring.near !== dot) { if (wiring.near) wiring.near.classList.remove("near"); if (dot) dot.classList.add("near"); wiring.near = dot; }
     return;
   }
+  pointerWorld = toWorld(e.clientX, e.clientY);
   if (!drag) { hover(e); return; }
   const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
   if (!drag.moved && Math.hypot(dx, dy) < 6) return;
   drag.moved = true;
   if (drag.pan) { view.x = drag.vx + dx; view.y = drag.vy + dy; applyView(); return; }
+  if (drag.box) {
+    const w = toWorld(e.clientX, e.clientY);
+    if (!drag.el) drag.el = el("rect", { id: "selbox" }, world);
+    const x = Math.min(w.x, drag.wx), y = Math.min(w.y, drag.wy);
+    drag.el.setAttribute("x", x); drag.el.setAttribute("y", y);
+    drag.el.setAttribute("width", Math.abs(w.x - drag.wx)); drag.el.setAttribute("height", Math.abs(w.y - drag.wy));
+    drag.rect = { x, y, x2: Math.max(w.x, drag.wx), y2: Math.max(w.y, drag.wy) };
+    return;
+  }
+  if (drag.group) {   /* the picked parts move together */
+    const w = toWorld(e.clientX, e.clientY);
+    drag.group.forEach(({ m, ox, oy }) => { m.x = Math.round((w.x - ox) / 10) * 10; m.y = Math.round((w.y - oy) / 10) * 10; place(m); });
+    drawWires();
+    if (pickedWire != null) pickWire(pickedWire);
+    return;
+  }
   if (drag.press) { release(drag.node); drag.press = false; }
   const w = toWorld(e.clientX, e.clientY), n = drag.node;
   n.x = Math.round((w.x - drag.ox) / 10) * 10;
@@ -1532,6 +1593,29 @@ function endPointer(e) {
   }
   if (!drag) return;
   const d = drag; drag = null;
+  if (d.box) {
+    if (d.el) d.el.remove();
+    if (d.moved && d.rect) {
+      const r = d.rect, hit = V.items.filter(n => n.name && n.g && n.x < r.x2 && n.x + n.g.w > r.x && n.y < r.y2 && n.y + n.g.h > r.y);
+      setPicks(d.add ? [...new Set([...picked, ...hit])] : hit);
+      return;
+    }
+    /* a click on empty space: a part to place (the playground says so), a wire, or nothing */
+    const w = toWorld(e.clientX, e.clientY);
+    if (hostCall("tap", Math.round(w.x / 10) * 10, Math.round(w.y / 10) * 10)) return;
+    if (d.target.dataset && d.target.dataset.net != null) { setPicks([]); select(null); pickWire(+d.target.dataset.net); showTip(+d.target.dataset.net, e.clientX, e.clientY); return; }
+    setPicks([]); select(null);
+    return;
+  }
+  if (d.group) {
+    if (d.press) release(d.node);
+    if (d.moved) { hostCall("movedAll", Object.fromEntries(d.group.map(({ m }) => [m.name, [m.x, m.y]]))); return; }
+    if (d.toggled) return;
+    if (picked.size > 1 && !e.shiftKey) setPicks([d.node]);
+    e_x = e.clientX; e_y = e.clientY;
+    click(d.node, d.target);
+    return;
+  }
   if (d.press) release(d.node);
   if (d.moved) {
     if (!d.pan) { if (editing() && d.node.name) hostCall("moved", d.node.name, d.node.x, d.node.y); else save(); }
@@ -1610,6 +1694,11 @@ function click(n, target) {
   select(n);
 }
 function select(n) {
+  if (editing() && n !== selected) {
+    picked.forEach(m => { if (m !== n) m.el.classList.remove("selected"); });
+    picked.clear();
+    if (n && n.name) picked.add(n);
+  }
   if (selected) selected.el.classList.remove("selected");
   selected = n;
   if (editing()) hostCall("selected", n && n.name ? n.name : null);
@@ -2117,6 +2206,7 @@ async function openInside(node) {
   } finally { opening = false; }
 }
 function openView(id) {
+  picked.clear(); pickedWire = null;   /* the parts of another view */
   hideTip();
   if (selected) selected = null;
   $("valform").hidden = true;
@@ -2785,6 +2875,7 @@ WireSim.create(D).then(s => {
   });
   openView(0);
   simulate();
+  restorePicks();
   whenReady.splice(0).forEach(f => f(window.wirePage));
 }).catch(e => {
   const w = $("warn");
@@ -2818,10 +2909,57 @@ addEventListener("keydown", e => {
     else if (V.id !== 0) goUp();
     else select(null);
   }
-  if (editing() && (e.key === "Delete" || e.key === "Backspace") && selected && selected.name) { e.preventDefault(); hostCall("remove", selected.name); return; }
-  if (editing() && (e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey)) { e.preventDefault(); hostCall("undo"); return; }
+  if (editing() && drawKey(e)) return;
   if (e.key === "Backspace") goUp();
 });
+/* drawing in the playground: the keys. Delete or Backspace removes what is picked (parts or a
+ * wire), Ctrl+C / X / V / D copy, cut, paste and duplicate, Ctrl+A picks everything, Ctrl+Z and
+ * Ctrl+Shift+Z (or Ctrl+Y) undo and redo, and a letter picks a part to place: A AND, O OR, N NOT,
+ * X XOR, I input, U output, L LED, C clock, B button, M mux, D D flip-flop, K constant, S split,
+ * J join, H hex digit, T counter; Escape puts it down */
+const DRAW_KEYS = { a: "and", o: "or", n: "not", x: "xor", i: "input", u: "output", l: "led", c: "clock", b: "button",
+                    m: "mux", d: "dff", k: "const", s: "split", j: "join", h: "hex", t: "counter" };
+function drawKey(e) {
+  const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+  if (e.key === "Delete" || e.key === "Backspace") {
+    if (picked.size) { e.preventDefault(); hostCall("removeMany", pickedNames()); return true; }
+    if (pickedWire != null) {
+      const d = V.drv.get(pickedWire), n = d && V.items[d.node];
+      e.preventDefault();
+      if (n && n.name) hostCall("removeWire", pinRef(n, "out", d.port));
+      pickWire(null);
+      return true;
+    }
+    if (selected && selected.name) { e.preventDefault(); hostCall("remove", selected.name); return true; }
+    return e.key === "Delete";
+  }
+  if (mod && k === "z") { e.preventDefault(); hostCall(e.shiftKey ? "redo" : "undo"); return true; }
+  if (mod && k === "y") { e.preventDefault(); hostCall("redo"); return true; }
+  if (mod && k === "a") { e.preventDefault(); setPicks(V.items.filter(n => n.name)); return true; }
+  if (mod && (k === "c" || k === "x") && picked.size) {
+    e.preventDefault();
+    hostCall("copy", pickedNames());
+    if (k === "x") hostCall("removeMany", pickedNames());
+    return true;
+  }
+  if (mod && k === "v") { e.preventDefault(); const w = pointerWorld; hostCall("paste", w ? Math.round(w.x / 10) * 10 : null, w ? Math.round(w.y / 10) * 10 : null); return true; }
+  if (mod && k === "d" && picked.size) { e.preventDefault(); hostCall("duplicate", pickedNames()); return true; }
+  if (!mod && !e.altKey && !e.shiftKey && DRAW_KEYS[k] && !(keypad && hexKey(e) >= 0)) { e.preventDefault(); hostCall("arm", DRAW_KEYS[k]); return true; }
+  if (e.key === "Escape" && hostCall("disarm")) return true;
+  return false;
+}
+/* the playground hands on the keys pressed while its focus is outside the page */
+window.wireDrawKey = e => {
+  if (!editing()) return false;
+  if (e.key === "Escape") { if (picked.size || pickedWire != null) { setPicks([]); select(null); return true; } return !!hostCall("disarm"); }
+  if (e.key === "f" && !e.ctrlKey && !e.metaKey) { fit(); return true; }
+  return drawKey(e);
+};
+/* the picks of the last page, kept by the playground */
+function restorePicks() {
+  if (!editing() || !EDIT.sel || !EDIT.sel.length) return;
+  setPicks(V.items.filter(n => n.name && EDIT.sel.includes(n.name)), true);
+}
 /* ============================================================== add-ons
  * An example can bring a script of its own (name.addon.js next to
  * name.wire, put in the page by wire): an assembler for a computer, say.
