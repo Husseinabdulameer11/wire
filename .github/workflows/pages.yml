@@ -49,6 +49,7 @@ jobs:
         run: |
           make site GRAM=gram-src VERSION=${GITHUB_SHA::7}
           test -f build/site/playground.html
+          test -f build/site/exam.html
           test -f build/site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4

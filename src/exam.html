@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wire exercises</title>
+<meta name="description" content="Learn digital circuits and VHDL by doing: write the VHDL for each exercise, from a single gate to a UART, and Wire checks it in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+<style>
+/* the same paper, ink and signal colours as the playground */
+:root {
+  --paper: #f3f6f8; --grid: #dfe6ec; --ink: #1d2b3a; --ink-soft: #5b6b7c;
+  --panel: #ffffff; --line: #c9d3dc; --hi: #e09a12; --hi-soft: rgba(224,154,18,.18);
+  --on: #1fae4b; --on-soft: rgba(31,174,75,.12); --bad: #c8322b; --bad-soft: rgba(200,50,43,.10);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #121a23; --grid: #1a2430; --ink: #d4dde7; --ink-soft: #8797a8;
+    --panel: #18222d; --line: #2c3a4a; --hi: #f0b23a; --hi-soft: rgba(240,178,58,.2);
+    --on: #3ddc6f; --on-soft: rgba(61,220,111,.12); --bad: #ef5a52; --bad-soft: rgba(239,90,82,.14);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #121a23; --grid: #1a2430; --ink: #d4dde7; --ink-soft: #8797a8;
+  --panel: #18222d; --line: #2c3a4a; --hi: #f0b23a; --hi-soft: rgba(240,178,58,.2);
+  --on: #3ddc6f; --on-soft: rgba(61,220,111,.12); --bad: #ef5a52; --bad-soft: rgba(239,90,82,.14);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 15.5px/1.5 "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif; }
+code, pre, textarea, .mono { font-family: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace; }
+a { color: inherit; }
+button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-height: 36px; padding: 0 14px; cursor: pointer; }
+button:hover { background: var(--hi-soft); }
+button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 600; }
+button.primary:hover { box-shadow: 0 0 0 3px var(--hi-soft); background: var(--ink); }
+button:disabled { opacity: .55; cursor: default; }
+button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+
+header { display: flex; align-items: center; gap: 16px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 19px; margin: 0; font-weight: 600; }
+header h1 span { color: var(--ink-soft); font-weight: 400; }
+header nav { margin-left: auto; display: flex; gap: 16px; font-size: 14px; }
+header nav a { color: var(--ink-soft); }
+
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: calc(100vh - 57px); }
+aside { border-right: 1px solid var(--line); padding: 16px 14px 40px; background: var(--panel); }
+.level { margin-bottom: 18px; }
+#listfold > summary { display: none; }
+.level h2 { font-size: 15px; margin: 0 0 2px; display: flex; justify-content: space-between; align-items: baseline; }
+.level h2 .count, #listfold .count { font-weight: 400; font-size: 13px; color: var(--ink-soft); }
+.level p { margin: 0 0 6px; font-size: 13px; color: var(--ink-soft); line-height: 1.35; }
+.level ol { list-style: none; margin: 0; padding: 0; }
+.level li button { width: 100%; text-align: left; border: 0; background: none; border-radius: 5px; min-height: 32px; padding: 4px 8px; display: flex; gap: 8px; align-items: center; font-size: 14.5px; }
+.level li button:hover { background: var(--hi-soft); }
+.level li button[aria-current="true"] { background: var(--hi-soft); font-weight: 600; box-shadow: inset 3px 0 var(--hi); }
+.mark { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--line); flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.mark.done { background: var(--on); border-color: var(--on); color: #fff; }
+.mark.tried { border-color: var(--hi); }
+
+main { padding: 22px 28px 60px; max-width: 900px; width: 100%; }
+.crumb { font-size: 13px; color: var(--ink-soft); margin-bottom: 2px; }
+main h2 { font-size: 26px; margin: 0 0 12px; line-height: 1.2; }
+.question p { margin: 0 0 10px; }
+.question ul, .question ol { margin: 0 0 10px; padding-left: 22px; }
+.question li { margin: 2px 0; }
+.question code { background: var(--hi-soft); padding: 1px 4px; border-radius: 3px; font-size: 13.5px; }
+.question pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 13.5px; line-height: 1.45; margin: 0 0 12px; }
+.question pre code { background: none; padding: 0; }
+table.t { border-collapse: collapse; margin: 4px 0 14px; font-size: 14px; }
+table.t th, table.t td { border: 1px solid var(--line); padding: 3px 12px; text-align: center; }
+table.t th { background: var(--panel); font-weight: 600; }
+table.t td { font-family: "IBM Plex Mono", ui-monospace, monospace; background: var(--panel); }
+table.t th.out, table.t td.out { border-left-width: 3px; }
+.truth h3, .result h3 { font-size: 14px; margin: 14px 0 4px; color: var(--ink-soft); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.hint { margin: 4px 0 14px; }
+.hint .text { margin-top: 8px; padding: 10px 12px; border-left: 3px solid var(--hi); background: var(--panel); border-radius: 0 6px 6px 0; }
+.hint .text p:last-child, .hint .text pre:last-child { margin-bottom: 0; }
+
+.editor { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); height: 360px; min-height: 160px; resize: vertical; font: 13.5px/1.55 "IBM Plex Mono", ui-monospace, monospace; }
+.gutter { margin: 0; padding: 10px 8px 10px 6px; text-align: right; color: var(--ink-soft); background: var(--paper); user-select: none; overflow: hidden; min-width: 3.2em; font: inherit; white-space: pre; }
+.gutter .err { color: #fff; background: var(--bad); border-radius: 2px; }
+.editor textarea { flex: 1; border: 0; margin: 0; padding: 10px; resize: none; font: inherit; color: var(--ink); background: transparent; outline: none; white-space: pre; overflow: auto; tab-size: 4; }
+.bar { display: flex; gap: 8px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+.bar .keys { font-size: 13px; color: var(--ink-soft); margin-left: auto; }
+
+.result { margin-top: 6px; border-radius: 8px; padding: 12px 16px; border: 1px solid var(--line); background: var(--panel); }
+.result.ok { border-color: var(--on); background: var(--on-soft); }
+.result.bad { border-color: var(--bad); background: var(--bad-soft); }
+.result h4 { margin: 0 0 4px; font-size: 18px; }
+.result.ok h4 { color: var(--on); }
+.result.bad h4 { color: var(--bad); }
+.result p { margin: 0 0 6px; }
+.result .note { color: var(--ink-soft); font-size: 14px; }
+.result a.line { cursor: pointer; text-decoration: underline; }
+.result .scroll { overflow-x: auto; }
+table.t td.wrong { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
+table.t tr.reset td { color: var(--ink-soft); }
+table.t tr.first td { border-top: 2px solid var(--bad); }
+.next { margin-top: 8px; }
+
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.overlay .box { background: var(--panel); border-radius: 10px; width: min(1200px, 100%); height: min(820px, 100%); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); }
+.overlay .top { display: flex; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); gap: 10px; }
+.overlay .top b { flex: 1; }
+.overlay iframe { flex: 1; border: 0; width: 100%; background: var(--paper); }
+
+@media (max-width: 820px) {
+  .layout { grid-template-columns: 1fr; }
+  aside { border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 16px; }
+  #listfold > summary { display: flex; justify-content: space-between; align-items: center; min-height: 40px; cursor: pointer; font-weight: 600; list-style: none; }
+  #listfold > summary::-webkit-details-marker { display: none; }
+  #listfold > summary::after { content: "▾"; color: var(--ink-soft); }
+  #listfold[open] > summary::after { content: "▴"; }
+  #listfold[open] > summary { margin-bottom: 8px; }
+  main { padding: 18px 16px 50px; }
+  header { padding: 10px 16px; }
+  header nav { gap: 12px; }
+  .editor { height: 300px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Wire <span>exercises</span></h1>
+  <nav><a href="index.html">Examples</a><a href="playground.html">Playground</a></nav>
+</header>
+<div class="layout">
+  <aside id="list" aria-label="Exercises"></aside>
+  <main id="main">
+    <div class="crumb" id="crumb"></div>
+    <h2 id="title"></h2>
+    <div class="question" id="question"></div>
+    <div class="truth" id="truth"></div>
+    <div class="hint" id="hintbox"><button id="hintbtn" type="button">Show a hint</button><div class="text question" id="hint" hidden></div></div>
+    <div class="editor" id="editor"><pre class="gutter" id="gutter" aria-hidden="true"></pre><textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Your VHDL"></textarea></div>
+    <div class="bar">
+      <button class="primary" id="check" type="button">Check</button>
+      <button id="see" type="button" title="Your VHDL as a circuit you can click and simulate">See your circuit</button>
+      <button id="reset" type="button" title="Back to the starting code (your code for this exercise is lost)">Start again</button>
+      <span class="keys">Ctrl+Enter checks</span>
+    </div>
+    <div id="result" role="status" aria-live="polite"></div>
+  </main>
+</div>
+<div class="overlay" id="overlay" hidden>
+  <div class="box" role="dialog" aria-label="Your circuit">
+    <div class="top"><b id="ovtitle">Your circuit</b><button id="ovclose" type="button">Close</button></div>
+    <iframe id="ovframe" title="Your circuit"></iframe>
+  </div>
+</div>
+<script src="wire.js"></script>
+<script>
+/*WIRE_SIM*/
+</script>
+<script>
+/*WIRE_EXAM*/
+</script>
+<script>
+"use strict";
+const LEVELS = /*EXAM_DATA*/null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ALL = LEVELS.flatMap(l => l.exercises);
+
+/* ---- what is kept in this browser: your code for each exercise, and which are done */
+const STORE = "wire-exam-1";
+let saved = { code: {}, done: {}, tried: {}, last: null };
+try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s && typeof s === "object") saved = Object.assign(saved, s); } catch (e) {}
+const keep = () => { try { localStorage.setItem(STORE, JSON.stringify(saved)); } catch (e) {} };
+
+/* ---- the question text: paragraphs, - and 1. lists, ``` blocks, | tables, `code`, **bold** */
+function inline(s) {
+  return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+}
+function md(text) {
+  const lines = text.replace(/\s+$/, "").split("\n"), out = [];
+  for (let i = 0; i < lines.length; ) {
+    const l = lines[i];
+    if (/^```/.test(l)) {
+      const code = [];
+      for (i++; i < lines.length && !/^```/.test(lines[i]); i++) code.push(lines[i]);
+      i++;
+      out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+    } else if (/^\s*$/.test(l)) i++;
+    else if (/^- /.test(l)) {
+      const items = [];
+      for (; i < lines.length && /^- /.test(lines[i]); i++) items.push(`<li>${inline(lines[i].slice(2))}</li>`);
+      out.push(`<ul>${items.join("")}</ul>`);
+    } else if (/^\d+\. /.test(l)) {
+      const items = [];
+      for (; i < lines.length && /^\d+\. /.test(lines[i]); i++) items.push(`<li>${inline(lines[i].replace(/^\d+\. /, ""))}</li>`);
+      out.push(`<ol>${items.join("")}</ol>`);
+    } else if (/^\|/.test(l)) {
+      const rows = [];
+      for (; i < lines.length && /^\|/.test(lines[i]); i++) if (!/^\|[\s|:-]+\|$/.test(lines[i])) rows.push(lines[i].replace(/^\||\|$/g, "").split("|").map(c => c.trim()));
+      out.push(`<table class="t"><tr>${rows[0].map(c => `<th>${inline(c)}</th>`).join("")}</tr>${rows.slice(1).map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</table>`);
+    } else {
+      const para = [];
+      for (; i < lines.length && lines[i].trim() && !/^(```|- |\d+\. |\|)/.test(lines[i]); i++) para.push(lines[i]);
+      out.push(`<p>${inline(para.join(" "))}</p>`);
+    }
+  }
+  return out.join("");
+}
+
+/* ---- the list of exercises */
+function markOf(e) { return saved.done[e.id] ? "done" : saved.tried[e.id] ? "tried" : ""; }
+const narrow = () => matchMedia("(max-width: 820px)").matches;
+function showList() {
+  const aside = $("list");
+  const wasOpen = aside.querySelector("details") ? aside.querySelector("details").open : !narrow();
+  aside.textContent = "";
+  const fold = document.createElement("details");
+  fold.id = "listfold";
+  fold.open = wasOpen || !narrow();
+  const all = ALL.length, doneAll = ALL.filter(e => saved.done[e.id]).length;
+  fold.innerHTML = `<summary>Exercises <span class="count">${doneAll} / ${all} done</span></summary>`;
+  aside.append(fold);
+  const box = fold;
+  LEVELS.forEach(lv => {
+    const sec = document.createElement("section");
+    sec.className = "level";
+    const done = lv.exercises.filter(e => saved.done[e.id]).length;
+    sec.innerHTML = `<h2>${esc(lv.name)} <span class="count">${done} / ${lv.exercises.length}</span></h2><p>${esc(lv.about)}</p><ol></ol>`;
+    lv.exercises.forEach((e, k) => {
+      const li = document.createElement("li"), b = document.createElement("button");
+      b.type = "button";
+      const m = markOf(e);
+      b.innerHTML = `<span class="mark ${m}" aria-hidden="true">${m === "done" ? "✓" : ""}</span><span>${k + 1}. ${esc(e.title)}</span>`;
+      b.setAttribute("aria-label", `${e.title}${m === "done" ? " (done)" : ""}`);
+      if (current && current.id === e.id) b.setAttribute("aria-current", "true");
+      b.onclick = () => { if (narrow()) fold.open = false; open(e.id, true); };
+      li.append(b);
+      sec.querySelector("ol").append(li);
+    });
+    box.append(sec);
+  });
+}
+
+/* ---- one exercise */
+let current = null;
+function open(id, scroll) {
+  const e = ALL.find(x => x.id === id) || ALL[0];
+  current = e;
+  saved.last = e.id; keep();
+  const lv = LEVELS.find(l => l.dir === e.level), k = lv.exercises.indexOf(e);
+  $("crumb").textContent = `${lv.name}, ${k + 1} of ${lv.exercises.length}`;
+  $("title").textContent = e.title;
+  document.title = `${e.title} - Wire exercises`;
+  $("question").innerHTML = md(e.question);
+  const tr = $("truth");
+  tr.innerHTML = "";
+  if (e.table) {
+    const nIn = e.inputs.length;
+    tr.innerHTML = `<h3>What it must do</h3><table class="t"><tr>${e.table.columns.map((c, i) => `<th class="${i === nIn ? "out" : ""}">${esc(c)}</th>`).join("")}</tr>${e.table.rows.map(r => `<tr>${r.map((c, i) => `<td class="${i === nIn ? "out" : ""}">${esc(c)}</td>`).join("")}</tr>`).join("")}</table>`;
+  }
+  $("hintbox").hidden = !e.hint.trim();
+  $("hint").hidden = true; $("hint").innerHTML = md(e.hint);
+  $("hintbtn").textContent = "Show a hint";
+  $("code").value = saved.code[e.id] !== undefined ? saved.code[e.id] : e.starter;
+  gutter([]);
+  $("result").innerHTML = "";
+  if (location.hash.slice(1) !== e.id) history.replaceState(null, "", "#" + e.id);
+  showList();
+  if (scroll) window.scrollTo({ top: 0 });
+}
+$("hintbtn").onclick = () => { const h = $("hint"); h.hidden = !h.hidden; $("hintbtn").textContent = h.hidden ? "Show a hint" : "Hide the hint"; };
+$("reset").onclick = () => {
+  if ($("code").value !== current.starter && !confirm("Start this exercise again? Your code for it is lost.")) return;
+  delete saved.code[current.id]; keep();
+  $("code").value = current.starter; gutter([]); $("result").innerHTML = "";
+};
+
+/* ---- the editor */
+const ta = $("code");
+function gutter(bad) {
+  const n = ta.value.split("\n").length, b = new Set(bad);
+  let s = "";
+  for (let i = 1; i <= n; i++) s += (b.has(i) ? `<span class="err">${i}</span>` : i) + "\n";
+  $("gutter").innerHTML = s;
+  $("gutter").scrollTop = ta.scrollTop;
+}
+ta.addEventListener("scroll", () => { $("gutter").scrollTop = ta.scrollTop; });
+ta.addEventListener("input", () => { saved.code[current.id] = ta.value; keep(); gutter([]); });
+ta.addEventListener("keydown", e => {
+  if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); document.execCommand("insertText", false, "    "); }
+  else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); checkIt(); }
+  else if (e.key === "Enter") {   /* keep the indent */
+    const before = ta.value.slice(0, ta.selectionStart), line = before.slice(before.lastIndexOf("\n") + 1);
+    e.preventDefault(); document.execCommand("insertText", false, "\n" + /^\s*/.exec(line)[0]);
+  }
+});
+function goLine(n) {
+  const lines = ta.value.split("\n");
+  let at = 0;
+  for (let i = 0; i < n - 1 && i < lines.length; i++) at += lines[i].length + 1;
+  ta.focus(); ta.setSelectionRange(at, at + (lines[n - 1] || "").length);
+  ta.scrollTop = Math.max(0, (n - 4) * parseFloat(getComputedStyle(ta).lineHeight));
+}
+
+/* ---- Wire, in WebAssembly, as the playground has it */
+let wasmModule = null;
+const ready = (async () => {
+  const r = await fetch("wire.wasm");
+  if (!r.ok) throw new Error("wire.wasm did not load");
+  wasmModule = await WebAssembly.compile(await r.arrayBuffer());
+})();
+async function wire(args, text) {
+  await ready;
+  let out = "", err = "";
+  const m = await WireCompiler({
+    instantiateWasm(imports, done) { WebAssembly.instantiate(wasmModule, imports).then(i => done(i)); return {}; },
+    print: s => { out += s + "\n"; }, printErr: s => { err += s + "\n"; },
+    quit: (status, e) => { throw e; }
+  });
+  m.FS.mkdirTree("/r");
+  m.FS.writeFile("/r/answer.vhd", text);
+  m.FS.chdir("/r");
+  let code;
+  try { code = m.ccall("wire_run", "number", ["string"], [args.join("\n")]); }
+  catch (e) { code = typeof e.status === "number" ? e.status : (err += String(e) + "\n", 70); }
+  const read = p => { try { return m.FS.readFile(p, { encoding: "utf8" }); } catch (e) { return null; } };
+  return { code, out, err, read };
+}
+
+/* what Wire says about the VHDL, for someone who is learning it */
+function explain(msg) {
+  if (/syntax error/.test(msg)) return "A syntax error is often a missing semicolon (;) at the end of the line before, or a missing end.";
+  if (/is never given a value/.test(msg)) return "Every output needs a line that gives it a value, like y <= ...;";
+  if (/is one bit \(std_logic\), but the value/.test(msg)) return "One bit is written with single quotes: '1' or '0'. Double quotes are for buses: \"0101\".";
+  if (/no signal, port or constant called/.test(msg)) return "Check the spelling: you can use the ports of the entity, and signals you declare between architecture and begin.";
+  if (/not supported|does not support|cannot/i.test(msg)) return "If you are sure this is right VHDL, it may be something Wire does not read yet: try writing it another way.";
+  return "";
+}
+function showCompileErrors(err) {
+  const lines = err.split("\n").filter(Boolean);
+  const first = lines.map(l => /answer\.vhd:(\d+):(\d+):\s*(?:error:\s*)?(.*)$/.exec(l)).filter(Boolean);
+  const r = $("result");
+  r.className = "result bad";
+  if (!first.length) { r.innerHTML = `<h4>Wire could not read your VHDL</h4><p class="mono">${esc(lines.join("\n") || "no message")}</p>`; return; }
+  const [, ln, , msg] = first[0];
+  r.innerHTML = `<h4>Wire could not read your VHDL</h4><p><a class="line" data-line="${ln}">Line ${ln}</a>: ${esc(msg)}</p>${explain(msg) ? `<p class="note">${esc(explain(msg))}</p>` : ""}`;
+  r.querySelector("a.line").onclick = () => goLine(+ln);
+  gutter(first.map(m => +m[1]));
+}
+
+/* ---- Check */
+let busy = false;
+async function checkIt() {
+  if (busy) return;
+  busy = true; $("check").disabled = true; $("check").textContent = "Checking…";
+  const r = $("result");
+  try {
+    saved.tried[current.id] = true; keep();
+    const c = await wire(["--json", "answer.vhd"], ta.value);
+    if (c.code !== 0) { showCompileErrors(c.err); return; }
+    gutter([]);
+    const D = JSON.parse(c.out);
+    const sim = await WireSim.create(D);
+    const g = WireExam.grade(D, sim, current);
+    r.className = "result " + (g.ok ? "ok" : "bad");
+    let html = `<h4>${esc(g.title)}</h4><p>${esc(g.text)}</p>`;
+    if (g.rows) {
+      const data = current.inputs.filter(p => p.name !== current.clock), nIn = (current.clock ? 1 : 0) + data.length;
+      const head = g.columns.slice(0, nIn).map(c => `<th>${esc(c)}</th>`).join("") + current.outputs.map(o => `<th class="out">${esc(o.name)}</th><th>yours</th>`).join("");
+      const body = g.rows.map((row, i) => `<tr class="${row.reset ? "reset" : ""}${i === g.rows.length - 1 && g.rows.length > 1 ? " first" : ""}">` +
+        row.cells.slice(0, nIn).map(c => `<td>${esc(c)}</td>`).join("") +
+        row.cells.slice(nIn).map(c => `<td class="out">${esc(c.want)}</td><td class="${c.bad ? "wrong" : ""}">${esc(c.got)}</td>`).join("") + `</tr>`).join("");
+      html += `<h3>${current.clock ? "The last clock cycles, up to the first wrong one" : "The input it got wrong"}</h3><div class="scroll"><table class="t"><tr>${head}</tr>${body}</table></div>`;
+      if (current.clock && g.rows.some(x => x.reset)) html += `<p class="note">Grey rows are the reset at the start; they are not checked.</p>`;
+    }
+    if (g.ok) {
+      const was = saved.done[current.id];
+      saved.done[current.id] = true; keep();
+      const i = ALL.indexOf(current), nx = ALL[i + 1];
+      if (nx) html += `<div class="next"><button class="primary" type="button" id="nextbtn">Next: ${esc(nx.title)} →</button></div>`;
+      else html += `<p>That was the last one. Well done!</p>`;
+      if (!was) showList();
+    }
+    r.innerHTML = html;
+    if ($("nextbtn")) $("nextbtn").onclick = () => open(ALL[ALL.indexOf(current) + 1].id, true);
+  } catch (e) {
+    r.className = "result bad";
+    r.innerHTML = `<h4>Something went wrong</h4><p>${esc(e.message || e)}</p>`;
+  } finally {
+    busy = false; $("check").disabled = false; $("check").textContent = "Check";
+  }
+}
+$("check").onclick = checkIt;
+
+/* ---- See your circuit: the page Wire makes of it */
+let frameUrl = null;
+$("see").onclick = async () => {
+  $("see").disabled = true;
+  try {
+    const c = await wire(["-o", "/out.html", "answer.vhd"], ta.value);
+    if (c.code !== 0) { showCompileErrors(c.err); return; }
+    const html = c.read("/out.html");
+    if (frameUrl) URL.revokeObjectURL(frameUrl);
+    frameUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    $("ovframe").src = frameUrl;
+    $("ovtitle").textContent = `Your circuit: ${current.title}`;
+    $("overlay").hidden = false;
+    $("ovclose").focus();
+  } finally { $("see").disabled = false; }
+};
+$("ovclose").onclick = () => { $("overlay").hidden = true; $("ovframe").src = "about:blank"; $("see").focus(); };
+addEventListener("keydown", e => { if (e.key === "Escape" && !$("overlay").hidden) $("ovclose").click(); });
+
+/* ---- start: the exercise in the address, or the last one, or the first */
+addEventListener("hashchange", () => { const id = location.hash.slice(1); if (id && (!current || id !== current.id)) open(id, true); });
+open(ALL.some(e => e.id === location.hash.slice(1)) ? location.hash.slice(1) : saved.last && ALL.some(e => e.id === saved.last) ? saved.last : ALL[0].id);
+ready.catch(e => { $("result").className = "result bad"; $("result").innerHTML = `<h4>Wire could not start here</h4><p>${esc(e.message)}</p>`; $("check").disabled = $("see").disabled = true; });
+</script>
+</body>
+</html>

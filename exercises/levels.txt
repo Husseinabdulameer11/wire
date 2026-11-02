@@ -1,0 +1,4 @@
+# The levels of the exercise page, in order: folder | name | who it is for
+easy   | Easy   | Never seen a logic gate? Start here: one gate at a time, and your first lines of VHDL.
+medium | Medium | Buses, adders, decoders, and your first flip-flop and counter.
+hard   | Hard   | Counters with every feature, state machines, and a UART transmitter.
