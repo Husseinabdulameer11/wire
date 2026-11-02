@@ -87,8 +87,11 @@ function saveSetup(s) {
 /* the instruction set it starts with: the cpu statement's file, else name.isa next to the circuit, else a first one to change */
 const isaFile = D.cpu ? D.cpu.isa.file.slice(D.cpu.isa.file.lastIndexOf("/") + 1)
               : D.isaNext ? D.isaNext.file : (D.file ? D.file.replace(/^.*[\/\\]/, "").replace(/\.[^.]*$/, "") : "my_cpu").replace(/[^A-Za-z0-9_]/g, "_") + ".isa";
-const defaultIsa = () => D.cpu ? D.cpu.isa.source : D.isaNext ? D.isaNext.source
-                       : WireCpu.starter(D, found, D.nodes[setup.text] ? D.nodes[setup.text].bits : 8);
+/* a CPU written in VHDL: its instruction set is read from its hardware once the page runs (wire_isainfer.js) */
+const fromVhdl = !D.cpu && !D.isaNext && /\.vhdl?$/i.test(D.file || "") && typeof WireIsaInfer !== "undefined";
+let inferred = null;
+const defaultIsa = () => D.cpu ? D.cpu.isa.source : D.isaNext ? D.isaNext.source : inferred
+                       || WireCpu.starter(D, found, D.nodes[setup.text] ? D.nodes[setup.text].bits : 8);
 let setup = loadSetup();
 function startIsa() {
   if (host) { try { const t = host.get(); if (t && t.trim()) return t; } catch (e) {} }
@@ -439,10 +442,12 @@ whenParsed(() => window.wirePage.ready(page => {
 <p class="asm-isa-status" role="status"></p>`;
   const isaTa = sp.querySelector("textarea"), isaStatus = sp.querySelector(".asm-isa-status");
   const isaEd = editor(isaTa, sp.querySelector(".asm-gut"));
-  sp.querySelector(".asm-note").textContent = D.cpu
+  const noteNow = () => D.cpu
     ? `The instructions of ${cpuName}, from ${isaFile}. Change them here to try something; Download keeps what you made.`
     : D.isaNext ? `Wire found a CPU in this circuit (${pathOf(setup.text)} holds its program); its instructions are ${isaFile}, next to it. Change them here to try something; Download keeps what you made.`
+    : inferred ? `Wire found a CPU in this circuit and read these instructions from its VHDL: the fields, the opcodes and which operands each one takes are the hardware's, the names are not (the hardware has none). Rename op0, op1 ... to what they do; Download keeps them (as ${isaFile} next to the circuit, the page starts with it).`
     : `Wire found a CPU in this circuit: ${pathOf(setup.text)} holds its program. Describe its instructions here (the format of each, and its fixed bits), then write a program for it above. Download it as ${isaFile} next to the circuit and the page starts with it. README, "An assembler for any CPU", has the language.`;
+  sp.querySelector(".asm-note").textContent = noteNow();
   function showIsaState() {
     isaStatus.className = "asm-isa-status" + (isaError ? " bad" : "");
     isaStatus.textContent = "";
@@ -600,5 +605,22 @@ whenParsed(() => window.wirePage.ready(page => {
   if (fresh && !problem()) setStatus(`Wire found a CPU here. Describe its instructions in the Instruction set tab (a starting point is there), then write a program and Assemble.`);
   requestAnimationFrame(tick);
   if (D.cpu && innerWidth >= 1200) page.openDrawer("asmdrawer");
+
+  /* VHDL: read the instruction set from the hardware, on a simulator of its own */
+  if (fromVhdl) {
+    const starter = defaultIsa();
+    WireSim.create(D).then(s => {
+      let t = null;
+      try { t = WireIsaInfer.infer(D, found, s); } catch (e) { t = null; }
+      if (!t) return;
+      try { WireAsm.load(WireIsaParse.parse(t)); } catch (e) { return; }   /* only one that loads */
+      inferred = t;
+      sp.querySelector(".asm-note").textContent = noteNow();
+      if (isaText !== starter) return;   /* someone already wrote theirs */
+      isaTa.value = isaText = t;
+      changed();
+      if (tab === "isa" && !problem()) setStatus(`Wire read the instructions of this CPU from its VHDL (Instruction set): rename them, then write a program and Assemble.`);
+    }).catch(() => {});
+  }
 }));
 })();

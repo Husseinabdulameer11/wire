@@ -261,6 +261,56 @@ for (const w of [4, 8, 12, 16, 24, 32]) for (const regs of ["", "r%d"]) {
   check(pc4.isaNext === undefined && WireCpu.detect(pc4) === null, "pc4: no CPU, no instruction set");
 }
 
+/* ---- an instruction set read from the hardware of a VHDL CPU (wire_isainfer.js) */
+{
+  const WireIsaInfer = require(path.join(root, "src", "wire_isainfer.js"));
+  const WireSim = require(path.join(root, "src", "wire_sim.js"));
+  const inferFrom = f => {
+    const D = JSON.parse(execFileSync(wire, ["--json", f], { stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 }).toString());
+    const t = WireIsaInfer.infer(D, WireCpu.detect(D), WireSim.createSync(D));
+    return t && loadText(t);
+  };
+  /* cpu16: single cycle, 16 bits, a register file; the same machine code as the one written by hand */
+  const inf = inferFrom(path.join(__dirname, "cpu16.vhd")), real = loadText(fs.readFileSync(path.join(__dirname, "cpu16_real.isa"), "utf8"));
+  check(!!inf && [...inf.over.keys()].join(" ") === "op0 op1 op2 op3 op4 op5 op6 op7 op8 opa opb opf", "cpu16: the opcodes read from its hardware", inf && [...inf.over.keys()].join(" "));
+  const f = { add: 0, sub: 1, and: 2, or: 3, xor: 4, shl: 5, shr: 6, slt: 7 }, o = { addi: 1, li: 2, lui: 3, ld: 4, st: 5, beq: 6, bne: 7, jmp: 8, pix: "A", out: "B", hlt: "F" };
+  const asOps = src => src.split("\n").map(l => l.replace(/^(\s*(?:\w+:)?\s*)(\w+)\s*(.*?)(\s*#.*)?$/, (m, pre, op, args) => {
+    if (op in f) return pre + "op0 " + args + ", " + f[op];
+    if (op in o) { args = args.replace(/(-?\w+)\((r\d)\)/, "$2, $1"); return pre + "op" + o[op] + (args ? " " + args : ""); }
+    return m;
+  })).join("\n");
+  const prog = `start:  li   r1, 0
+        lui  r3, 0x10
+loop:   shr  r6, r1, r5
+        and  r7, r1, r4
+        xor  r6, r6, r7
+        addi r2, r2, -5
+        ld   r3, 7(r4)
+        st   r5, -1(r6)
+        slt  r1, r2, r3
+        pix  r6, r1
+        beq  r1, r2, start
+        bne  r1, r3, loop
+        jmp  start
+        out  r1
+        hlt
+`;
+  if (inf) {
+    const a = WireAsm.assemble(real, prog), b = WireAsm.assemble(inf, asOps(prog));
+    check(!a.errors.length && !b.errors.length && bytes(a.text) === bytes(b.text), "cpu16: every kind of instruction is the same machine code read from the hardware as written by hand",
+          JSON.stringify([a.errors, b.errors]) + "\n" + bytes(a.text) + "\n" + bytes(b.text));
+  }
+  /* the computer that draws: several clocks an instruction, an IR, flags; its operands are as computer.vhd lists them */
+  const comp = inferFrom(path.join(root, "examples", "screen", "computer.vhd"));
+  const opnd = op => comp && comp.over.has(op) ? comp.over.get(op)[0].pattern.map(p => p.kind.bits || p.kind.type).join(",") : "missing";
+  const want = { op1: "4", op2: "4", op3: "4", op4: "4", op5: "4", op6: "4", op7: "4", op8: "", op9: "4", opa: "3", opb: "4", opc: "4", opf: "" };
+  check(Object.entries(want).every(([k, v]) => opnd(k) === v), "computer: the operands of each instruction, read from its hardware",
+        Object.keys(want).map(k => `${k}=${opnd(k)}`).join(" "));
+  /* SAP-1 decodes its opcode with gates, no comparisons: nothing is read, the page keeps the starting one */
+  const sapD = JSON.parse(execFileSync(wire, ["--json", path.join(root, "examples", "notes", "sap1.vhd")], { stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 }).toString());
+  check(WireIsaInfer.infer(sapD, WireCpu.detect(sapD), WireSim.createSync(sapD)) === null, "sap1: an opcode decoded with gates is not guessed at");
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log(failures ? `asm: ${failures} of ${checks} checks failed` : `asm: all ${checks} checks pass`);

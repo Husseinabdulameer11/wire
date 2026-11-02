@@ -676,6 +676,22 @@ kept in your browser (in the playground, with the circuit and its link).
 memory for program and data (the SAP-1), `.data` goes right after the
 program.
 
+**A CPU written in VHDL** with no instruction set gets one read from its
+hardware (`src/wire_isainfer.js`): the fields are the bit slices it takes of
+an instruction (of the program memory's word, or of the instruction
+register it copies it into), the opcodes the constants the opcode slice is
+compared with, and a slice that picks a register, is sign-extended or is
+added to the program counter becomes a `reg`, `sN` or `relN` operand. Which
+operands each opcode takes is found by trying it in the simulator: an
+instruction runs from random register contents with each bit flipped, and a
+bit that changes nothing is padding. The names are not in the hardware, so
+the instructions are `op0`, `op1` ... and the operands are named after the
+signals, to rename. `tests/asm/cpu16.vhd` gives the same machine code that
+way as its instruction set written by hand. A CPU that decodes its opcode
+with gates and no comparisons (the SAP-1) gets the first one to change.
+A circuit in Wire or drawn in the playground has its instruction set written
+in the Instruction set tab.
+
 To write the setup into the circuit itself, a **`cpu` statement** says it
 (Setup shows the line to add for what it found):
 

@@ -1,0 +1,42 @@
+# cpu16_real.isa - the instructions of tests/asm/cpu16.vhd, written by hand.
+# asmtest checks that the instruction set the page reads from that VHDL's
+# hardware gives the same machine code as this one.
+#
+#   R   op:4 rd:3 rs:3 rt:3 f:3      rd = rs (f) rt
+#   I   op:4 rd:3 rs:3 imm:6         addi, ld/st (address rs + imm), branches
+#   L   op:4 rd:3 imm:9              li (signed), lui (imm << 8)
+#   J   op:4 addr:12                 jmp, hlt
+
+isa "cpu16" (width = 16)
+
+reg r[0..7]
+data word 1
+
+format R = op:4 rd:3 rs:3 rt:3 f:3
+format I = op:4 rd:3 rs:3 imm:6
+format L = op:4 rd:3 imm:9
+format J = op:4 addr:12
+
+add  rd:reg, rs:reg, rt:reg = R(op = 0, f = 0)
+sub  rd:reg, rs:reg, rt:reg = R(op = 0, f = 1)
+and  rd:reg, rs:reg, rt:reg = R(op = 0, f = 2)
+or   rd:reg, rs:reg, rt:reg = R(op = 0, f = 3)
+xor  rd:reg, rs:reg, rt:reg = R(op = 0, f = 4)
+shl  rd:reg, rs:reg, rt:reg = R(op = 0, f = 5)   # by rt's low 4 bits
+shr  rd:reg, rs:reg, rt:reg = R(op = 0, f = 6)
+slt  rd:reg, rs:reg, rt:reg = R(op = 0, f = 7)   # signed: 1 if rs < rt
+
+addi rd:reg, rs:reg, imm:s6 = I(op = 1)
+li   rd:reg, imm:s9         = L(op = 2)
+lui  rd:reg, imm:u8         = L(op = 3)          # rd = imm << 8
+ld   rd:reg, imm:s6(rs:reg) = I(op = 4)          # rd = ram[rs + imm]
+st   rd:reg, imm:s6(rs:reg) = I(op = 5)          # ram[rs + imm] = rd
+beq  rd:reg, rs:reg, imm:rel6 = I(op = 6)        # the distance from this instruction
+bne  rd:reg, rs:reg, imm:rel6 = I(op = 7)
+jmp  addr:u12               = J(op = 8)
+pix  rd:reg, rs:reg         = I(op = 0xA, imm = 0)   # pixel rs = colour rd (RRRGGGBB)
+out  rd:reg                 = I(op = 0xB, rs = 0, imm = 0)   # the display shows rd
+hlt                         = J(op = 0xF, addr = 0)
+
+pseudo nop               = or r0, r0, r0
+pseudo mov rd:reg, rs:reg = or rd, rs, rs
