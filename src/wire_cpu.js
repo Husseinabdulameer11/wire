@@ -192,7 +192,7 @@ function starter(D, info, textBits) {
     const pre = info.regs.replace("%d", "");
     let n = 0;
     while (D.nets.some(x => x.name === pre + n)) n++;
-    return n >= 2 ? `reg ${/^[A-Za-z_][A-Za-z0-9_.]*$/.test(pre) ? pre : "r"}[0..${n - 1}]` : "";
+    return n >= 2 ? `reg r[0..${n - 1}]` : "";   /* r0, r1 ...: Setup says which wires they are */
   })() : "";
   lines.push(`isa "${name}" (width = ${w})`);
   if (regLine) lines.push(regLine);
