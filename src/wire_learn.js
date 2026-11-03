@@ -12,9 +12,9 @@
 "use strict";
 const DATA = window.WIRE_LEARN;
 if (!DATA) return;
-const LESSONS = DATA.lessons;
+const LESSONS = DATA.lessons, TRACKS = DATA.tracks || [{ dir: "circuits", name: "Circuits" }];
 const KEY = "wire-learn-1";
-let st = { models: {}, chips: {}, done: {}, fails: {}, hints: {}, last: null };
+let st = { models: {}, code: {}, chips: {}, done: {}, fails: {}, hints: {}, last: null };
 try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && typeof s === "object") st = Object.assign(st, s); } catch (e) {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -27,6 +27,7 @@ function md(text) {
   for (let i = 0; i < lines.length; ) {
     const l = lines[i];
     if (!l.trim()) { i++; continue; }
+    if (/^```/.test(l)) { const c = []; for (i++; i < lines.length && !/^```/.test(lines[i]); i++) c.push(lines[i]); i++; out.push(`<pre>${esc(c.join("\n"))}</pre>`); continue; }
     if (/^- /.test(l)) { const it = []; for (; i < lines.length && /^- /.test(lines[i]); i++) it.push(`<li>${inline(lines[i].slice(2))}</li>`); out.push(`<ul>${it.join("")}</ul>`); continue; }
     if (/^\|/.test(l)) {
       const rows = [];
@@ -35,7 +36,7 @@ function md(text) {
       continue;
     }
     const p = [];
-    for (; i < lines.length && lines[i].trim() && !/^(- |\|)/.test(lines[i]); i++) p.push(lines[i]);
+    for (; i < lines.length && lines[i].trim() && !/^(- |\||```)/.test(lines[i]); i++) p.push(lines[i]);
     out.push(`<p>${inline(p.join(" "))}</p>`);
   }
   return out.join("");
@@ -86,6 +87,15 @@ css.textContent = `
 #lesson .ldone { border: 1px solid var(--on); background: color-mix(in srgb, var(--on) 12%, transparent); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
 #lesson .ldone h3 { margin: 0 0 4px; font-size: 17px; color: var(--on); }
 #lesson .ldone p:last-child { margin-bottom: 0; }
+#lesson pre { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; overflow-x: auto; font: 13px/1.45 "IBM Plex Mono", ui-monospace, monospace; }
+#lesson .ltracks { display: flex; gap: 0; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+#lesson .ltracks button { flex: 1; min-height: 34px; border: 0; background: var(--paper); color: var(--ink-soft); font: inherit; font-weight: 600; cursor: pointer; }
+#lesson .ltracks button + button { border-left: 1px solid var(--line); }
+#lesson .ltracks button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: inset 0 -3px var(--hi); }
+#lesson .ltracks small { font-weight: 400; color: var(--ink-soft); }
+#lesson .lnote a.line { cursor: pointer; text-decoration: underline; }
+body.learn-vhdl #side { grid-template-rows: auto 1fr auto; }
+body.learn-vhdl #lesson { max-height: 48vh; overflow: auto; margin: 0; padding: 14px 16px 6px; border-bottom: 1px solid var(--line); }
 #lesson .ldone button { margin-top: 8px; min-height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); font: inherit; font-weight: 600; cursor: pointer; }
 `;
 document.head.append(css);
@@ -131,7 +141,11 @@ function open(i) {
   lesson = LESSONS[cur];
   solved = !!st.done[id()];
   st.last = id(); save();
+  if (lesson.kind === "vhdl") { openCode(); return; }
+  document.body.classList.remove("learn-vhdl");
+  $("draw").prepend(panel);
   model = setDrawing(st.models[id()] || lesson.start);
+  if (mode !== "draw") { selectedName = null; setMode("draw"); undoStack = []; redoStack = []; render(); fixTab(); if (history.replaceState) history.replaceState(null, "", "#" + id()); return; }
   undoStack = []; redoStack = []; selectedName = null; selectedNames = [];
   disarm();
   $("name").value = "lesson" + (cur + 1);
@@ -139,12 +153,33 @@ function open(i) {
   render();
   if (history.replaceState) history.replaceState(null, "", "#" + id());
 }
+/* a lesson in VHDL: the code editor, with the lesson above it */
+function openCode() {
+  document.body.classList.add("learn-vhdl");
+  $("side").insertBefore(panel, $("editor"));
+  disarm();
+  lang = "vhdl"; dir = "";
+  $("name").value = "lesson";
+  src.value = st.code[id()] !== undefined ? st.code[id()] : lesson.start;
+  if (mode !== "write") setMode("write"); else { paint(); persist(); schedule(0); }
+  $("langbox").hidden = true;
+  fixTab();
+  render();
+  if (history.replaceState) history.replaceState(null, "", "#" + id());
+}
+function setCode(text) { src.value = text; edited(); paint(); persist(); schedule(0); }
+function fixTab() { const t = $("tab-side"); if (t) t.textContent = "Lesson"; }
 function render(extra) {
-  const nav = LESSONS.map((l, i) => `<button type="button" data-i="${i}" class="${st.done[l.id] ? "done" : ""}" aria-current="${i === cur}" title="${esc(l.title)}">${i + 1}</button>`).join("");
+  const inTrack = LESSONS.map((l, i) => [l, i]).filter(([l]) => l.track === lesson.track);
+  const nav = inTrack.map(([l, i], k) => `<button type="button" data-i="${i}" class="${st.done[l.id] ? "done" : ""}" aria-current="${i === cur}" title="${esc(l.title)}">${k + 1}</button>`).join("");
+  const tracks = TRACKS.map(t => { const ls = LESSONS.filter(l => l.track === t.dir), d = ls.filter(l => st.done[l.id]).length;
+    return `<button type="button" data-t="${t.dir}" aria-pressed="${t.dir === lesson.track}" title="${esc(t.about || "")}">${esc(t.name)} <small>${d}/${ls.length}</small></button>`; }).join("");
+  const pos = inTrack.findIndex(([l]) => l === lesson);
   const fails = st.fails[id()] || 0, shown = st.hints[id()] || 0;
   panel.innerHTML = `
+${TRACKS.length > 1 ? `<div class="ltracks" role="group" aria-label="Track">${tracks}</div>` : ""}
 <nav class="lnav" aria-label="Lessons">${nav}</nav>
-<div class="lkick">Lesson ${cur + 1} of ${LESSONS.length}</div>
+<div class="lkick">${esc((TRACKS.find(t => t.dir === lesson.track) || {}).name || "")}, lesson ${pos + 1} of ${inTrack.length}</div>
 <h2 class="ltitle">${esc(lesson.title)}</h2>
 ${md(lesson.intro)}
 <div class="ltask"><div class="lt">Your task</div>${md(lesson.task)}</div>
@@ -159,12 +194,20 @@ ${lesson.hints.slice(0, shown).map((h, k) => `<div class="lnote hint"><b class="
 ${st.solutionShown && st.solutionShown[id()] ? `<div class="lnote sol"><b class="k">The solution</b>${md(lesson.solution)}</div>` : ""}
 ${solved ? doneBox() : ""}`;
   panel.querySelectorAll(".lnav button").forEach(b => { b.onclick = () => open(+b.dataset.i); });
+  panel.querySelectorAll(".ltracks button").forEach(b => { b.onclick = () => {
+    if (b.dataset.t === lesson.track) return;
+    const ls = LESSONS.map((l, i) => [l, i]).filter(([l]) => l.track === b.dataset.t);
+    const next = ls.find(([l]) => !st.done[l.id]) || ls[0];
+    if (next) open(next[1]);
+  }; });
+  panel.querySelectorAll("a.line").forEach(a => { a.onclick = () => goLine(+a.dataset.line, 1); });
   panel.querySelectorAll("[data-a]").forEach(b => { b.onclick = () => act(b.dataset.a); });
   const nx = panel.querySelector("[data-next]");
   if (nx) nx.onclick = () => { open(cur + 1); $("draw").scrollTop = 0; };
 }
 function doneBox() {
-  const last = cur === LESSONS.length - 1;
+  const nextL = LESSONS[cur + 1], last = !nextL || nextL.track !== lesson.track;
+  if (last && nextL) return `<div class="ldone" role="status"><h3>✓ Well done!</h3>${md(lesson.done)}<p>That is the end of the ${esc((TRACKS.find(t => t.dir === lesson.track) || {}).name)} lessons.</p><button type="button" data-next>Next: ${esc((TRACKS.find(t => t.dir === nextL.track) || {}).name)}, ${esc(nextL.title)} →</button></div>`;
   return `<div class="ldone" role="status"><h3>✓ Well done!</h3>${md(lesson.done)}${last
     ? `<p>That is the last lesson for now. Build anything you like in the <a href="playground.html">playground</a>.</p>`
     : `<button type="button" data-next>Next lesson: ${esc(LESSONS[cur + 1].title)} →</button>`}</div>`;
@@ -172,7 +215,14 @@ function doneBox() {
 function act(a) {
   if (a === "check") check(false);
   else if (a === "hint") { st.hints[id()] = (st.hints[id()] || 0) + 1; save(); render(); }
-  else if (a === "reset") {
+  else if (a === "reset" && lesson.kind === "vhdl") {
+    if (src.value !== lesson.start && !confirm("Start this lesson's code again? What you wrote is lost.")) return;
+    setCode(lesson.start); render();
+  } else if (a === "solution" && lesson.kind === "vhdl") {
+    st.solutionShown = st.solutionShown || {};
+    st.solutionShown[id()] = true; save();
+    setCode(lesson.answer); render();
+  } else if (a === "reset") {
     if (!confirm("Start this lesson's circuit again? What you drew is lost (Undo brings it back).")) return;
     change(m => { const d = setDrawing(lesson.start); Object.assign(m, { parts: d.parts, links: d.links, next: d.next, chips: d.chips }); });
     render();
@@ -206,22 +256,40 @@ async function check(quiet) {
     return;
   }
   const seq = ++checking, here = cur;
-  const path = mainPath(), r = await wire(["--json", path], path, genCode(model));
+  const code = lesson.kind === "vhdl";
+  const path = mainPath(), r = await wire(["--json", path], path, code ? src.value : genCode(model));
   if (seq !== checking || here !== cur) return;
+  if (code && r.code !== 0) { if (!quiet) failedCode(r.err, path); return; }
   if (r.code !== 0) { if (!quiet) failed("Your circuit is not finished yet: " + (r.err.split("\n").find(l => /error/.test(l)) || "").replace(/^.*?error:\s*/, "") + "."); return; }
-  const used = sheet(model).parts.filter(p => !["input", "led", "output"].includes(p.kind) && !allowed(p.kind === "chip" ? "chip:" + p.comp : p.kind));
+  const used = code ? [] : sheet(model).parts.filter(p => !["input", "led", "output"].includes(p.kind) && !allowed(p.kind === "chip" ? "chip:" + p.comp : p.kind));
   if (used.length) { if (!quiet) failed(`This time, use only the parts on the left: take out ${used.map(p => p.name).join(", ")}.`); return; }
   const D = JSON.parse(r.out), sim = await WireSim.create(D);
   if (seq !== checking || here !== cur) return;
   const g = WireExam.grade(D, sim, lesson);
   if (g.ok) { succeed(); return; }
   if (quiet) return;
-  if (!g.rows) { failed(/missing/.test(g.text) ? "A switch or a light the lesson needs is gone. Press Start again to get it back." : g.text); return; }
+  if (!g.rows) { failed(code ? g.title + ": " + g.text : /missing/.test(g.text) ? "A switch or a light the lesson needs is gone. Press Start again to get it back." : g.text); return; }
+  if (code) { failed(`Not yet. ${esc(g.text)}`, true); return; }
   /* in words: with these switches, this light should be on but it is off */
   const row = g.rows[g.rows.length - 1].cells, nIn = lesson.inputs.length;
   const ins = lesson.inputs.map((p, i) => `<code>${esc(p.name)}</code> ${row[i] === "1" ? "on" : "off"}`).join(" and ");
   const k = row.slice(nIn).findIndex(c => c.bad), o = lesson.outputs[k], c = row[nIn + k];
   failed(`Not yet. With ${ins}, the light <code>${esc(o.name)}</code> should be <b>${onOff(c.want)}</b>, but yours is <b>${onOff(c.got)}</b>. Set the switches that way and look.`, true);
+}
+/* what Wire says about the VHDL, for someone learning it */
+function explain(msg) {
+  if (/syntax error/.test(msg)) return "A syntax error is most often a missing semicolon (;) at the end of the line before, or a missing end.";
+  if (/is never given a value/.test(msg)) return "Every output needs a line that gives it a value, like y <= ...;";
+  if (/is one bit \(std_logic\), but the value/.test(msg)) return "One bit is written with single quotes: '1' or '0'. Double quotes are for buses: \"0101\".";
+  if (/no signal, port or constant called/.test(msg)) return "Check the spelling: you can use the entity's ports, and signals declared between architecture and begin.";
+  return "";
+}
+function failedCode(err, path) {
+  const line = err.split("\n").find(l => /error/.test(l)) || err.split("\n")[0] || "";
+  const m = /:(\d+):\d+:\s*(?:syntax )?(?:error:\s*)?(.*)$/.exec(line), msgText = m ? m[2] : line;
+  const where = m ? `<a class="line" data-line="${m[1]}">Line ${m[1]}</a>: ` : "";
+  const why = explain(line);
+  failed(`Wire cannot read this yet. ${where}${esc(msgText)}${why ? `<br>${esc(why)}` : ""}`, true);
 }
 function failed(html, isHtml) {
   st.fails[id()] = (st.fails[id()] || 0) + 1;
@@ -242,6 +310,8 @@ function lightNow() {
 /* the playground says so: a drawing was kept, a page was shown */
 window.wireLearn = {
   changed(m) {
+    if (lesson.kind === "vhdl") { if (mode === "write") { st.code[id()] = src.value; save(); } return; }
+    if (mode !== "draw") return;
     const sh = sheet(m);
     st.models[id()] = { next: sh.next, parts: copy(sh.parts), links: copy(sh.links) };
     save();
@@ -252,8 +322,7 @@ window.wireLearn = {
 setInterval(() => { if (lesson.check !== "behaves" && !solved && lightNow() === 1) succeed(); }, 300);
 
 /* ---- start: the lesson in the address, else the one you were on, else the first */
-const tab = $("tab-side");
-if (tab) tab.textContent = "Lesson";
+fixTab();
 const want = location.hash.slice(1), at = LESSONS.findIndex(l => l.id === want);
 open(at >= 0 ? at : Math.max(0, LESSONS.findIndex(l => l.id === st.last)));
 addEventListener("hashchange", () => { const i = LESSONS.findIndex(l => l.id === location.hash.slice(1)); if (i >= 0 && i !== cur) open(i); });

@@ -1,0 +1,48 @@
+title: Gates in a row
+check: behaves
+---- intro
+Gates can be combined in one line. Brackets say what happens first, as in arithmetic: in `not (a and b)` the AND comes first, and the NOT turns its answer round. That is the NAND you built from two gates.
+
+Without brackets, VHDL makes you be clear: `not a and b` means `(not a) and b`, which is a different circuit.
+---- task
+Write NAND: `y` is the opposite of `a` AND `b`, in one line.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity nand_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end nand_gate;
+
+architecture rtl of nand_gate is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity nand_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end nand_gate;
+
+architecture rtl of nand_gate is
+begin
+    y <= not (a and b);
+end rtl;
+---- hint1
+Write the AND in brackets, and put `not` in front of the brackets.
+---- hint2
+`y <= not (a and b);`
+---- solution
+`y <= not (a and b);` is an AND gate followed by a NOT gate, as you drew it: the drawing on the right shows both gates.
+---- done
+VHDL also has the word `nand`: `y <= a nand b;` is the same circuit. Most designers write the gates out like you did, because it reads more clearly.

@@ -1,0 +1,63 @@
+title: Wires inside: signals
+check: behaves
+---- intro
+In a drawing, a wire between two gates has no name. In VHDL it needs one: a **signal**. You declare it between `architecture` and `begin`:
+
+```
+signal either : std_logic;
+```
+
+and then use it like any input or output: give it a value with `<=`, and read it in other lines.
+
+The starter declares two signals for the XOR you built from AND, OR and NOT: `either` (a OR b) and `both` (a AND b).
+---- task
+Build XOR from AND, OR and NOT using the two signals: set `either` and `both`, then make `y` "either, and not both".
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity my_xor is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end my_xor;
+
+architecture rtl of my_xor is
+    signal either, both : std_logic;
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity my_xor is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end my_xor;
+
+architecture rtl of my_xor is
+    signal either, both : std_logic;
+begin
+    either <= a or b;
+    both   <= a and b;
+    y      <= either and not both;
+end rtl;
+---- hint1
+Three lines: one gives `either` its value, one gives `both` its value, and one makes `y` out of the two.
+---- hint2
+`either <= a or b;`, `both <= a and b;` and `y <= either and not both;`
+---- solution
+```
+either <= a or b;
+both   <= a and b;
+y      <= either and not both;
+```
+Each signal is a wire with a name; the drawing shows the four gates you built by hand in the Circuits lessons.
+---- done
+Signals let you build big circuits out of named pieces, the same way chips did in the drawing. Real designs have hundreds of them.

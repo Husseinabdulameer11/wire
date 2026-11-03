@@ -7,7 +7,8 @@
  *   node tools/learn.js build/wire build/site        writes learn.html (make site)
  *   node tools/learn.js build/wire --check           only checks the lessons (make test)
  *
- * A lesson (lessons/<nn>_<name>.lesson) is a header and sections:
+ * lessons/tracks.txt names the tracks, in order: circuits (drawn) and vhdl
+ * (written). A lesson (lessons/<track>/<nn>_<name>.lesson) is a header and sections:
  *   title: ...
  *   check: on y           done when the light y is on (the learner clicks the inputs)
  *   check: behaves        done when the circuit does what ---- reference does, for every input
@@ -18,6 +19,8 @@
  *   ---- start            the drawing it starts with
  *   ---- answer           a drawing that is right (Show me the solution loads it)
  *   ---- reference        Wire that does what the circuit must do (check: behaves)
+ * In the vhdl track, start and answer are VHDL, the answer is what the
+ * circuit must do, and cycles: / random: are as for an exercise (tools/exam.js).
  * A drawing is a part a line, "kind name x y" ("chip name comp x y"), and
  * wires, "from[.pin] -> to[.pin]" (an output is "out", a light's input "in",
  * a gate's inputs 0, 1 ...). The checks: the answer passes, the start does not. */
@@ -105,8 +108,8 @@ function wireText(m, chips) {
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "learn-"));
-const netlist = (text, name) => {
-  const f = path.join(tmp, name + ".wire");
+const netlist = (text, name, ext = ".wire") => {
+  const f = path.join(tmp, name.replace(/\//g, "_") + ext);
   fs.writeFileSync(f, text);
   try { return JSON.parse(execFileSync(wire, ["--json", f], { stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 26 }).toString()); }
   catch (e) { throw new Error(`${name}: wire could not read it:\n${(e.stderr || "").toString()}\n${text}`); }
@@ -115,17 +118,19 @@ const netlist = (text, name) => {
 let failures = 0;
 const fail = m => { failures++; console.error("FAIL " + m); };
 const chips = {}, lessons = [];
-const dir = path.join(root, "lessons");
-for (const f of fs.readdirSync(dir).filter(n => n.endsWith(".lesson")).sort()) {
-  const id = f.replace(/\.lesson$/, "");
+const tracks = fs.readFileSync(path.join(root, "lessons", "tracks.txt"), "utf8").split(/\r?\n/).map(l => l.replace(/#.*$/, "").trim()).filter(Boolean)
+  .map(l => { const [dir, name, about] = l.split("|").map(x => x.trim()); return { dir, name, about }; });
+for (const tr of tracks) for (const f of fs.readdirSync(path.join(root, "lessons", tr.dir)).filter(n => n.endsWith(".lesson")).sort()) {
+  const id = tr.dir + "/" + f.replace(/\.lesson$/, "");
   try {
-    const l = parse(path.join(dir, f));
+    const l = parse(path.join(root, "lessons", tr.dir, f));
+    if (tr.dir === "vhdl") { lessons.push(vhdlLesson(id, tr, l)); continue; }
     for (const s of ["intro", "task", "start", "answer", "solution", "done"]) if (!l.s[s]) throw new Error(`${id}: there is no ---- ${s}`);
     const needs = (l.header.needs || "").split(/\s+/).filter(Boolean);
     const lessonChips = Object.fromEntries(needs.map(c => { if (!chips[c]) throw new Error(`${id}: needs ${c}, which no earlier lesson keeps`); return [c, chips[c]]; }));
     const start = drawing(l.s.start, lessonChips, id + " start"), answer = drawing(l.s.answer, lessonChips, id + " answer");
     const lesson = {
-      id, title: l.header.title, check: l.header.check || "", parts: (l.header.parts || "").split(/\s+/).filter(Boolean),
+      id, track: tr.dir, kind: "draw", title: l.header.title, check: l.header.check || "", parts: (l.header.parts || "").split(/\s+/).filter(Boolean),
       keep: l.header.keep || null, needs, intro: l.s.intro, task: l.s.task, hints: [l.s.hint1, l.s.hint2, l.s.hint3].filter(Boolean),
       solution: l.s.solution, done: l.s.done, start, answer
     };
@@ -153,6 +158,30 @@ for (const f of fs.readdirSync(dir).filter(n => n.endsWith(".lesson")).sort()) {
     lessons.push(lesson);
   } catch (e) { fail(e.message); }
 }
+/* a lesson in VHDL: the answer is the reference; the start must not pass yet */
+function vhdlLesson(id, tr, l) {
+  for (const s of ["intro", "task", "start", "answer", "solution", "done"]) if (!l.s[s]) throw new Error(`${id}: there is no ---- ${s}`);
+  const D = netlist(l.s.answer + "\n", id + "_answer", ".vhd"), P = WireExam.ports(D);
+  const clocks = P.ins.filter(p => p.clock);
+  const random = {};
+  (l.header.random || "").split(/\s+/).filter(Boolean).forEach(kv => { const [k, v] = kv.split("="); random[k.toLowerCase()] = +v; });
+  const lesson = {
+    id, track: tr.dir, kind: "vhdl", title: l.header.title, check: "behaves", parts: [], keep: null, needs: [],
+    intro: l.s.intro, task: l.s.task, hints: [l.s.hint1, l.s.hint2, l.s.hint3].filter(Boolean), solution: l.s.solution, done: l.s.done,
+    start: l.s.start + "\n", answer: l.s.answer + "\n",
+    inputs: P.ins.map(({ name, w }) => ({ name, w })), outputs: P.outs.map(({ name, w }) => ({ name, w })),
+    clock: clocks.length ? clocks[0].name : null, cycles: +l.header.cycles || 0, random, chipAnswers: {}
+  };
+  lesson.tests = WireExam.makeTests(lesson, WireExam.rng(7));
+  lesson.tests.expect = WireExam.run(D, WireSim.createSync(D), lesson, lesson.tests.steps).got;
+  const ga = WireExam.grade(D, WireSim.createSync(D), lesson);
+  if (!ga.ok) fail(`${id}: the answer does not pass its own tests: ${ga.text}`);
+  let startPasses = false;
+  try { const S = netlist(lesson.start, id + "_start", ".vhd"); startPasses = WireExam.grade(S, WireSim.createSync(S), lesson).ok; } catch (e) { /* the start does not compile yet: fine */ }
+  if (startPasses) fail(`${id}: the code it starts with is already right`);
+  return lesson;
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 if (failures) { console.error(`learn: ${failures} problem${failures === 1 ? "" : "s"} in the lessons`); process.exit(1); }
 if (check) { console.log(`learn: all ${lessons.length} lessons check out (every answer passes, no lesson starts done)`); process.exit(0); }
@@ -162,7 +191,7 @@ const pg = path.join(out, "playground.html");
 if (!fs.existsSync(pg)) { console.error(`learn: no ${pg}; make the playground first (tools/playground.js)`); process.exit(1); }
 const js = f => fs.readFileSync(path.join(root, "src", f), "utf8").replace(/<\/script/gi, "<\\/script");
 let page = fs.readFileSync(pg, "utf8");
-const data = JSON.stringify({ lessons }).replace(/</g, "\\u003c");
+const data = JSON.stringify({ tracks, lessons }).replace(/</g, "\\u003c");
 page = page.replace(/<title>[^<]*<\/title>/, "<title>Learn digital circuits - Wire</title>")
            .replace(/<meta name="description" content="[^"]*">/, '<meta name="description" content="Learn how digital circuits work, from a switch and a light to a circuit that adds, by building them in your browser.">')
            .replace('<script src="wire.js"></script>', () => `<script>window.WIRE_LEARN = ${data};</script>\n<script src="wire.js"></script>`);

@@ -1,0 +1,54 @@
+title: Choosing: when and else
+check: behaves
+---- intro
+Often an output should be one thing or another, depending on a condition. VHDL says it almost in words:
+
+```
+y <= a when s = '0' else b;
+```
+
+"`y` is `a` when `s` is 0, else `b`." This part is a **multiplexer**, a switch that picks one of its inputs. A single bit is written in single quotes: `'0'` and `'1'`.
+---- task
+When `s` is 0, `y` should be `a`; when `s` is 1, `y` should be `b`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity mux2 is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    s : in  std_logic;
+    y : out std_logic
+  );
+end mux2;
+
+architecture rtl of mux2 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity mux2 is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    s : in  std_logic;
+    y : out std_logic
+  );
+end mux2;
+
+architecture rtl of mux2 is
+begin
+    y <= a when s = '0' else b;
+end rtl;
+---- hint1
+Use `when ... else`: one value when the condition holds, the other otherwise.
+---- hint2
+`y <= a when s = '0' else b;`
+---- solution
+`y <= a when s = '0' else b;` The drawing shows it as a multiplexer: `s` picks which input goes through.
+---- done
+You could build the same out of gates, `(a and not s) or (b and s)`, but `when ... else` says what you mean. VHDL lets you describe what a circuit does and works out the gates for you.

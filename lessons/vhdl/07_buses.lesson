@@ -1,0 +1,48 @@
+title: Buses: many wires at once
+check: behaves
+---- intro
+A number needs several wires, one per bit. A group of wires is a **bus**, a `std_logic_vector`. `std_logic_vector(3 downto 0)` is four bits, numbered 3 (the leftmost, worth the most) down to 0.
+
+A gate on a bus works on every bit at once: if `a` and `b` are 4-bit buses, `a and b` is four AND gates side by side. A bus value is written in double quotes: `"1010"`.
+---- task
+`a` and `b` are 4 bits each. Make `y` light each bit where `a` and `b` are **different**: four XOR gates in one line.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity diff4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    b : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(3 downto 0)
+  );
+end diff4;
+
+architecture rtl of diff4 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity diff4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    b : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(3 downto 0)
+  );
+end diff4;
+
+architecture rtl of diff4 is
+begin
+    y <= a xor b;
+end rtl;
+---- hint1
+The line looks exactly like the one-bit XOR: VHDL sees that the signals are buses and makes one gate per bit.
+---- hint2
+`y <= a xor b;`
+---- solution
+`y <= a xor b;` For `a = "1100"` and `b = "1010"`, `y` is `"0110"`: the two middle bits differ.
+---- done
+One line, four gates. Click the bits of the inputs on the right to see each XOR work on its own pair.

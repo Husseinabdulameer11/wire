@@ -1,0 +1,51 @@
+title: Two outputs
+check: behaves
+---- intro
+A circuit can have several outputs: each gets its own line. Here is the half adder from the Circuits lessons, with outputs `sum` and `carry`.
+
+The order of the lines does not matter. Unlike a program, a circuit is not run line by line: all of its gates are there at the same time, working at once.
+---- task
+Build the half adder: `sum` is `a` XOR `b`, and `carry` is `a` AND `b`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity half_adder is
+  port(
+    a     : in  std_logic;
+    b     : in  std_logic;
+    sum   : out std_logic;
+    carry : out std_logic
+  );
+end half_adder;
+
+architecture rtl of half_adder is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity half_adder is
+  port(
+    a     : in  std_logic;
+    b     : in  std_logic;
+    sum   : out std_logic;
+    carry : out std_logic
+  );
+end half_adder;
+
+architecture rtl of half_adder is
+begin
+    sum   <= a xor b;
+    carry <= a and b;
+end rtl;
+---- hint1
+Two lines, one for each output. The XOR gate's word is `xor`.
+---- hint2
+`sum <= a xor b;` and `carry <= a and b;`
+---- solution
+`sum <= a xor b;` and `carry <= a and b;`. In the Circuits lessons this took a chip and a gate; here it is two lines.
+---- done
+Swap the two lines round and nothing changes: they describe two gates that exist side by side. That is the biggest difference between VHDL and a programming language.

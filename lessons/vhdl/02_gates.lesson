@@ -1,0 +1,52 @@
+title: Gates are words
+check: behaves
+---- intro
+In VHDL the gates are words: `not`, `and`, `or`, `xor`, `nand`. You write them between signals, much as you would in a sentence:
+
+- `y <= not a;` is the NOT gate
+- `y <= a and b;` is the AND gate
+- `y <= a or b;` is OR
+
+This entity has two inputs, `a` and `b`. Watch the drawing on the right change as you type.
+---- task
+Write the AND gate from the Circuits lessons: `y` is on only when both `a` and `b` are on.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity and_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end and_gate;
+
+architecture rtl of and_gate is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity and_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end and_gate;
+
+architecture rtl of and_gate is
+begin
+    y <= a and b;
+end rtl;
+---- hint1
+It is one line, like `y <= a;`, with the gate's word between the two inputs.
+---- hint2
+`y <= a and b;`
+---- solution
+`y <= a and b;` is an AND gate with `a` and `b` as its inputs and `y` as its output. Click the switches on the right to try all four combinations.
+---- done
+Try changing `and` to `or` and watch the gate in the drawing change, then put it back. The text and the circuit are the same thing.

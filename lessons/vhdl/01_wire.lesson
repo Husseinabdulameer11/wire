@@ -1,0 +1,51 @@
+title: From drawing to text
+check: behaves
+---- intro
+In the Circuits lessons you drew circuits. Engineers usually **write** them instead, in a language called **VHDL**, and a program turns the text into a circuit. On the right, Wire draws whatever you write, as you type.
+
+A VHDL circuit has two parts:
+
+- the **entity** is the outside: the pins. Here, one input `a` and one output `y`. It is written for you.
+- the **architecture** is the inside: what happens between the pins. You write that, between `begin` and `end`.
+
+`<=` means "is connected to". The line `y <= a;` is the wire from your very first lesson: `y` follows `a`. Every line ends with a semicolon `;`.
+---- task
+Connect `y` to `a`: write `y <= a;` where it says `-- write it here`. Then click the switch `a` on the right.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity first is
+  port(
+    a : in  std_logic;
+    y : out std_logic
+  );
+end first;
+
+architecture rtl of first is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity first is
+  port(
+    a : in  std_logic;
+    y : out std_logic
+  );
+end first;
+
+architecture rtl of first is
+begin
+    y <= a;
+end rtl;
+---- hint1
+Replace the line `-- write it here` with `y <= a;`, keeping the semicolon at the end.
+---- hint2
+The whole line is `    y <= a;` (the spaces in front are only to make it tidy). If the message at the bottom says "syntax error", look for a missing `;`.
+---- solution
+`y <= a;` connects the output `y` to the input `a`: the same as the wire you drew in the first lesson.
+---- done
+That one line is a whole circuit. `std_logic` in the entity means "one wire carrying 0 or 1". Everything you drew can be written like this.
