@@ -1,0 +1,25 @@
+title: Switches and lights
+check: on y
+parts:
+---- intro
+Everything a computer does is made of **signals** that are either **0** (off) or **1** (on). That is all a wire in a digital circuit can carry.
+
+On the right is the smallest circuit there is: a **switch** called `a`, wired to a **light** called `y`. The switch shows its value, 0 or 1. The wire between them carries that value to the light.
+---- task
+Click the switch `a` so the light `y` comes on.
+---- start
+input a 0 20
+led y 220 20
+a -> y
+---- answer
+input a 0 20
+led y 220 20
+a -> y
+---- hint1
+The switch is the box with a 0 in it, on the left of the circuit. Click it.
+---- hint2
+Click the 0 inside the box `a`: it becomes a 1, and the 1 travels along the wire to the light.
+---- solution
+Click the switch: its value becomes 1, the wire carries the 1, and the light turns on. Click it again and everything goes back to 0.
+---- done
+The light is on because the wire carries a **1**. Click the switch again and it turns off: the wire carries a **0**. In a circuit, nothing is ever "half on".

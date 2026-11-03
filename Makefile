@@ -120,6 +120,7 @@ test: $(WIRE)
 	     || { echo "tests/vhdl_in/rv32im.vhd: the RV32IM core did not finish its program with 0x398C2B4C"; exit 1; }; \
 	   node tests/asm/asmtest.js $(WIRE) || exit 1; \
 	   node tools/exam.js $(WIRE) --check || exit 1; \
+	   node tools/learn.js $(WIRE) --check || exit 1; \
 	   node tools/riscv.js $(WIRE) --check || exit 1; \
 	   node tests/riscv/run.js $(WIRE) || exit 1; \
 	   if command -v riscv64-unknown-elf-as >/dev/null 2>&1; then node tests/riscv/gnu.js $(WIRE) || exit 1; \
@@ -173,8 +174,9 @@ BOOKS   ?= $(if $(wildcard books/fpga_summary.pdf),--book books/fpga_summary.pdf
 site: $(WIRE)
 	rm -rf build/site
 	@if [ -f build/web/wire.wasm ]; then node tools/playground.js build/web build/site --wire $(WIRE) $(BOOKS) \
-	   && node tools/exam.js $(WIRE) build/web build/site; \
-	 else echo "wire: no build/web/wire.wasm, so the site has no playground or exercises (make web needs Emscripten)"; fi
+	   && node tools/exam.js $(WIRE) build/web build/site \
+	   && node tools/learn.js $(WIRE) build/site; \
+	 else echo "wire: no build/web/wire.wasm, so the site has no playground, exercises or lessons (make web needs Emscripten)"; fi
 	node tools/site.js $(WIRE) build/site $(BOOKS)
 
 # check that every section of the topics files points at real pages:

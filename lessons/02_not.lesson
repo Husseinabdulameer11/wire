@@ -1,0 +1,38 @@
+title: The NOT gate
+check: behaves
+parts: not
+---- intro
+A **gate** is a part that looks at its inputs and decides what its output is. The simplest is the **NOT gate**: it turns a 1 into a 0, and a 0 into a 1. It always does the opposite.
+
+| a | y |
+|---|---|
+| 0 | 1 |
+| 1 | 0 |
+
+This table is called a **truth table**: one row for every value the inputs can have, and what the output is then.
+
+You make wires yourself: **drag from the small square on the right of one part** (its output) **to the small square on the left of another** (its input).
+---- task
+Wire the switch `a` into the NOT gate, and the NOT gate into the light `y`. Then click `a` and watch the light do the opposite.
+---- start
+input a 0 20
+not n1 120 20
+led y 260 20
+---- reference
+input a
+led y
+y = ~a
+---- answer
+input a 0 20
+not n1 120 20
+led y 260 20
+a -> n1.in
+n1 -> y
+---- hint1
+Two wires are missing. Start at the small square on the right edge of the switch `a`, hold the mouse down, and drag to the square on the left of the NOT gate.
+---- hint2
+Now the second wire: from the square on the right of the NOT gate (after the little circle) to the square on the left of the light `y`.
+---- solution
+The NOT gate goes between the switch and the light: `a` into the gate, the gate into `y`. When `a` is 0 the light is on, and when `a` is 1 it is off.
+---- done
+The light is on when the switch is **off**: the NOT gate inverts. Gates like this are the building blocks of everything else, and you will combine them from now on.

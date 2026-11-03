@@ -1,0 +1,42 @@
+title: Two gates in a row
+check: behaves
+parts: and or not
+---- intro
+Gates can be chained: the output of one gate goes into the input of the next. Your circuit then does both, one after the other.
+
+An AND followed by a NOT is so useful it has its own name, **NAND** ("not and"): it gives 0 only when both inputs are 1, and 1 the rest of the time. It is the opposite of AND.
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 1 |
+| 0 | 1 | 1 |
+| 1 | 0 | 1 |
+| 1 | 1 | 0 |
+---- task
+Build NAND: make `y` the opposite of `a` AND `b`. Use two gates.
+---- start
+input a 0 0
+input b 0 60
+led y 360 30
+---- reference
+input a, b
+led y
+y = ~(a & b)
+---- answer
+input a 0 0
+input b 0 60
+and g1 120 20
+not n1 240 30
+led y 360 30
+a -> g1.0
+b -> g1.1
+g1 -> n1.in
+n1 -> y
+---- hint1
+First build the AND, as in the last lesson. Then think about what you need to do to its answer to get the table here: every value is turned round.
+---- hint2
+Put a NOT gate between the AND gate and the light: the AND's output into the NOT, the NOT's output into `y`.
+---- solution
+`a` and `b` go into an AND gate, its output into a NOT gate, and the NOT gate into `y`. The AND gives 1 only for 1 and 1, and the NOT turns that round.
+---- done
+Two gates, one after the other. Fun fact: with enough NAND gates you can build **any** circuit at all, a whole computer included. Every other gate can be made out of them.

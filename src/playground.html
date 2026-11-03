@@ -635,7 +635,9 @@ let dirty = false;             /* the circuit was changed since it was loaded */
 const views = { draw: null, wire: null, vhdl: null };
 let isaUser = { name: "my_cpu.isa", text: "" };   /* the instruction set file a cpu statement names (an example has its own) */   /* draw: a drawing; wire, vhdl: { text, dir } */
 let source = "draw";           /* the view that holds the circuit */
-const STORE = "wire-playground-3";
+/* learn.html is this page with lessons (tools/learn.js): it keeps its drawings apart */
+const LEARN = window.WIRE_LEARN || null;
+const STORE = LEARN ? "wire-learn-draw" : "wire-playground-3";
 const viewKey = () => mode === "draw" ? "draw" : lang;
 const VIEW_NAMES = { draw: "Draw", wire: "Wire", vhdl: "VHDL" };
 const vhdlNow = () => mode === "write" && lang === "vhdl";
@@ -667,6 +669,7 @@ function edited() {
 function persist() {
   syncView();
   try { localStorage.setItem(STORE, JSON.stringify({ mode, lang, name: $("name").value, views, source, dirty, isa: isaUser })); } catch (e) {}
+  if (window.wireLearn) window.wireLearn.changed(model);
 }
 
 /* ============================================================== compiling */
@@ -768,6 +771,7 @@ function show(html) {
     front = 1 - front;
     $("loading").hidden = true;
     readPageCpu();
+    if (window.wireLearn) window.wireLearn.shown();
     if (mode === "draw" && sheet(model).tidy) {   /* keep where the page put it */
       delete sheet(model).tidy;
       try { frames[front].contentWindow.document.getElementById("tidy").click(); } catch (e) {}
@@ -1895,6 +1899,7 @@ function validModel(m) {
   return true;
 }
 (function start() {
+  if (LEARN) { model = { title: "Lesson", next: 1, parts: [], links: [] }; setMode("draw"); return; }   /* the lesson sets the drawing */
   const q = new URLSearchParams(location.hash.slice(1));
   const okText = v => v && typeof v.text === "string" ? { text: v.text, dir: typeof v.dir === "string" ? v.dir : "" } : null;
   let saved = null, old = null;

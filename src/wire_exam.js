@@ -25,7 +25,7 @@ function ports(D) {
   D.nodes.forEach((n, j) => {
     if (n.inst !== 0 || !n.name) return;
     if (SOURCES.has(n.kind)) ins.push({ name: n.name.toLowerCase(), w: D.nets[n.out[0]].w, id: j, clock: n.kind === "clock" });
-    else if (n.kind === "output") outs.push({ name: n.name.toLowerCase(), w: D.nets[n.in[0]].w, id: j, net: n.in[0] });
+    else if (n.kind === "output" || n.kind === "led") outs.push({ name: n.name.toLowerCase(), w: D.nets[n.in[0]].w, id: j, net: n.in[0] });
   });
   return { ins, outs };
 }
