@@ -1,5 +1,7 @@
 title: Choosing: when and else
 check: behaves
+mode: vhdl
+chapter: Choosing
 ---- intro
 Often an output should be one thing or another, depending on a condition. VHDL says it almost in words:
 
@@ -51,4 +53,4 @@ Use `when ... else`: one value when the condition holds, the other otherwise.
 ---- solution
 `y <= a when s = '0' else b;` The drawing shows it as a multiplexer: `s` picks which input goes through.
 ---- done
-You could build the same out of gates, `(a and not s) or (b and s)`, but `when ... else` says what you mean. VHDL lets you describe what a circuit does and works out the gates for you.
+That is the circuit you just drew with four gates, but `when ... else` says what you mean. VHDL lets you describe what a circuit does and works out the gates for you.

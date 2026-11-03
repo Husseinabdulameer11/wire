@@ -1,3 +1,0 @@
-# The tracks of the learning page, in order: folder | name | what it is
-circuits | Circuits | Build circuits from gates by drawing them: no code, from a switch to a circuit that adds.
-vhdl     | VHDL     | Write circuits as text, the way engineers do: Wire draws what you write as you type.

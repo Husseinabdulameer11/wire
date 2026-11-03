@@ -1,0 +1,58 @@
+title: Numbers: a 4-bit adder
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+Four full adders in a row add two 4-bit numbers, carry going from each to the next. VHDL can build that chain for you: treat the bits as a number and use `+`.
+
+The `numeric_std` library (in the starter) has `unsigned`, a bus read as a number:
+
+- `unsigned(a)` reads the bits of `a` as a number
+- `resize(x, 5)` makes a number 5 bits wide
+- `std_logic_vector(x)` turns the number back into bits for an output
+
+The answer can be up to 15 + 15 = 30, so `s` has **5** bits: the fifth is the last carry.
+---- task
+Add the 4-bit numbers `a` and `b`; `s` is the 5-bit sum.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity adder4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    b : in  std_logic_vector(3 downto 0);
+    s : out std_logic_vector(4 downto 0)
+  );
+end adder4;
+
+architecture rtl of adder4 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity adder4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    b : in  std_logic_vector(3 downto 0);
+    s : out std_logic_vector(4 downto 0)
+  );
+end adder4;
+
+architecture rtl of adder4 is
+begin
+    s <= std_logic_vector(resize(unsigned(a), 5) + unsigned(b));
+end rtl;
+---- hint1
+Make `a` 5 bits wide before adding, so the last carry is not lost.
+---- hint2
+`s <= std_logic_vector(resize(unsigned(a), 5) + unsigned(b));`
+---- solution
+`s <= std_logic_vector(resize(unsigned(a), 5) + unsigned(b));` Open the adder on the right to see the full adders inside it.
+---- done
+One `+`, and Wire builds the adder you would otherwise wire from full adders. Engineers write `+` and let the tools make the gates.

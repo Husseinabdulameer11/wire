@@ -1,0 +1,52 @@
+title: Brackets: NOR
+mode: vhdl
+chapter: Combining gates
+check: behaves
+---- intro
+In the last lesson you chained an AND and a NOT. In VHDL that is one line, with brackets saying what happens first, as in arithmetic: in `not (a and b)` the AND comes first and the NOT turns its answer round.
+
+Now the other way round: **NOR** ("not or") is an OR followed by a NOT. It gives 1 only when **both** inputs are 0.
+
+Without brackets, `not a or b` means `(not a) or b`: a different circuit. VHDL makes you write what you mean.
+---- task
+Write NOR in one line: `y` is the opposite of `a` OR `b`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity nor_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end nor_gate;
+
+architecture rtl of nor_gate is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity nor_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end nor_gate;
+
+architecture rtl of nor_gate is
+begin
+    y <= not (a or b);
+end rtl;
+---- hint1
+Put the OR in brackets, and `not` in front of the brackets.
+---- hint2
+`y <= not (a or b);`
+---- solution
+`y <= not (a or b);` is an OR gate followed by a NOT gate: the drawing on the right shows both.
+---- done
+VHDL also has the words `nand` and `nor`: `y <= a nor b;` is the same circuit. Most designers write the gates out, because it reads more clearly.

@@ -1,7 +1,9 @@
 title: From drawing to text
 check: behaves
+mode: vhdl
+chapter: Signals and gates
 ---- intro
-In the Circuits lessons you drew circuits. Engineers usually **write** them instead, in a language called **VHDL**, and a program turns the text into a circuit. On the right, Wire draws whatever you write, as you type.
+So far you have drawn circuits. Engineers usually **write** them instead, in a language called **VHDL**, and a program turns the text into a circuit. On the right, Wire draws whatever you write, as you type.
 
 A VHDL circuit has two parts:
 

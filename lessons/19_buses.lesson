@@ -1,5 +1,7 @@
 title: Buses: many wires at once
 check: behaves
+mode: vhdl
+chapter: Buses and numbers
 ---- intro
 A number needs several wires, one per bit. A group of wires is a **bus**, a `std_logic_vector`. `std_logic_vector(3 downto 0)` is four bits, numbered 3 (the leftmost, worth the most) down to 0.
 

@@ -1,0 +1,36 @@
+title: Memory: the flip-flop
+mode: draw
+chapter: Memory
+check: behaves
+parts: dff
+---- intro
+Every circuit so far forgets: its outputs follow its inputs at once. A **flip-flop** remembers one bit. It has a **clock** input, a signal that ticks 0, 1, 0, 1. At the moment the clock goes from 0 to 1 (the **rising edge**), the flip-flop copies its input `d` to its output `q`, and keeps it until the next edge, whatever `d` does in between.
+
+Press **Step** above the circuit to tick the clock once, or **Run** to keep it ticking.
+---- task
+Wire a **D flip-flop**: `d` into its `d` input, the clock `clk` into its `clk` input, and its `q` output to the light `q`.
+---- start
+input d 0 0
+clock clk 0 80
+led q 300 20
+---- answer
+input d 0 0
+clock clk 0 80
+dff f1 140 20
+led q 300 20
+d -> f1.d
+clk -> f1.clk
+f1.q -> q
+---- reference
+clock clk
+input d
+led q
+q = dff(d, clk)
+---- hint1
+Drag a **D flip-flop** from Building blocks. It has two inputs on its left, `d` and `clk` (the one with the little triangle).
+---- hint2
+Three wires: `d` to the flip-flop's `d`, `clk` to its `clk`, and its `q` (top right) to the light. Then flip `d` and press Step.
+---- solution
+`d` and `clk` go into the flip-flop, `q` to the light. Flip `d`: nothing happens until you press Step, and then the light takes `d`'s value.
+---- done
+That is memory: the light holds its value between clock ticks. Registers, counters and whole processors are made of flip-flops.

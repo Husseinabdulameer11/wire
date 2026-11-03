@@ -2,6 +2,8 @@ title: Build your own gate: XOR
 check: behaves
 parts: and or not
 keep: my_xor
+mode: draw
+chapter: Combining gates
 ---- intro
 Some questions need several gates working together. **XOR** ("exclusive or") answers: are the two inputs **different**? Its output is 1 when exactly one input is 1, and 0 when they are the same.
 

@@ -1,6 +1,8 @@
 title: Switches and lights
 check: on y
 parts:
+mode: draw
+chapter: Signals and gates
 ---- intro
 Everything a computer does is made of **signals** that are either **0** (off) or **1** (on). That is all a wire in a digital circuit can carry.
 

@@ -1,6 +1,8 @@
 title: The NOT gate
 check: behaves
 parts: not
+mode: draw
+chapter: Signals and gates
 ---- intro
 A **gate** is a part that looks at its inputs and decides what its output is. The simplest is the **NOT gate**: it turns a 1 into a 0, and a 0 into a 1. It always does the opposite.
 

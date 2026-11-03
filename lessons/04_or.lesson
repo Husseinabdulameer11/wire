@@ -1,0 +1,42 @@
+title: OR: at least one
+mode: draw
+chapter: Signals and gates
+check: behaves
+parts: and or not
+---- intro
+The **OR gate** is AND's partner. Its output is 1 when **at least one** input is 1: think of two switches side by side, either of which turns the light on.
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 0 |
+| 0 | 1 | 1 |
+| 1 | 0 | 1 |
+| 1 | 1 | 1 |
+
+Look at the shapes in the list: AND has a flat back, OR a curved one.
+---- task
+Make the light `y` come on when `a` is on, or `b` is on, or both.
+---- start
+input a 0 0
+input b 0 60
+led y 280 30
+---- answer
+input a 0 0
+input b 0 60
+or o1 130 20
+led y 280 30
+a -> o1.0
+b -> o1.1
+o1 -> y
+---- reference
+input a, b
+led y
+y = a | b
+---- hint1
+Which gate gives 1 for three of the four rows? Its name is in the title.
+---- hint2
+Drag an **OR** gate between the switches and the light, then wire `a` and `b` into it and its output to `y`.
+---- solution
+One OR gate: `a` and `b` into its inputs, its output into `y`. Only when both switches are off does the light go out.
+---- done
+NOT, AND and OR are the three basic gates. Every digital circuit, however big, can be built from them. Next you will write one of them as text.

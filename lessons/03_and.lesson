@@ -1,6 +1,8 @@
 title: AND: both at once
 check: behaves
 parts: and or not
+mode: draw
+chapter: Signals and gates
 ---- intro
 An **AND gate** has two inputs. Its output is 1 only when **both** inputs are 1. Think of two switches in a row: the light only comes on if the first **and** the second are on.
 
@@ -37,4 +39,4 @@ Wire `a` to one input of the AND gate and `b` to the other (the two squares on i
 ---- solution
 One AND gate: `a` and `b` go into its two inputs, and its output goes to `y`. Try all four combinations of the switches: only when both are 1 does the light come on.
 ---- done
-Try all four combinations of `a` and `b`: only one of them lights `y`, just as the table says. The **OR** gate is AND's partner: its output is 1 when **at least one** input is 1.
+Try all four combinations of `a` and `b`: only one of them lights `y`, just as the table says. Next: AND's partner, the **OR** gate.

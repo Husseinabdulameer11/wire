@@ -1,6 +1,8 @@
 title: Two gates in a row
 check: behaves
 parts: and or not
+mode: draw
+chapter: Combining gates
 ---- intro
 Gates can be chained: the output of one gate goes into the input of the next. Your circuit then does both, one after the other.
 

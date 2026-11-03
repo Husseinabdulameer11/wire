@@ -1,7 +1,9 @@
 title: Two outputs
 check: behaves
+mode: vhdl
+chapter: Arithmetic
 ---- intro
-A circuit can have several outputs: each gets its own line. Here is the half adder from the Circuits lessons, with outputs `sum` and `carry`.
+A circuit can have several outputs: each gets its own line. Here is the half adder you drew, with outputs `sum` and `carry`.
 
 The order of the lines does not matter. Unlike a program, a circuit is not run line by line: all of its gates are there at the same time, working at once.
 ---- task
@@ -46,6 +48,6 @@ Two lines, one for each output. The XOR gate's word is `xor`.
 ---- hint2
 `sum <= a xor b;` and `carry <= a and b;`
 ---- solution
-`sum <= a xor b;` and `carry <= a and b;`. In the Circuits lessons this took a chip and a gate; here it is two lines.
+`sum <= a xor b;` and `carry <= a and b;`. In the drawing this took a chip and a gate; here it is two lines.
 ---- done
 Swap the two lines round and nothing changes: they describe two gates that exist side by side. That is the biggest difference between VHDL and a programming language.

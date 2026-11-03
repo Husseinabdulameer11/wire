@@ -1,0 +1,52 @@
+title: Odd or even: parity
+mode: vhdl
+chapter: Combining gates
+check: behaves
+---- intro
+With three inputs, writing a gate is still one line: operators chain, `a xor b xor c`.
+
+XOR of several bits answers a useful question: is the number of 1s **odd**? Every time a 1 comes in, the answer flips. This is a **parity** bit, and memory chips and network links send it along with the data to spot a bit that went wrong on the way.
+---- task
+Make `y` 1 when an odd number of `a`, `b` and `c` are 1.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity parity3 is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    c : in  std_logic;
+    y : out std_logic
+  );
+end parity3;
+
+architecture rtl of parity3 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity parity3 is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    c : in  std_logic;
+    y : out std_logic
+  );
+end parity3;
+
+architecture rtl of parity3 is
+begin
+    y <= a xor b xor c;
+end rtl;
+---- hint1
+XOR is 1 when its two inputs differ: chain it across all three inputs.
+---- hint2
+`y <= a xor b xor c;`
+---- solution
+`y <= a xor b xor c;` One 1 gives 1, two give 0, three give 1 again.
+---- done
+In a drawing that is two XOR gates in a row; in VHDL, one line. For 32 bits it would still be one line, as you will see with buses.

@@ -7,9 +7,11 @@
  *   node tools/learn.js build/wire build/site        writes learn.html (make site)
  *   node tools/learn.js build/wire --check           only checks the lessons (make test)
  *
- * lessons/tracks.txt names the tracks, in order: circuits (drawn) and vhdl
- * (written). A lesson (lessons/<track>/<nn>_<name>.lesson) is a header and sections:
+ * The lessons go in order, drawn and written mixed. A lesson
+ * (lessons/<nn>_<name>.lesson) is a header and sections:
  *   title: ...
+ *   mode: draw | vhdl     drawn in the playground's drawing, or written in VHDL
+ *   chapter: ...          the heading it goes under
  *   check: on y           done when the light y is on (the learner clicks the inputs)
  *   check: behaves        done when the circuit does what ---- reference does, for every input
  *   parts: and or not chip:my_xor      what the parts list offers (nothing: no list)
@@ -19,7 +21,7 @@
  *   ---- start            the drawing it starts with
  *   ---- answer           a drawing that is right (Show me the solution loads it)
  *   ---- reference        Wire that does what the circuit must do (check: behaves)
- * In the vhdl track, start and answer are VHDL, the answer is what the
+ * In a vhdl lesson, start and answer are VHDL, the answer is what the
  * circuit must do, and cycles: / random: are as for an exercise (tools/exam.js).
  * A drawing is a part a line, "kind name x y" ("chip name comp x y"), and
  * wires, "from[.pin] -> to[.pin]" (an output is "out", a light's input "in",
@@ -40,7 +42,7 @@ const out = check ? null : args[1];
 if (!wire || (!check && !out)) { console.error("usage: node tools/learn.js build/wire build/site  |  node tools/learn.js build/wire --check"); process.exit(2); }
 
 const GATES = new Set(["and", "or", "nand", "nor", "xor", "xnor"]);
-const KINDS = new Set(["input", "led", "output", "not", "buf", "chip", ...GATES]);
+const KINDS = new Set(["input", "clock", "led", "output", "not", "buf", "dff", "chip", ...GATES]);
 
 function parse(file) {
   const text = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
@@ -84,25 +86,28 @@ function wireText(m, chips) {
     const from = (p, pin) => {
       const l = into.get(p.id + ":" + pin), f = l && byId.get(l.from.id);
       if (!f) return "0";
-      return f.kind === "chip" ? `${f.name}.${l.from.pin}` : f.name;
+      return f.kind === "chip" || (f.kind === "dff" && l.from.pin !== "q") ? `${f.name}.${l.from.pin}` : f.name;
     };
     const body = [];
     for (const p of sh.parts) {
       if (GATES.has(p.kind)) body.push(`${p.name} = ${p.kind}(${from(p, "0")}, ${from(p, "1")})`);
       else if (p.kind === "not" || p.kind === "buf") body.push(`${p.name} = ${p.kind}(${from(p, "in")})`);
+      else if (p.kind === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")})`);
       else if (p.kind === "chip") body.push(`${p.name} = ${p.comp}(${p.ins.map(([n]) => `${n} = ${from(p, n)}`).join(", ")})`);
       else if (p.kind === "led" || p.kind === "output") body.push(`${p.name} = ${from(p, "in")}`);
     }
     return body;
   };
-  const used = [...new Set(m.parts.filter(p => p.kind === "chip").map(p => p.comp))];
+  /* the chips it uses, and the chips they use, deepest first */
+  const used = [], visit = sh => sh.parts.filter(p => p.kind === "chip").forEach(p => { if (!used.includes(p.comp)) { visit(chips[p.comp]); used.push(p.comp); } });
+  visit(m);
   const t = [`circuit "lesson"`];
   for (const c of used) {
     const d = chips[c], ins = d.parts.filter(p => p.kind === "input").map(p => p.name), outs = d.parts.filter(p => p.kind === "output").map(p => p.name);
     t.push(`component ${c}(${ins.join(", ")}) -> (${outs.join(", ")}) {`, ...lines(d).map(l => "    " + l), "}");
   }
   const decl = k => { const ps = m.parts.filter(p => p.kind === k); if (ps.length) t.push(`${k} ${ps.map(p => p.name).join(", ")}`); };
-  decl("input"); decl("led"); decl("output");
+  decl("input"); decl("clock"); decl("led"); decl("output");
   t.push(...lines(m));
   return t.join("\n") + "\n";
 }
@@ -118,23 +123,23 @@ const netlist = (text, name, ext = ".wire") => {
 let failures = 0;
 const fail = m => { failures++; console.error("FAIL " + m); };
 const chips = {}, lessons = [];
-const tracks = fs.readFileSync(path.join(root, "lessons", "tracks.txt"), "utf8").split(/\r?\n/).map(l => l.replace(/#.*$/, "").trim()).filter(Boolean)
-  .map(l => { const [dir, name, about] = l.split("|").map(x => x.trim()); return { dir, name, about }; });
-for (const tr of tracks) for (const f of fs.readdirSync(path.join(root, "lessons", tr.dir)).filter(n => n.endsWith(".lesson")).sort()) {
-  const id = tr.dir + "/" + f.replace(/\.lesson$/, "");
+const tr = { dir: "course" };
+for (const f of fs.readdirSync(path.join(root, "lessons")).filter(n => n.endsWith(".lesson")).sort()) {
+  const id = f.replace(/\.lesson$/, "");
   try {
-    const l = parse(path.join(root, "lessons", tr.dir, f));
-    if (tr.dir === "vhdl") { lessons.push(vhdlLesson(id, tr, l)); continue; }
+    const l = parse(path.join(root, "lessons", f));
+    if (l.header.mode === "vhdl") { const v = vhdlLesson(id, tr, l); v.chapter = l.header.chapter || ""; lessons.push(v); continue; }
+    if (l.header.mode && l.header.mode !== "draw") throw new Error(`${id}: mode: is draw or vhdl`);
     for (const s of ["intro", "task", "start", "answer", "solution", "done"]) if (!l.s[s]) throw new Error(`${id}: there is no ---- ${s}`);
     const needs = (l.header.needs || "").split(/\s+/).filter(Boolean);
     const lessonChips = Object.fromEntries(needs.map(c => { if (!chips[c]) throw new Error(`${id}: needs ${c}, which no earlier lesson keeps`); return [c, chips[c]]; }));
     const start = drawing(l.s.start, lessonChips, id + " start"), answer = drawing(l.s.answer, lessonChips, id + " answer");
     const lesson = {
-      id, track: tr.dir, kind: "draw", title: l.header.title, check: l.header.check || "", parts: (l.header.parts || "").split(/\s+/).filter(Boolean),
+      id, track: tr.dir, kind: "draw", chapter: l.header.chapter || "", title: l.header.title, check: l.header.check || "", parts: (l.header.parts || "").split(/\s+/).filter(Boolean),
       keep: l.header.keep || null, needs, intro: l.s.intro, task: l.s.task, hints: [l.s.hint1, l.s.hint2, l.s.hint3].filter(Boolean),
       solution: l.s.solution, done: l.s.done, start, answer
     };
-    const allowed = new Set(["input", "led", ...lesson.parts.map(k => k.startsWith("chip:") ? "chip" : k)]);
+    const allowed = new Set(["input", "clock", "led", ...lesson.parts.map(k => k.startsWith("chip:") ? "chip" : k)]);
     for (const p of answer.parts) if (!allowed.has(p.kind)) fail(`${id}: the answer uses a ${p.kind}, which parts: does not offer`);
     const on = /^on\s+(\w+)$/.exec(lesson.check);
     if (on) {
@@ -145,7 +150,7 @@ for (const tr of tracks) for (const f of fs.readdirSync(path.join(root, "lessons
       const D = netlist(`circuit "reference"\n${l.s.reference}\n`, id + "_ref"), P = WireExam.ports(D);
       lesson.inputs = P.ins.map(({ name, w }) => ({ name, w }));
       lesson.outputs = P.outs.map(({ name, w }) => ({ name, w }));
-      lesson.clock = null;
+      lesson.clock = (P.ins.find(p => p.clock) || {}).name || null;
       lesson.tests = WireExam.makeTests(lesson, WireExam.rng(1));
       lesson.tests.expect = WireExam.run(D, WireSim.createSync(D), lesson, lesson.tests.steps).got;
       const grade = (d, what) => { const N = netlist(wireText(d, lessonChips), id + "_" + what); return WireExam.grade(N, WireSim.createSync(N), lesson); };
@@ -191,7 +196,7 @@ const pg = path.join(out, "playground.html");
 if (!fs.existsSync(pg)) { console.error(`learn: no ${pg}; make the playground first (tools/playground.js)`); process.exit(1); }
 const js = f => fs.readFileSync(path.join(root, "src", f), "utf8").replace(/<\/script/gi, "<\\/script");
 let page = fs.readFileSync(pg, "utf8");
-const data = JSON.stringify({ tracks, lessons }).replace(/</g, "\\u003c");
+const data = JSON.stringify({ lessons }).replace(/</g, "\\u003c");
 page = page.replace(/<title>[^<]*<\/title>/, "<title>Learn digital circuits - Wire</title>")
            .replace(/<meta name="description" content="[^"]*">/, '<meta name="description" content="Learn how digital circuits work, from a switch and a light to a circuit that adds, by building them in your browser.">')
            .replace('<script src="wire.js"></script>', () => `<script>window.WIRE_LEARN = ${data};</script>\n<script src="wire.js"></script>`);

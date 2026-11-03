@@ -58,8 +58,9 @@ const h2 = text => [...document.querySelectorAll("#draw h2")].find(h => h.textCo
 const css = document.createElement("style");
 css.textContent = `
 #lesson { margin: -2px 0 14px; }
-#lesson .lnav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-#lesson .lnav button { min-height: 30px; min-width: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 15px; background: var(--paper); font-size: 13px; color: var(--ink); cursor: pointer; }
+#lesson .lnav { display: flex; gap: 4px 12px; flex-wrap: wrap; margin-bottom: 10px; }
+#lesson .lnav .lgroup { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+#lesson .lnav button { min-height: 26px; min-width: 26px; padding: 0 5px; border: 1px solid var(--line); border-radius: 15px; background: var(--paper); font-size: 13px; color: var(--ink); cursor: pointer; }
 #lesson .lnav button.done { background: var(--on); border-color: var(--on); color: #fff; }
 #lesson .lnav button[aria-current="true"] { box-shadow: 0 0 0 2px var(--hi); font-weight: 600; }
 #lesson .lkick { font-size: 13px; color: var(--ink-soft); }
@@ -171,7 +172,11 @@ function setCode(text) { src.value = text; edited(); paint(); persist(); schedul
 function fixTab() { const t = $("tab-side"); if (t) t.textContent = "Lesson"; }
 function render(extra) {
   const inTrack = LESSONS.map((l, i) => [l, i]).filter(([l]) => l.track === lesson.track);
-  const nav = inTrack.map(([l, i], k) => `<button type="button" data-i="${i}" class="${st.done[l.id] ? "done" : ""}" aria-current="${i === cur}" title="${esc(l.title)}">${k + 1}</button>`).join("");
+  /* the lessons, a dot each, grouped by chapter */
+  const chapters = [];
+  inTrack.forEach(([l, i], k) => { const last = chapters[chapters.length - 1]; if (!last || last.name !== (l.chapter || "")) chapters.push({ name: l.chapter || "", dots: [] });
+    chapters[chapters.length - 1].dots.push(`<button type="button" data-i="${i}" class="${st.done[l.id] ? "done" : ""}" aria-current="${i === cur}" title="${esc(l.title)}">${k + 1}</button>`); });
+  const nav = chapters.map(c => `<span class="lgroup" title="${esc(c.name)}">${c.dots.join("")}</span>`).join("");
   const tracks = TRACKS.map(t => { const ls = LESSONS.filter(l => l.track === t.dir), d = ls.filter(l => st.done[l.id]).length;
     return `<button type="button" data-t="${t.dir}" aria-pressed="${t.dir === lesson.track}" title="${esc(t.about || "")}">${esc(t.name)} <small>${d}/${ls.length}</small></button>`; }).join("");
   const pos = inTrack.findIndex(([l]) => l === lesson);
@@ -179,7 +184,7 @@ function render(extra) {
   panel.innerHTML = `
 ${TRACKS.length > 1 ? `<div class="ltracks" role="group" aria-label="Track">${tracks}</div>` : ""}
 <nav class="lnav" aria-label="Lessons">${nav}</nav>
-<div class="lkick">${esc((TRACKS.find(t => t.dir === lesson.track) || {}).name || "")}, lesson ${pos + 1} of ${inTrack.length}</div>
+<div class="lkick">Lesson ${pos + 1} of ${inTrack.length}${lesson.chapter ? ` · ${esc(lesson.chapter)}` : ""}${lesson.kind === "vhdl" ? " · VHDL" : " · drawing"}</div>
 <h2 class="ltitle">${esc(lesson.title)}</h2>
 ${md(lesson.intro)}
 <div class="ltask"><div class="lt">Your task</div>${md(lesson.task)}</div>
@@ -261,7 +266,7 @@ async function check(quiet) {
   if (seq !== checking || here !== cur) return;
   if (code && r.code !== 0) { if (!quiet) failedCode(r.err, path); return; }
   if (r.code !== 0) { if (!quiet) failed("Your circuit is not finished yet: " + (r.err.split("\n").find(l => /error/.test(l)) || "").replace(/^.*?error:\s*/, "") + "."); return; }
-  const used = code ? [] : sheet(model).parts.filter(p => !["input", "led", "output"].includes(p.kind) && !allowed(p.kind === "chip" ? "chip:" + p.comp : p.kind));
+  const used = code ? [] : sheet(model).parts.filter(p => !["input", "clock", "led", "output"].includes(p.kind) && !allowed(p.kind === "chip" ? "chip:" + p.comp : p.kind));
   if (used.length) { if (!quiet) failed(`This time, use only the parts on the left: take out ${used.map(p => p.name).join(", ")}.`); return; }
   const D = JSON.parse(r.out), sim = await WireSim.create(D);
   if (seq !== checking || here !== cur) return;

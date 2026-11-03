@@ -1,0 +1,48 @@
+title: Pieces of a bus
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+You can take a piece of a bus: `a(3 downto 0)` is its low four bits, and `a(7)` its top bit. And you can join pieces with `&`: `"10" & "01"` is `"1001"`.
+
+No gates at all: slicing and joining is only wiring, moving wires to other places.
+---- task
+Make the byte `y` from the byte `a` with its two halves swapped: for `a = "11000101"`, `y = "01011100"`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity swap is
+  port(
+    a : in  std_logic_vector(7 downto 0);
+    y : out std_logic_vector(7 downto 0)
+  );
+end swap;
+
+architecture rtl of swap is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity swap is
+  port(
+    a : in  std_logic_vector(7 downto 0);
+    y : out std_logic_vector(7 downto 0)
+  );
+end swap;
+
+architecture rtl of swap is
+begin
+    y <= a(3 downto 0) & a(7 downto 4);
+end rtl;
+---- hint1
+The low half of `a` is `a(3 downto 0)`, the high half `a(7 downto 4)`. Which comes first in `y`?
+---- hint2
+`y <= a(3 downto 0) & a(7 downto 4);`
+---- solution
+`y <= a(3 downto 0) & a(7 downto 4);` The left of `&` becomes the high bits.
+---- done
+The drawing shows the bus being split and joined, with no gates in between: rewiring costs nothing in hardware.

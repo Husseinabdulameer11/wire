@@ -1,0 +1,45 @@
+title: A switch for signals
+mode: draw
+chapter: Choosing
+check: behaves
+parts: and or not
+---- intro
+A **multiplexer** chooses: a select input `s` decides which of two inputs goes through to `y`. When `s` is 0, `y` is `a`; when `s` is 1, `y` is `b`. It is how a circuit picks between results.
+
+Built from gates: "`a` while `s` is 0" is `a AND (NOT s)`, and "`b` while `s` is 1" is `b AND s`. Only one of them can be 1 at a time, so an OR joins them.
+---- task
+Build the multiplexer from gates: `y` follows `a` when `s` is 0, and `b` when `s` is 1.
+---- start
+input a 0 0
+input b 0 80
+input s 0 160
+led y 480 60
+---- answer
+input a 0 0
+input b 0 80
+input s 0 160
+not n1 120 160
+and g1 240 20
+and g2 240 110
+or o1 360 60
+led y 480 60
+s -> n1.in
+a -> g1.0
+n1 -> g1.1
+b -> g2.0
+s -> g2.1
+g1 -> o1.0
+g2 -> o1.1
+o1 -> y
+---- reference
+input a, b, s
+led y
+y = (a & ~s) | (b & s)
+---- hint1
+You need a NOT for `s`, two AND gates and an OR gate.
+---- hint2
+One AND gets `a` and NOT `s`; the other gets `b` and `s`. OR their outputs into `y`.
+---- solution
+`a AND (NOT s)` passes `a` while `s` is 0, `b AND s` passes `b` while `s` is 1, and the OR gives whichever one is let through.
+---- done
+Four gates to choose. In VHDL there is a much shorter way to say it, as you will see next.

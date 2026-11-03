@@ -1,5 +1,7 @@
 title: Gates are words
 check: behaves
+mode: vhdl
+chapter: Signals and gates
 ---- intro
 In VHDL the gates are words: `not`, `and`, `or`, `xor`, `nand`. You write them between signals, much as you would in a sentence:
 
@@ -9,7 +11,7 @@ In VHDL the gates are words: `not`, `and`, `or`, `xor`, `nand`. You write them b
 
 This entity has two inputs, `a` and `b`. Watch the drawing on the right change as you type.
 ---- task
-Write the AND gate from the Circuits lessons: `y` is on only when both `a` and `b` are on.
+Write the AND gate you drew: `y` is on only when both `a` and `b` are on.
 ---- start
 library ieee;
 use ieee.std_logic_1164.all;

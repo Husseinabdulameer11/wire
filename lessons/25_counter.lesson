@@ -1,0 +1,90 @@
+title: Counting
+mode: vhdl
+chapter: Memory
+check: behaves
+cycles: 200
+random: rst=0.03
+---- intro
+A **counter** is a register that adds 1 to itself on every clock edge: 0, 1, 2 ... 15, and then round to 0. It is how a circuit measures time, or steps through the instructions of a program.
+
+An output cannot be read inside the architecture, so the count is kept in a **signal**, `count` (an `unsigned` number, declared for you), and connected to `q`:
+
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        count <= count + 1;
+    end if;
+end process;
+q <= std_logic_vector(count);
+```
+
+This one also has a reset: when `rst` is 1 at a clock edge, the count goes back to 0.
+---- task
+Count up by one on every clock edge, back to 0 when `rst` is 1; `q` is the count.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity counter is
+  port(
+    clk : in  std_logic;
+    rst : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end counter;
+
+architecture rtl of counter is
+    signal count : unsigned(3 downto 0) := (others => '0');
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity counter is
+  port(
+    clk : in  std_logic;
+    rst : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end counter;
+
+architecture rtl of counter is
+    signal count : unsigned(3 downto 0) := (others => '0');
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                count <= (others => '0');
+            else
+                count <= count + 1;
+            end if;
+        end if;
+    end process;
+    q <= std_logic_vector(count);
+end rtl;
+---- hint1
+Start from the process in the text, and add the reset with `if rst = '1' then ... else ... end if;` inside it.
+---- hint2
+`(others => '0')` is "all bits 0". Inside the clock edge: `if rst = '1' then count <= (others => '0'); else count <= count + 1; end if;`
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        if rst = '1' then
+            count <= (others => '0');
+        else
+            count <= count + 1;
+        end if;
+    end if;
+end process;
+q <= std_logic_vector(count);
+```
+---- done
+Your circuit counts: flip-flops remembering the count and an adder adding 1, all from one `+`. From a switch and a light to here: these are the parts every processor is made of.

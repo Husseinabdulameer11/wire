@@ -2,6 +2,9 @@ title: A circuit that adds
 check: behaves
 parts: and or not chip:my_xor
 needs: my_xor
+mode: draw
+chapter: Arithmetic
+keep: my_half_adder
 ---- intro
 Time to make your circuit do arithmetic. Adding two single bits gives 0, 1 or 2. Written in binary, 2 is **10**, so the answer needs two lights: **sum** (the right digit) and **carry** (the left one).
 
@@ -45,4 +48,4 @@ Place your **my_xor** chip and wire `a` and `b` into it and its output to `sum`.
 ---- solution
 `sum` is your XOR of `a` and `b`, and `carry` is an AND of them. 1 + 1 gives sum 0 and carry 1: binary 10, which is 2.
 ---- done
-Your circuit adds! Two of these and an OR make a **full adder**, which also adds a carry coming in; put eight of those in a row and you can add 8-bit numbers, which is what the arithmetic part of every processor does. You got here from switches and lights, one gate at a time.
+Your circuit adds! It is kept as a chip too, **my_half_adder**: two of them and an OR gate make a **full adder**, which you build after writing this one as text.

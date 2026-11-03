@@ -1,0 +1,58 @@
+title: The full adder in VHDL
+mode: vhdl
+chapter: Arithmetic
+check: behaves
+---- intro
+The full adder as text. `s` is 1 when an odd number of the three inputs are 1, which you wrote in the parity lesson. `cout` is 1 when at least two of them are, which is the majority vote you drew.
+
+Big circuits are made of small ones you already know.
+---- task
+Write the full adder: `s` and `cout` from `a`, `b` and `cin`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity full_adder is
+  port(
+    a    : in  std_logic;
+    b    : in  std_logic;
+    cin  : in  std_logic;
+    s    : out std_logic;
+    cout : out std_logic
+  );
+end full_adder;
+
+architecture rtl of full_adder is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity full_adder is
+  port(
+    a    : in  std_logic;
+    b    : in  std_logic;
+    cin  : in  std_logic;
+    s    : out std_logic;
+    cout : out std_logic
+  );
+end full_adder;
+
+architecture rtl of full_adder is
+begin
+    s    <= a xor b xor cin;
+    cout <= (a and b) or (a and cin) or (b and cin);
+end rtl;
+---- hint1
+`s` is the parity of the three inputs; `cout` is their majority.
+---- hint2
+`s <= a xor b xor cin;` and `cout <= (a and b) or (a and cin) or (b and cin);`
+---- solution
+```
+s    <= a xor b xor cin;
+cout <= (a and b) or (a and cin) or (b and cin);
+```
+---- done
+Two lines, and you have the heart of a processor's arithmetic. Soon VHDL will add whole numbers for you with `+`.
