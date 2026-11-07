@@ -1,0 +1,58 @@
+title: Counting to three: your first state machine
+mode: draw
+chapter: Counting
+check: behaves
+parts: dff and not
+---- intro
+Not every counter goes round at a power of two. This one counts **0, 1, 2, 0, 1, 2** ... and never shows 3.
+
+When you cannot just flip bits, write down where each state goes next, and build each next bit from the table:
+
+| now q1 | now q0 | next q1 | next q0 |
+|--------|--------|---------|---------|
+| 0 | 0 | 0 | 1 |
+| 0 | 1 | 1 | 0 |
+| 1 | 0 | 0 | 0 |
+
+Read the columns: next `q1` is just `q0`. Next `q0` is 1 only when both are 0. A circuit that steps through states from a table like this is a **state machine**.
+---- task
+Make `q1 q0` count 0, 1, 2, 0, 1, 2 ... one step per tick.
+---- start
+clock clk 0 200
+led q0 520 40
+led q1 520 180
+---- reference
+clock clk
+led q0, q1
+wire a[1], b[1]
+a = dff(~a & ~b, clk)
+b = dff(a, clk)
+q0 = a
+q1 = b
+---- answer
+clock clk 0 200
+not a0 120 0
+not a1 120 90
+and g0 240 40
+dff f0 360 40
+dff f1 360 180
+led q0 520 40
+led q1 520 180
+f0.q -> a0.in
+f1.q -> a1.in
+a0 -> g0.0
+a1 -> g0.1
+g0 -> f0.d
+clk -> f0.clk
+f0.q -> q0
+f0.q -> f1.d
+clk -> f1.clk
+f1.q -> q1
+---- hint1
+The second flip-flop's `d` is the first flip-flop's `q`: next `q1` is `q0`.
+---- hint2
+The first flip-flop's `d` is NOT `q0` AND NOT `q1`: two NOT gates and an AND.
+---- solution
+Next `q1` = `q0`, so the first flip-flop feeds the second. Next `q0` = NOT `q0` AND NOT `q1`, so it is 1 only after state 0. Step: 0, 1, 2, 0.
+---- done
+You designed a state machine from a table: write each state and the one after it, then build each next bit from its column. Traffic lights, vending machines and the control unit of a processor are all made this way. From a switch and a light to here, all of it drawn.

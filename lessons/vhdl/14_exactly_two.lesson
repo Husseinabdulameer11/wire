@@ -1,0 +1,60 @@
+title: Exactly two
+mode: vhdl
+chapter: Combining gates
+check: behaves
+---- intro
+The majority circuit is 1 when **at least** two inputs are 1. Now make it 1 for **exactly** two: two yes, three no.
+
+That is "at least two, and not all three". Signals make it readable: give each half a name, then join them.
+---- task
+Make `y` 1 when exactly two of `a`, `b` and `c` are 1, using the two signals.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity exactly2 is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    c : in  std_logic;
+    y : out std_logic
+  );
+end exactly2;
+
+architecture rtl of exactly2 is
+    signal most, all3 : std_logic;
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity exactly2 is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    c : in  std_logic;
+    y : out std_logic
+  );
+end exactly2;
+
+architecture rtl of exactly2 is
+    signal most, all3 : std_logic;
+begin
+    most <= (a and b) or (a and c) or (b and c);
+    all3 <= a and b and c;
+    y    <= most and not all3;
+end rtl;
+---- hint1
+One line for `most` (the majority), one for `all3`, one for `y`.
+---- hint2
+`most <= (a and b) or (a and c) or (b and c);`, `all3 <= a and b and c;` and `y <= most and not all3;`
+---- solution
+```
+most <= (a and b) or (a and c) or (b and c);
+all3 <= a and b and c;
+y    <= most and not all3;
+```
+---- done
+Two pieces you already knew, joined with one more gate. Big circuits are mostly small circuits with names.

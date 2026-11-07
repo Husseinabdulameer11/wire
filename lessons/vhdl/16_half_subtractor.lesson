@@ -1,0 +1,60 @@
+title: Taking away
+mode: vhdl
+chapter: Arithmetic
+check: behaves
+---- intro
+Circuits subtract too. Take one bit from another: 1 − 0 = 1, 1 − 1 = 0, 0 − 0 = 0. And 0 − 1? You **borrow**, as in long subtraction on paper: the answer bit is 1, and a borrow goes on to the next column.
+
+| a | b | borrow | diff |
+|---|---|--------|------|
+| 0 | 0 | 0 | 0 |
+| 0 | 1 | 1 | 1 |
+| 1 | 0 | 0 | 1 |
+| 1 | 1 | 0 | 0 |
+
+Look at the `diff` column: you know it. `borrow` is 1 in one row only.
+---- task
+Write the half subtractor: `diff` is `a` − `b`, and `borrow` is 1 when `b` is bigger than `a`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity half_sub is
+  port(
+    a      : in  std_logic;
+    b      : in  std_logic;
+    diff   : out std_logic;
+    borrow : out std_logic
+  );
+end half_sub;
+
+architecture rtl of half_sub is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity half_sub is
+  port(
+    a      : in  std_logic;
+    b      : in  std_logic;
+    diff   : out std_logic;
+    borrow : out std_logic
+  );
+end half_sub;
+
+architecture rtl of half_sub is
+begin
+    diff   <= a xor b;
+    borrow <= not a and b;
+end rtl;
+---- hint1
+`diff` is XOR. `borrow` is 1 only when `a` is 0 and `b` is 1.
+---- hint2
+`diff <= a xor b;` and `borrow <= not a and b;`
+---- solution
+`diff <= a xor b;` and `borrow <= not a and b;`: you only borrow when taking 1 from 0.
+---- done
+Subtracting looks a lot like adding: the same XOR for the answer bit, and one small gate for what moves to the next column. Next, the adder.

@@ -1,0 +1,61 @@
+title: Which number is bigger?
+mode: draw
+chapter: Arithmetic
+check: behaves
+parts: and or not chip:my_xor
+needs: my_xor
+---- intro
+Is `a1 a0` bigger than `b1 b0`? Compare numbers the way you do on paper, from the **left**:
+
+- if `a1` is 1 and `b1` is 0, `a` is bigger, whatever the right bits are
+- if the left bits are the **same**, the right bits decide: `a0` is 1 and `b0` is 0
+
+So `gt` is (`a1` AND NOT `b1`) OR (the left bits are the same AND `a0` AND NOT `b0`). "The same" is your XOR, turned round.
+---- task
+Light `gt` when the number `a1 a0` is bigger than `b1 b0`.
+---- start
+input a1 0 0
+input b1 0 70
+input a0 0 180
+input b0 0 250
+led gt 640 120
+---- reference
+input a1, b1, a0, b0
+led gt
+gt = (a1 & ~b1) | (~(a1 ^ b1) & a0 & ~b0)
+---- answer
+input a1 0 0
+input b1 0 70
+input a0 0 180
+input b0 0 250
+not nb1 120 70
+and g1 240 20
+chip x1 my_xor 120 120
+not nx 240 120
+not nb0 120 250
+and g2 240 200
+and g3 380 160
+or o1 500 120
+led gt 640 120
+b1 -> nb1.in
+a1 -> g1.0
+nb1 -> g1.1
+a1 -> x1.a
+b1 -> x1.b
+x1.y -> nx.in
+b0 -> nb0.in
+a0 -> g2.0
+nb0 -> g2.1
+nx -> g3.0
+g2 -> g3.1
+g1 -> o1.0
+g3 -> o1.1
+o1 -> gt
+---- hint1
+Build the two cases separately: "left bit wins" is `a1` AND NOT `b1`; "right bit wins" is `a0` AND NOT `b0`.
+---- hint2
+The right bit only counts when the left bits are the same: AND it with NOT (my_xor of `a1` and `b1`). Then OR the two cases.
+---- solution
+`a1` AND NOT `b1` catches a bigger left bit. my_xor of the left bits, turned round, says they are equal; ANDed with `a0` AND NOT `b0`, it catches a bigger right bit. An OR joins the two cases.
+---- done
+That was a hard one: seven gates and a chip, each a piece of a sentence. Comparing from the most important bit down is how every processor does it.

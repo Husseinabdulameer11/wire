@@ -1,0 +1,69 @@
+title: First come, first served
+mode: vhdl
+chapter: Choosing
+check: behaves
+---- intro
+`when ... else` can chain: the first condition that holds wins.
+
+```
+y <= a when s1 = '1' else
+     b when s0 = '1' else
+     c;
+```
+
+"`y` is `a` if `s1` is on; otherwise `b` if `s0` is on; otherwise `c`." This is a **priority** chooser: `s1` beats `s0`, even when both are on.
+---- task
+Make `y` be `a` while `s1` is 1; else `b` while `s0` is 1; else `c`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity priority is
+  port(
+    a  : in  std_logic;
+    b  : in  std_logic;
+    c  : in  std_logic;
+    s1 : in  std_logic;
+    s0 : in  std_logic;
+    y  : out std_logic
+  );
+end priority;
+
+architecture rtl of priority is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity priority is
+  port(
+    a  : in  std_logic;
+    b  : in  std_logic;
+    c  : in  std_logic;
+    s1 : in  std_logic;
+    s0 : in  std_logic;
+    y  : out std_logic
+  );
+end priority;
+
+architecture rtl of priority is
+begin
+    y <= a when s1 = '1' else
+         b when s0 = '1' else
+         c;
+end rtl;
+---- hint1
+Two `when`s and two `else`s, with `c` at the very end.
+---- hint2
+`y <= a when s1 = '1' else b when s0 = '1' else c;`
+---- solution
+```
+y <= a when s1 = '1' else
+     b when s0 = '1' else
+     c;
+```
+Turn on both `s1` and `s0`: `y` follows `a`, because `s1` is checked first.
+---- done
+Order matters in a chain: swap the first two lines and `s0` wins instead. Interrupts in a processor are handled by priority like this.

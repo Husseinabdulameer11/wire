@@ -1,0 +1,41 @@
+title: Turned round twice
+mode: draw
+chapter: Signals and gates
+check: behaves
+parts: not
+---- intro
+A NOT gate turns its input round. What happens if you put **two** of them in a row?
+
+The first turns `a` round. The second turns that round again. Fill in the table in your head before you try it:
+
+| a | after one NOT | after two |
+|---|---|---|
+| 0 | 1 | ? |
+| 1 | 0 | ? |
+---- task
+Wire `a` through both NOT gates, one after the other, into `y`.
+---- start
+input a 0 20
+not n1 120 20
+not n2 240 20
+led y 380 20
+---- reference
+input a
+led y
+y = a
+---- answer
+input a 0 20
+not n1 120 20
+not n2 240 20
+led y 380 20
+a -> n1.in
+n1 -> n2.in
+n2 -> y
+---- hint1
+Three wires: switch to the first NOT, first NOT to the second, second NOT to the light.
+---- hint2
+Drag from the square on the right of each part to the square on the left of the next one.
+---- solution
+`a` into `n1`, `n1` into `n2`, `n2` into `y`. Two turns round bring you back where you started: `y` follows `a`.
+---- done
+Two NOTs cancel out. Real chips do use pairs like this, as a **buffer**: it does not change the value, but it makes the signal strong again after a long wire.

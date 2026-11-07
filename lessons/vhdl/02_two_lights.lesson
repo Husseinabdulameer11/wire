@@ -1,0 +1,51 @@
+title: Two outputs
+mode: vhdl
+chapter: Signals and gates
+check: behaves
+---- intro
+A circuit can have as many outputs as you like. Each one gets its own line, and they can read the same input: one wire feeding two places.
+
+Here there is one input `a` and two outputs, `y1` and `y2`. Both should follow `a`.
+---- task
+Connect both `y1` and `y2` to `a`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity fanout is
+  port(
+    a  : in  std_logic;
+    y1 : out std_logic;
+    y2 : out std_logic
+  );
+end fanout;
+
+architecture rtl of fanout is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity fanout is
+  port(
+    a  : in  std_logic;
+    y1 : out std_logic;
+    y2 : out std_logic
+  );
+end fanout;
+
+architecture rtl of fanout is
+begin
+    y1 <= a;
+    y2 <= a;
+end rtl;
+---- hint1
+Two lines, each like `y <= a;`.
+---- hint2
+`y1 <= a;` and `y2 <= a;`
+---- solution
+`y1 <= a;` and `y2 <= a;`. Click `a`: both lights follow it.
+---- done
+One input, read twice. In a real chip one gate's output often feeds dozens of others; engineers call it **fan-out**.

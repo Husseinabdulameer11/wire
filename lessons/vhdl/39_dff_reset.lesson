@@ -1,0 +1,82 @@
+title: Back to zero
+mode: vhdl
+chapter: Memory
+check: behaves
+cycles: 100
+random: rst=0.2
+---- intro
+A flip-flop needs a way back to a known value. Add a reset: at a rising edge, if `rst` is 1, `q` becomes 0; otherwise it takes `d` as usual.
+
+That is an `if ... else` inside the clock edge:
+
+```
+if rst = '1' then
+    q <= '0';
+else
+    q <= d;
+end if;
+```
+---- task
+At each rising edge of `clk`: `q` becomes `'0'` if `rst` is 1, else it takes `d`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity dff_rst is
+  port(
+    clk : in  std_logic;
+    rst : in  std_logic;
+    d   : in  std_logic;
+    q   : out std_logic
+  );
+end dff_rst;
+
+architecture rtl of dff_rst is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity dff_rst is
+  port(
+    clk : in  std_logic;
+    rst : in  std_logic;
+    d   : in  std_logic;
+    q   : out std_logic
+  );
+end dff_rst;
+
+architecture rtl of dff_rst is
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                q <= '0';
+            else
+                q <= d;
+            end if;
+        end if;
+    end process;
+end rtl;
+---- hint1
+Start from the flip-flop process, and put the `if rst = '1' then ... else ... end if;` inside the `rising_edge` one.
+---- hint2
+Inside `if rising_edge(clk) then`: `if rst = '1' then q <= '0'; else q <= d; end if;`
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        if rst = '1' then
+            q <= '0';
+        else
+            q <= d;
+        end if;
+    end if;
+end process;
+```
+---- done
+This is a **synchronous** reset: it waits for the clock edge, like everything else. Almost every flip-flop in a real design has one.

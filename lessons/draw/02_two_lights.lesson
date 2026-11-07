@@ -1,0 +1,35 @@
+title: One switch, two lights
+mode: draw
+chapter: Signals and gates
+check: behaves
+---- intro
+A wire can split: one output can feed as many inputs as you like, and every one of them gets the same value. Engineers call this **fan-out**.
+
+Here there is one switch `a` and two lights, `y1` and `y2`, with nothing wired yet.
+
+You make a wire by **dragging from the small square on the right of a part** (its output) **to the small square on the left of another** (its input). To feed a second light, drag from the same output again.
+---- task
+Wire the switch `a` to both lights, so they both follow it.
+---- start
+input a 0 40
+led y1 260 0
+led y2 260 90
+---- reference
+input a
+led y1, y2
+y1 = a
+y2 = a
+---- answer
+input a 0 40
+led y1 260 0
+led y2 260 90
+a -> y1
+a -> y2
+---- hint1
+Start at the small square on the right edge of the switch, hold the mouse down, and let go on the square on the left of `y1`.
+---- hint2
+Now do it again from the same square on the switch, this time to `y2`.
+---- solution
+Two wires, both starting at `a`: one to `y1`, one to `y2`. Click `a` and both lights follow it.
+---- done
+One output, two inputs. Inside a real chip, one gate's output often feeds dozens of others.

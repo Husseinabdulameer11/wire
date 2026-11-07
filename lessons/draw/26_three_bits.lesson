@@ -1,0 +1,66 @@
+title: Adding three-bit numbers
+mode: draw
+chapter: Arithmetic
+check: behaves
+parts: chip:my_half_adder chip:my_full_adder
+needs: my_xor my_half_adder my_full_adder
+---- intro
+Three bits hold 0 to 7: `a2` is worth 4, `a1` 2 and `a0` 1. Adding two of them is one more column than last time: a half adder on the right, and a full adder for **each** column after it, the carry rippling left.
+
+The biggest sum is 7 + 7 = 14, binary **1110**, so there are four lights: `s0`, `s1`, `s2` and the last carry `c`.
+---- task
+Add `a2 a1 a0` and `b2 b1 b0`. Light `s2 s1 s0` and the carry `c`.
+---- start
+input a0 0 0
+input b0 0 60
+input a1 0 150
+input b1 0 210
+input a2 0 300
+input b2 0 360
+led s0 600 10
+led s1 600 160
+led s2 600 310
+led c 600 380
+---- reference
+input a0, b0, a1, b1, a2, b2
+led s0, s1, s2, c
+s0 = a0 ^ b0
+k0 = a0 & b0
+s1 = a1 ^ b1 ^ k0
+k1 = (a1 & b1) | (a1 & k0) | (b1 & k0)
+s2 = a2 ^ b2 ^ k1
+c = (a2 & b2) | (a2 & k1) | (b2 & k1)
+---- answer
+input a0 0 0
+input b0 0 60
+input a1 0 150
+input b1 0 210
+input a2 0 300
+input b2 0 360
+chip h1 my_half_adder 160 10
+chip f1 my_full_adder 300 160
+chip f2 my_full_adder 440 310
+led s0 600 10
+led s1 600 160
+led s2 600 310
+led c 600 380
+a0 -> h1.a
+b0 -> h1.b
+h1.sum -> s0
+a1 -> f1.a
+b1 -> f1.b
+h1.carry -> f1.cin
+f1.s -> s1
+a2 -> f2.a
+b2 -> f2.b
+f1.cout -> f2.cin
+f2.s -> s2
+f2.cout -> c
+---- hint1
+It is the two-bit adder with one more full adder on the end.
+---- hint2
+The middle full adder's `cout` goes into the new full adder's `cin`. The last `cout` is `c`.
+---- solution
+A half adder for column 0, a full adder for column 1 and another for column 2, each carry feeding the next `cin`. 7 + 7: all switches on gives `c s2 s1 s0` = 1 1 1 0, which is 14.
+---- done
+One more full adder per bit, as many as you like. Now you know how a processor's adder grows to 32 or 64 bits.

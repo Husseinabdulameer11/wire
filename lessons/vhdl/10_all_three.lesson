@@ -1,0 +1,52 @@
+title: All three
+mode: vhdl
+chapter: Combining gates
+check: behaves
+---- intro
+Gates chain across more inputs: `a and b and c` is 1 only when all three are 1. With three inputs there are 2 × 2 × 2 = 8 rows, and only the last one, all on, gives 1.
+
+The drawing on the right shows how Wire builds it from two-input gates.
+---- task
+Make `y` 1 only when `a`, `b` and `c` are all 1.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity all3 is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    c : in  std_logic;
+    y : out std_logic
+  );
+end all3;
+
+architecture rtl of all3 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity all3 is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    c : in  std_logic;
+    y : out std_logic
+  );
+end all3;
+
+architecture rtl of all3 is
+begin
+    y <= a and b and c;
+end rtl;
+---- hint1
+The AND gate, with one more `and` on the end.
+---- hint2
+`y <= a and b and c;`
+---- solution
+`y <= a and b and c;` Seven of the eight rows give 0.
+---- done
+Swap `and` for `or` and it asks "is any of them on?" instead. Many circuits are one of those two questions.

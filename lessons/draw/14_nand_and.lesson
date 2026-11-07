@@ -1,0 +1,36 @@
+title: AND from NANDs
+mode: draw
+chapter: NAND does everything
+check: behaves
+parts: nand
+---- intro
+NAND is "AND, then NOT". To get a plain AND back, turn the NAND's answer round once more, and you built a NOT out of a NAND in the last lesson.
+---- task
+Build an AND gate out of two NAND gates: `y` is on only when both `a` and `b` are on.
+---- start
+input a 0 0
+input b 0 60
+led y 380 30
+---- reference
+input a, b
+led y
+y = a & b
+---- answer
+input a 0 0
+input b 0 60
+nand g1 120 20
+nand g2 250 20
+led y 380 30
+a -> g1.0
+b -> g1.1
+g1 -> g2.0
+g1 -> g2.1
+g2 -> y
+---- hint1
+The first NAND gets `a` and `b`. Its answer is the opposite of AND.
+---- hint2
+The second NAND is a NOT: both its inputs come from the first NAND's output.
+---- solution
+NAND `a` with `b`, then feed that into both inputs of a second NAND, which turns it round. NOT NAND is AND.
+---- done
+Two NANDs make an AND. One more lesson and you have all three basic gates.

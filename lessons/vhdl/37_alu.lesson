@@ -1,0 +1,71 @@
+title: A tiny calculator: the ALU
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+The heart of a processor is the **ALU** (arithmetic logic unit). It gets two numbers and an **operation** code, and gives the result of that operation:
+
+| op | y |
+|----|---|
+| 00 | `a and b` |
+| 01 | `a or b` |
+| 10 | `a xor b` |
+| 11 | `a + b` |
+
+In hardware it works out all four at once, and a multiplexer keeps the one asked for. In VHDL that is one `with ... select`, with an expression in each case.
+---- task
+Make the 4-bit `y` the result of the operation `op` asks for (the sum wraps round in 4 bits).
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity alu4 is
+  port(
+    a  : in  std_logic_vector(3 downto 0);
+    b  : in  std_logic_vector(3 downto 0);
+    op : in  std_logic_vector(1 downto 0);
+    y  : out std_logic_vector(3 downto 0)
+  );
+end alu4;
+
+architecture rtl of alu4 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity alu4 is
+  port(
+    a  : in  std_logic_vector(3 downto 0);
+    b  : in  std_logic_vector(3 downto 0);
+    op : in  std_logic_vector(1 downto 0);
+    y  : out std_logic_vector(3 downto 0)
+  );
+end alu4;
+
+architecture rtl of alu4 is
+begin
+    with op select y <=
+        a and b when "00",
+        a or b  when "01",
+        a xor b when "10",
+        std_logic_vector(unsigned(a) + unsigned(b)) when others;
+end rtl;
+---- hint1
+Use `with op select y <= ...`, one case per row of the table. The last can be `when others`.
+---- hint2
+The add case is `std_logic_vector(unsigned(a) + unsigned(b)) when others;`
+---- solution
+```
+with op select y <=
+    a and b when "00",
+    a or b  when "01",
+    a xor b when "10",
+    std_logic_vector(unsigned(a) + unsigned(b)) when others;
+```
+---- done
+Every instruction a processor runs, add, and, or, is the ALU with a different `op`. Make it 32 bits wide and give it a few more operations, and it is the real thing. Next: circuits that remember.

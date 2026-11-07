@@ -1,0 +1,101 @@
+title: A traffic light: your first state machine
+mode: vhdl
+chapter: Counting
+check: behaves
+cycles: 120
+random: rst=0.05
+---- intro
+A traffic light goes red, green, amber, red ... Each colour is a **state**, and at each clock edge the light moves to the next one. A circuit like this is a **state machine**.
+
+VHDL lets you give the states names. Declare a type with one name per state, and a signal of that type (both are in the starter):
+
+```
+type state_t is (s_red, s_green, s_amber);
+signal state : state_t := s_red;
+```
+
+A `case` inside the clock edge says where each state goes next, and the outputs say which light is on in each state.
+---- task
+Step the light red → green → amber → red at each rising edge; `rst` goes back to red. Light the output for the current state.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity traffic is
+  port(
+    clk   : in  std_logic;
+    rst   : in  std_logic;
+    red   : out std_logic;
+    amber : out std_logic;
+    green : out std_logic
+  );
+end traffic;
+
+architecture rtl of traffic is
+    type state_t is (s_red, s_green, s_amber);
+    signal state : state_t := s_red;
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity traffic is
+  port(
+    clk   : in  std_logic;
+    rst   : in  std_logic;
+    red   : out std_logic;
+    amber : out std_logic;
+    green : out std_logic
+  );
+end traffic;
+
+architecture rtl of traffic is
+    type state_t is (s_red, s_green, s_amber);
+    signal state : state_t := s_red;
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                state <= s_red;
+            else
+                case state is
+                    when s_red   => state <= s_green;
+                    when s_green => state <= s_amber;
+                    when s_amber => state <= s_red;
+                end case;
+            end if;
+        end if;
+    end process;
+    red   <= '1' when state = s_red   else '0';
+    amber <= '1' when state = s_amber else '0';
+    green <= '1' when state = s_green else '0';
+end rtl;
+---- hint1
+Inside the clock edge: the reset, then `case state is when s_red => state <= s_green; ... end case;`.
+---- hint2
+After the process, one line per light: `red <= '1' when state = s_red else '0';` and the same for `amber` and `green`.
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        if rst = '1' then
+            state <= s_red;
+        else
+            case state is
+                when s_red   => state <= s_green;
+                when s_green => state <= s_amber;
+                when s_amber => state <= s_red;
+            end case;
+        end if;
+    end if;
+end process;
+red   <= '1' when state = s_red   else '0';
+amber <= '1' when state = s_amber else '0';
+green <= '1' when state = s_green else '0';
+```
+---- done
+You wrote a state machine: name the states, say where each one goes, say what each one shows. Vending machines, network chips and the control unit of a processor are all built this way. From one line, `y <= a;`, to here.

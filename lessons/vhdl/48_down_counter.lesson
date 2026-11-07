@@ -1,0 +1,78 @@
+title: Counting down
+mode: vhdl
+chapter: Counting
+check: behaves
+cycles: 150
+random: rst=0.05
+---- intro
+Count backwards: 15, 14, ... 1, 0, and round to 15 again. `count - 1` works like `count + 1`, and 0 − 1 wraps round to 15.
+
+This one has a reset too, but a reset to **9**, so it can count down from 9 like a timer: `to_unsigned(9, 4)` is the number 9 in 4 bits.
+---- task
+Count down by one at each rising edge; when `rst` is 1, go to 9 instead. `q` is the count.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity down is
+  port(
+    clk : in  std_logic;
+    rst : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end down;
+
+architecture rtl of down is
+    signal count : unsigned(3 downto 0) := (others => '0');
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity down is
+  port(
+    clk : in  std_logic;
+    rst : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end down;
+
+architecture rtl of down is
+    signal count : unsigned(3 downto 0) := (others => '0');
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                count <= to_unsigned(9, 4);
+            else
+                count <= count - 1;
+            end if;
+        end if;
+    end process;
+    q <= std_logic_vector(count);
+end rtl;
+---- hint1
+The counter with a reset, using `- 1` and `to_unsigned(9, 4)`.
+---- hint2
+`if rst = '1' then count <= to_unsigned(9, 4); else count <= count - 1; end if;`
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        if rst = '1' then
+            count <= to_unsigned(9, 4);
+        else
+            count <= count - 1;
+        end if;
+    end if;
+end process;
+q <= std_logic_vector(count);
+```
+---- done
+A microwave timer counts down like this, and stops when it reaches zero. Next: a counter that goes round early.

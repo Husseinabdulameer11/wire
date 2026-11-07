@@ -1,0 +1,48 @@
+title: OR from NANDs
+mode: draw
+chapter: NAND does everything
+check: behaves
+parts: nand
+---- intro
+OR is the hardest. The trick is a rule called **De Morgan's law**: "a OR b" is the same as "NOT (NOT a AND NOT b)". In words: at least one is on, which is the same as "not both off".
+
+| a | b | NOT a | NOT b | NAND of those |
+|---|---|---|---|---|
+| 0 | 0 | 1 | 1 | 0 |
+| 0 | 1 | 1 | 0 | 1 |
+| 1 | 0 | 0 | 1 | 1 |
+| 1 | 1 | 0 | 0 | 1 |
+
+The last column is OR.
+---- task
+Build an OR gate out of three NAND gates.
+---- start
+input a 0 0
+input b 0 90
+led y 400 45
+---- reference
+input a, b
+led y
+y = a | b
+---- answer
+input a 0 0
+input b 0 90
+nand g1 120 0
+nand g2 120 90
+nand g3 260 40
+led y 400 45
+a -> g1.0
+a -> g1.1
+b -> g2.0
+b -> g2.1
+g1 -> g3.0
+g2 -> g3.1
+g3 -> y
+---- hint1
+Make NOT `a` and NOT `b` first, each from one NAND with both inputs from the same switch.
+---- hint2
+A third NAND gets NOT `a` and NOT `b`, and goes to `y`.
+---- solution
+Two NANDs turn `a` and `b` round; a third NANDs the results. By De Morgan's law that is `a` OR `b`.
+---- done
+NOT, AND and OR, all from one kind of gate. That is why chip factories can make whole processors from NAND gates and nothing else.

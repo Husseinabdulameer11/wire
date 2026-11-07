@@ -1,0 +1,43 @@
+title: A burglar alarm
+mode: draw
+chapter: Combining gates
+check: behaves
+parts: and or not
+---- intro
+A real problem now. The alarm `y` should sound when:
+
+- the alarm is **armed** (`armed` is on) **and** the door opens (`door` is on), or
+- someone presses the **panic** button (`panic`), whatever the rest is doing.
+
+Turn the words into gates: the first line is an AND, and "or" joins it with the panic button.
+---- task
+Sound `y` when the door opens while armed, or when panic is pressed.
+---- start
+input armed 0 0
+input door 0 60
+input panic 0 140
+led y 360 60
+---- reference
+input armed, door, panic
+led y
+y = (armed & door) | panic
+---- answer
+input armed 0 0
+input door 0 60
+input panic 0 140
+and g1 120 20
+or o1 240 60
+led y 360 60
+armed -> g1.0
+door -> g1.1
+g1 -> o1.0
+panic -> o1.1
+o1 -> y
+---- hint1
+The words say it: (armed AND door) OR panic.
+---- hint2
+An AND for `armed` and `door`; an OR that takes the AND's output and `panic`, into `y`.
+---- solution
+`armed` and `door` go into an AND gate. Its output and `panic` go into an OR gate, which drives the alarm.
+---- done
+Reading the problem out loud and writing down the ANDs and ORs as they come is how most circuits start.

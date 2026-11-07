@@ -1,0 +1,68 @@
+title: A tiny calculator: the ALU
+mode: draw
+chapter: Choosing
+check: behaves
+parts: and or not chip:my_xor chip:my_mux4
+needs: my_xor my_mux my_mux4
+---- intro
+The heart of a processor is the **ALU** (arithmetic logic unit): it gets two inputs and an **operation** number, works out every answer at once, and a multiplexer picks the one asked for. Here, for one bit:
+
+| op1 | op0 | y |
+|-----|-----|---|
+| 0 | 0 | `a` AND `b` |
+| 0 | 1 | `a` OR `b` |
+| 1 | 0 | `a` XOR `b` |
+| 1 | 1 | NOT `a` |
+
+Your **my_mux4** from the last lesson picks one of four, with `op1 op0` as its `s1 s0`.
+---- task
+Build the one-bit ALU: `y` is the result of the operation `op1 op0` picks.
+---- start
+input a 0 0
+input b 0 70
+input op0 0 300
+input op1 0 360
+led y 520 160
+---- reference
+input a, b, op0, op1
+led y
+r0 = a & b
+r1 = a | b
+r2 = a ^ b
+r3 = ~a
+lo = (r0 & ~op0) | (r1 & op0)
+hi = (r2 & ~op0) | (r3 & op0)
+y = (lo & ~op1) | (hi & op1)
+---- answer
+input a 0 0
+input b 0 70
+input op0 0 300
+input op1 0 360
+and g1 160 0
+or o1 160 80
+chip x1 my_xor 160 160
+not n1 160 240
+chip m1 my_mux4 340 150
+led y 520 160
+a -> g1.0
+b -> g1.1
+a -> o1.0
+b -> o1.1
+a -> x1.a
+b -> x1.b
+a -> n1.in
+g1 -> m1.d0
+o1 -> m1.d1
+x1.y -> m1.d2
+n1 -> m1.d3
+op0 -> m1.s0
+op1 -> m1.s1
+m1.y -> y
+---- hint1
+Make all four answers: an AND, an OR, a my_xor and a NOT, each fed by `a` (and `b`).
+---- hint2
+The four answers go into my_mux4's `d0` to `d3` in the order of the table; `op0` and `op1` go into `s0` and `s1`.
+---- solution
+Four parts compute AND, OR, XOR and NOT of the inputs all at once. my_mux4, steered by `op1 op0`, passes the one asked for to `y`.
+---- done
+Every instruction a processor runs, add, and, or, compare, is the ALU computing all of its answers and a multiplexer keeping one. Make it 32 bits wide and add an adder, and it is the real thing.

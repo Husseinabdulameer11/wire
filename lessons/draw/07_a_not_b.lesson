@@ -1,0 +1,44 @@
+title: A, but not B
+mode: draw
+chapter: Signals and gates
+check: behaves
+parts: and or not
+---- intro
+Gates mix well. Say you want a light that comes on when `a` is on **and `b` is off**. In words: "a AND (NOT b)".
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 0 |
+| 0 | 1 | 0 |
+| 1 | 0 | 1 |
+| 1 | 1 | 0 |
+
+A NOT gate on `b` turns "b is off" into a 1, and an AND joins it with `a`.
+---- task
+Make `y` light only when `a` is on and `b` is off.
+---- start
+input a 0 0
+input b 0 80
+led y 380 40
+---- reference
+input a, b
+led y
+y = a & ~b
+---- answer
+input a 0 0
+input b 0 80
+not n1 120 80
+and g1 240 30
+led y 380 40
+a -> g1.0
+b -> n1.in
+n1 -> g1.1
+g1 -> y
+---- hint1
+You need two gates: a NOT and an AND.
+---- hint2
+`b` goes into the NOT gate. The AND gate gets `a` and the NOT gate's output, and feeds `y`.
+---- solution
+NOT `b` is 1 exactly when `b` is off. ANDed with `a`, the light is on only for `a` on and `b` off.
+---- done
+Think of a machine that runs when you press start (`a`) but stops when a safety door (`b`) is open. Many real control circuits are this small.

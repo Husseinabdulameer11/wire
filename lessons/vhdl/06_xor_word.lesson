@@ -1,0 +1,57 @@
+title: XOR: one or the other
+mode: vhdl
+chapter: Signals and gates
+check: behaves
+---- intro
+**XOR** ("exclusive or") is 1 when its two inputs are **different**: one is on, but not both.
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 0 |
+| 0 | 1 | 1 |
+| 1 | 0 | 1 |
+| 1 | 1 | 0 |
+
+Compare it with OR: only the last row is different. Its word in VHDL is `xor`.
+---- task
+Make `y` 1 when `a` and `b` are different.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity xor_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end xor_gate;
+
+architecture rtl of xor_gate is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity xor_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end xor_gate;
+
+architecture rtl of xor_gate is
+begin
+    y <= a xor b;
+end rtl;
+---- hint1
+One line, like the AND and the OR.
+---- hint2
+`y <= a xor b;`
+---- solution
+`y <= a xor b;` Try both switches on: the light goes out.
+---- done
+XOR turns up everywhere: in adders, in parity checks and in the cryptography that keeps your messages private.

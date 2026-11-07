@@ -1,0 +1,57 @@
+title: A, but not B
+mode: vhdl
+chapter: Signals and gates
+check: behaves
+---- intro
+Gates mix in one line. A light that is on when `a` is on **and `b` is off** is "a and (not b)":
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 0 |
+| 0 | 1 | 0 |
+| 1 | 0 | 1 |
+| 1 | 1 | 0 |
+
+`not` works on whatever comes right after it, so `a and not b` turns only `b` round.
+---- task
+Make `y` 1 only when `a` is 1 and `b` is 0.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity a_not_b is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end a_not_b;
+
+architecture rtl of a_not_b is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity a_not_b is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end a_not_b;
+
+architecture rtl of a_not_b is
+begin
+    y <= a and not b;
+end rtl;
+---- hint1
+An AND of `a` with the opposite of `b`.
+---- hint2
+`y <= a and not b;`
+---- solution
+`y <= a and not b;` The drawing shows a NOT gate on `b` going into an AND gate.
+---- done
+A machine that runs when start (`a`) is pressed but stops while a safety door (`b`) is open is this one line.

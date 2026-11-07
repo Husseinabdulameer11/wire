@@ -1,0 +1,86 @@
+title: Counting to nine
+mode: vhdl
+chapter: Counting
+check: behaves
+cycles: 150
+random: rst=0.03
+---- intro
+A digit on a clock counts 0 to 9, then goes back to 0: it never shows 10 to 15. Check the count before adding:
+
+```
+if count = 9 then
+    count <= (others => '0');
+else
+    count <= count + 1;
+end if;
+```
+
+An `unsigned` can be compared with a plain number.
+---- task
+Count 0, 1 ... 9, then back to 0, one step per rising edge. When `rst` is 1, go to 0. `q` is the count.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity mod10 is
+  port(
+    clk : in  std_logic;
+    rst : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end mod10;
+
+architecture rtl of mod10 is
+    signal count : unsigned(3 downto 0) := (others => '0');
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity mod10 is
+  port(
+    clk : in  std_logic;
+    rst : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end mod10;
+
+architecture rtl of mod10 is
+    signal count : unsigned(3 downto 0) := (others => '0');
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if rst = '1' or count = 9 then
+                count <= (others => '0');
+            else
+                count <= count + 1;
+            end if;
+        end if;
+    end process;
+    q <= std_logic_vector(count);
+end rtl;
+---- hint1
+Both `rst` and reaching 9 send the count back to 0.
+---- hint2
+`if rst = '1' or count = 9 then count <= (others => '0'); else count <= count + 1; end if;`
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        if rst = '1' or count = 9 then
+            count <= (others => '0');
+        else
+            count <= count + 1;
+        end if;
+    end if;
+end process;
+q <= std_logic_vector(count);
+```
+---- done
+Chain two of these, the second counting when the first goes from 9 to 0, and you have 00 to 99: the seconds of a stopwatch. With your 7-segment table, it would show on the board.

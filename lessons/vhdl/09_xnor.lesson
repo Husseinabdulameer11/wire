@@ -1,0 +1,57 @@
+title: Are they the same?
+mode: vhdl
+chapter: Combining gates
+check: behaves
+---- intro
+XOR says whether two bits **differ**. Turn it round and you get **XNOR**, which says whether they are the **same**. Computers use it to compare numbers, one bit at a time.
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 1 |
+| 0 | 1 | 0 |
+| 1 | 0 | 0 |
+| 1 | 1 | 1 |
+
+Use brackets, as with NOR: the XOR first, then the NOT.
+---- task
+Make `y` 1 when `a` and `b` have the same value.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity same is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end same;
+
+architecture rtl of same is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity same is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end same;
+
+architecture rtl of same is
+begin
+    y <= not (a xor b);
+end rtl;
+---- hint1
+It is NOT of the XOR. Which comes first?
+---- hint2
+`y <= not (a xor b);`
+---- solution
+`y <= not (a xor b);` The XOR is 1 when they differ, the NOT turns it into "the same".
+---- done
+VHDL also has the word `xnor`: `y <= a xnor b;` is the same circuit.

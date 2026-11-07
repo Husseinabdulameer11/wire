@@ -1,0 +1,56 @@
+title: Masks: keeping some bits
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+An AND on a bus is a **mask**: where the mask bit is 1, the data bit goes through; where it is 0, the result is 0.
+
+```
+a     1 0 1 1
+m     0 0 1 1
+a and m  0 0 1 1
+```
+
+Programs use masks all the time, to pick out the few bits of a number they care about.
+---- task
+`y` is the bits of `a` that `m` lets through: 4 AND gates in one line.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity mask4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    m : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(3 downto 0)
+  );
+end mask4;
+
+architecture rtl of mask4 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity mask4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    m : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(3 downto 0)
+  );
+end mask4;
+
+architecture rtl of mask4 is
+begin
+    y <= a and m;
+end rtl;
+---- hint1
+It looks exactly like a one-bit AND.
+---- hint2
+`y <= a and m;`
+---- solution
+`y <= a and m;` Set `m` to `"1100"` and only the top two bits of `a` come through.
+---- done
+OR with a mask sets bits to 1, AND with a mask clears them, XOR with a mask flips them. That is most of what low-level code does to hardware registers.

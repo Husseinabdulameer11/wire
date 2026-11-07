@@ -1,0 +1,43 @@
+title: The staircase light
+mode: draw
+chapter: Your own chips
+check: behaves
+parts: and or not chip:my_xor
+needs: my_xor
+---- intro
+A light over a staircase has a switch at the bottom and one at the top. Flicking **either** switch changes the light, whatever the other one is doing.
+
+| bottom | top | light |
+|---|---|---|
+| 0 | 0 | 0 |
+| 0 | 1 | 1 |
+| 1 | 0 | 1 |
+| 1 | 1 | 0 |
+
+You have seen this table before. Your chips are under **Chips** in the list.
+---- task
+Make the staircase light: flipping `bottom` or `top` always changes `light`.
+---- start
+input bottom 0 0
+input top 0 60
+led light 300 30
+---- reference
+input bottom, top
+led light
+light = bottom ^ top
+---- answer
+input bottom 0 0
+input top 0 60
+chip x1 my_xor 140 20
+led light 300 30
+bottom -> x1.a
+top -> x1.b
+x1.y -> light
+---- hint1
+Compare the table with the ones from this chapter: which of your chips has it?
+---- hint2
+It is XOR: wire `bottom` and `top` into **my_xor**, and its output into `light`.
+---- solution
+XOR is 1 when the switches differ. Flip either one and they go from same to different or back, so the light always changes.
+---- done
+Electricians wire staircases exactly like this, with two-way switches. Your house has XOR gates made of copper.

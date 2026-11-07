@@ -1,0 +1,53 @@
+title: From a light back to a number
+mode: draw
+chapter: Choosing
+check: behaves
+parts: and or not
+---- intro
+The decoder turned a number into one light. An **encoder** goes back: one of the four switches `d0` to `d3` is on, and the two lights `a1 a0` show **which** one, as a number.
+
+| on | a1 | a0 |
+|----|----|----|
+| `d0` | 0 | 0 |
+| `d1` | 0 | 1 |
+| `d2` | 1 | 0 |
+| `d3` | 1 | 1 |
+
+Read the columns instead of the rows: `a0` is 1 for `d1` and for `d3`. Turn on only one switch at a time when you try it.
+---- task
+Light `a1 a0` with the number of the switch that is on (only one at a time).
+---- start
+input d0 0 0
+input d1 0 60
+input d2 0 120
+input d3 0 180
+led a1 360 40
+led a0 360 140
+---- reference
+input d0, d1, d2, d3
+led a1, a0
+a1 = d2 | d3
+a0 = d1 | d3
+---- answer
+input d0 0 0
+input d1 0 60
+input d2 0 120
+input d3 0 180
+or o1 200 40
+or o0 200 140
+led a1 360 40
+led a0 360 140
+d2 -> o1.0
+d3 -> o1.1
+d1 -> o0.0
+d3 -> o0.1
+o1 -> a1
+o0 -> a0
+---- hint1
+`a0` is 1 when `d1` or `d3` is on. Which switches make `a1` 1?
+---- hint2
+Two OR gates: `d1` OR `d3` into `a0`, and `d2` OR `d3` into `a1`. `d0` needs no wire at all: it is the number 0.
+---- solution
+`a0` = `d1` OR `d3`, `a1` = `d2` OR `d3`. Switch `d0` is 0 0, so it needs no gate.
+---- done
+A keyboard uses an encoder: one key down becomes the number of that key. The trick of reading a table by columns works for any circuit.

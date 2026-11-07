@@ -1,0 +1,67 @@
+title: From one wire back to a number
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+The decoder turned a number into one wire per value. An **encoder** goes back: exactly one bit of `d` is 1, and `y` is **which** one, as a number.
+
+| d | y |
+|---|---|
+| 0001 | 00 |
+| 0010 | 01 |
+| 0100 | 10 |
+| 1000 | 11 |
+
+Anything else (no bit on, or several) should give `"00"`.
+---- task
+Make `y` the number of the bit of `d` that is 1; `"00"` for anything else.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity encoder is
+  port(
+    d : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(1 downto 0)
+  );
+end encoder;
+
+architecture rtl of encoder is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity encoder is
+  port(
+    d : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(1 downto 0)
+  );
+end encoder;
+
+architecture rtl of encoder is
+begin
+    with d select y <=
+        "00" when "0001",
+        "01" when "0010",
+        "10" when "0100",
+        "11" when "1000",
+        "00" when others;
+end rtl;
+---- hint1
+Use `with d select`: four cases from the table, and `when others` for the rest.
+---- hint2
+The last line is `"00" when others;`
+---- solution
+```
+with d select y <=
+    "00" when "0001",
+    "01" when "0010",
+    "10" when "0100",
+    "11" when "1000",
+    "00" when others;
+```
+---- done
+A keyboard uses an encoder: one key down becomes the number of that key.

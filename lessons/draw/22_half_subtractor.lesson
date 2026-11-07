@@ -1,0 +1,52 @@
+title: Taking away
+mode: draw
+chapter: Arithmetic
+check: behaves
+parts: and not chip:my_xor
+needs: my_xor
+---- intro
+Circuits can subtract too. Take one bit from another: 1 − 0 = 1, 1 − 1 = 0, 0 − 0 = 0. And 0 − 1? You **borrow**, as in long subtraction on paper: the answer bit is 1, and a borrow of 1 is passed on to the next column.
+
+| a | b | borrow | diff |
+|---|---|--------|------|
+| 0 | 0 | 0 | 0 |
+| 0 | 1 | 1 | 1 |
+| 1 | 0 | 0 | 1 |
+| 1 | 1 | 0 | 0 |
+
+Look closely at the `diff` column: you know it. `borrow` is 1 in one row only.
+---- task
+Build the half subtractor: `diff` is `a` − `b`, and `borrow` lights when `b` is bigger than `a`.
+---- start
+input a 0 0
+input b 0 90
+led diff 400 0
+led borrow 400 110
+---- reference
+input a, b
+led diff, borrow
+diff = a ^ b
+borrow = ~a & b
+---- answer
+input a 0 0
+input b 0 90
+chip x1 my_xor 160 0
+not n1 140 110
+and g1 260 110
+led diff 400 0
+led borrow 400 110
+a -> x1.a
+b -> x1.b
+x1.y -> diff
+a -> n1.in
+n1 -> g1.0
+b -> g1.1
+g1 -> borrow
+---- hint1
+`diff` is XOR. `borrow` is 1 only when `a` is 0 and `b` is 1.
+---- hint2
+my_xor for `diff`. For `borrow`: a NOT on `a`, then an AND of that with `b`.
+---- solution
+`diff` is `a` XOR `b`. `borrow` is (NOT `a`) AND `b`: you only borrow when taking 1 from 0.
+---- done
+Subtracting looks a lot like adding: the same XOR for the answer bit, and one small gate for what moves to the next column. Next, the adder.

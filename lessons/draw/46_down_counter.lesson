@@ -1,0 +1,62 @@
+title: Counting down
+mode: draw
+chapter: Counting
+check: behaves
+parts: dff not chip:my_xor
+needs: my_xor
+---- intro
+Count backwards: 3, 2, 1, 0, then round to 3. Watch the bits:
+
+| count | q1 | q0 |
+|-------|----|----|
+| 3 | 1 | 1 |
+| 2 | 1 | 0 |
+| 1 | 0 | 1 |
+| 0 | 0 | 0 |
+| 3 | 1 | 1 |
+
+- `q0` still flips at every tick.
+- `q1` now flips when `q0` is **0**: the new `q1` is `q1` XOR (NOT `q0`).
+
+It starts at 0, so the first tick takes it to 3.
+---- task
+Make `q1 q0` count 0, 3, 2, 1, 0 ... one step down per tick.
+---- start
+clock clk 0 220
+led q0 560 80
+led q1 560 220
+---- reference
+clock clk
+led q0, q1
+wire a[1], b[1]
+a = dff(~a, clk)
+b = dff(b ^ ~a, clk)
+q0 = a
+q1 = b
+---- answer
+clock clk 0 220
+not n0 160 0
+dff f0 160 80
+not n1 260 140
+chip x1 my_xor 300 220
+dff f1 440 220
+led q0 560 80
+led q1 560 220
+clk -> f0.clk
+f0.q -> n0.in
+n0 -> f0.d
+f0.q -> q0
+f0.q -> n1.in
+f1.q -> x1.a
+n1 -> x1.b
+x1.y -> f1.d
+clk -> f1.clk
+f1.q -> q1
+---- hint1
+`q0` is the up counter's `q0`: a NOT from its `q` back to its `d`.
+---- hint2
+For `q1`, my_xor gets `q1` and NOT `q0` (a second NOT gate), and feeds the second flip-flop's `d`.
+---- solution
+Flip-flop 0 flips every tick. Flip-flop 1 takes `q1` XOR NOT `q0`, so it flips when `q0` is 0. Step: 0, 3, 2, 1, 0.
+---- done
+One NOT gate turns an up counter into a down counter. Timers that count down to zero, like a microwave's, work like this.

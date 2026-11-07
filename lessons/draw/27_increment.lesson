@@ -1,0 +1,49 @@
+title: Adding one
+mode: draw
+chapter: Arithmetic
+check: behaves
+parts: not chip:my_half_adder
+needs: my_xor my_half_adder
+---- intro
+Counting means adding 1, over and over, so circuits do it all the time. Adding 1 to a two-bit number `a1 a0` is simpler than a full adder:
+
+- the right column adds 1 to `a0`: the answer bit is NOT `a0`, and it carries when `a0` was 1, so the carry is just `a0`.
+- the left column adds that carry to `a1`: a half adder.
+
+The answer can be 3 + 1 = 4, binary **100**, so it has three lights, `y2 y1 y0`.
+---- task
+Make `y2 y1 y0` the number `a1 a0` plus one.
+---- start
+input a1 0 0
+input a0 0 100
+led y2 400 0
+led y1 400 70
+led y0 400 150
+---- reference
+input a1, a0
+led y2, y1, y0
+y0 = ~a0
+y1 = a1 ^ a0
+y2 = a1 & a0
+---- answer
+input a1 0 0
+input a0 0 100
+chip h1 my_half_adder 200 0
+not n1 200 150
+led y2 400 0
+led y1 400 70
+led y0 400 150
+a1 -> h1.a
+a0 -> h1.b
+h1.carry -> y2
+h1.sum -> y1
+a0 -> n1.in
+n1 -> y0
+---- hint1
+`y0` is NOT `a0`. The carry out of the right column is `a0` itself.
+---- hint2
+A half adder gets `a1` and `a0`: its `sum` is `y1` and its `carry` is `y2`.
+---- solution
+`y0` = NOT `a0`. The half adder adds `a0` (the carry) to `a1`: `sum` is `y1`, `carry` is `y2`. Try 1 1: the lights show 1 0 0, which is 4.
+---- done
+An incrementer is a row of half adders, the carry going in at one end. The counters at the end of this course have one inside them.

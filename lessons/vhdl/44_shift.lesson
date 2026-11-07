@@ -1,0 +1,74 @@
+title: Shifting bits along
+mode: vhdl
+chapter: Memory
+check: behaves
+cycles: 100
+---- intro
+A **shift register** moves its bits one place at every clock edge, and a new bit `din` comes in at the bottom. After four ticks, the last four bits that came in are all there. It is how a serial link, one wire carrying one bit at a time, turns into a byte.
+
+The shift is the slicing and joining you already know: the low three bits, with `din` joined on the right.
+
+```
+s <= s(2 downto 0) & din;
+```
+
+An output cannot be read inside the architecture, so the bits are kept in a signal `s`, declared for you, and `q` is connected to it.
+---- task
+At every rising edge of `clk`, shift `s` one place to the left with `din` coming in at bit 0. `q` shows `s`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity shift4 is
+  port(
+    clk : in  std_logic;
+    din : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end shift4;
+
+architecture rtl of shift4 is
+    signal s : std_logic_vector(3 downto 0) := (others => '0');
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity shift4 is
+  port(
+    clk : in  std_logic;
+    din : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end shift4;
+
+architecture rtl of shift4 is
+    signal s : std_logic_vector(3 downto 0) := (others => '0');
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            s <= s(2 downto 0) & din;
+        end if;
+    end process;
+    q <= s;
+end rtl;
+---- hint1
+Two things: a clock process that shifts `s`, and a line outside it that connects `q` to `s`.
+---- hint2
+Inside `if rising_edge(clk) then`: `s <= s(2 downto 0) & din;`. After `end process;`: `q <= s;`
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        s <= s(2 downto 0) & din;
+    end if;
+end process;
+q <= s;
+```
+Set `din` to 1 and Step once, then 0 and Step again: the 1 moves left one place each tick.
+---- done
+Bits go in one at a time and come out side by side. Next: loading it all at once.

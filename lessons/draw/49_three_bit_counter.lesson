@@ -1,0 +1,67 @@
+title: Counting to seven
+mode: draw
+chapter: Counting
+check: behaves
+parts: dff and not chip:my_xor
+needs: my_xor
+---- intro
+Three flip-flops count from 0 to 7. The pattern goes on from the two-bit counter: a bit flips when **all** the bits to its right are 1.
+
+- `q0` flips at every tick
+- `q1` flips when `q0` is 1
+- `q2` flips when `q1` **and** `q0` are 1
+
+Look at 3 → 4: 011 becomes 100. All three bits flip, because the two on the right were 1.
+---- task
+Make `q2 q1 q0` count 0, 1, 2 ... 7 and round to 0.
+---- start
+clock clk 0 380
+led q0 600 40
+led q1 600 180
+led q2 600 320
+---- reference
+clock clk
+led q0, q1, q2
+wire a[1], b[1], c[1]
+a = dff(~a, clk)
+b = dff(b ^ a, clk)
+c = dff(c ^ (b & a), clk)
+q0 = a
+q1 = b
+q2 = c
+---- answer
+clock clk 0 380
+not n0 160 0
+dff f0 160 60
+chip x1 my_xor 300 170
+dff f1 440 180
+and g2 280 300
+chip x2 my_xor 380 310
+dff f2 480 320
+led q0 600 40
+led q1 600 180
+led q2 600 320
+clk -> f0.clk
+f0.q -> n0.in
+n0 -> f0.d
+f0.q -> q0
+f1.q -> x1.a
+f0.q -> x1.b
+x1.y -> f1.d
+clk -> f1.clk
+f1.q -> q1
+f1.q -> g2.0
+f0.q -> g2.1
+f2.q -> x2.a
+g2 -> x2.b
+x2.y -> f2.d
+clk -> f2.clk
+f2.q -> q2
+---- hint1
+Build the two-bit counter first. The third bit is a flip-flop that takes `q2` XOR something.
+---- hint2
+That something is `q1` AND `q0`: an AND gate into the second my_xor, with the third flip-flop's own `q` as its other input.
+---- solution
+Bits 0 and 1 are your counter. Bit 2 takes `q2` XOR (`q1` AND `q0`), so it flips only on the way from 3 to 4 and from 7 to 0.
+---- done
+Each new bit needs one more AND and one more XOR. A 32-bit counter is this pattern 32 times, and it counts to over four billion.

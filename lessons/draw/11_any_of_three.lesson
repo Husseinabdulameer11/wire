@@ -1,0 +1,40 @@
+title: Any of three
+mode: draw
+chapter: Combining gates
+check: behaves
+parts: and or not
+---- intro
+You chained two AND gates to ask "are all three on?". Chain two **OR** gates and you ask the other question: "is **any** of them on?".
+
+The light should be off in one row only, when all three switches are off.
+---- task
+Light `y` when at least one of `a`, `b` and `c` is on.
+---- start
+input a 0 0
+input b 0 60
+input c 0 120
+led y 360 60
+---- reference
+input a, b, c
+led y
+y = a | b | c
+---- answer
+input a 0 0
+input b 0 60
+input c 0 120
+or o1 120 20
+or o2 240 60
+led y 360 60
+a -> o1.0
+b -> o1.1
+o1 -> o2.0
+c -> o2.1
+o2 -> y
+---- hint1
+It is the "all three" circuit with OR gates instead of AND.
+---- hint2
+The first OR gets `a` and `b`; the second gets its output and `c`.
+---- solution
+OR `a` with `b`, then OR that with `c`. Any one switch is enough to light `y`.
+---- done
+AND chains ask "all of them?", OR chains ask "any of them?". A lot of logic is one of those two questions.

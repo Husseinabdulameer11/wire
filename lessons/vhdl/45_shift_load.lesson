@@ -1,0 +1,80 @@
+title: Loading a shift register
+mode: vhdl
+chapter: Memory
+check: behaves
+cycles: 150
+random: load=0.2
+---- intro
+A shift register can also be **loaded** with a whole number at once: when `load` is 1, `s` takes `d`; otherwise it shifts left with `din` coming in at the bottom.
+
+Data can then come in one bit at a time and go out as a whole number, or the other way round: load a number and send it out bit by bit, from the top.
+---- task
+At each rising edge: if `load` is 1, `s` takes `d`; else it shifts left with `din` coming in at bit 0. `q` shows `s`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity shift4_load is
+  port(
+    clk  : in  std_logic;
+    load : in  std_logic;
+    d    : in  std_logic_vector(3 downto 0);
+    din  : in  std_logic;
+    q    : out std_logic_vector(3 downto 0)
+  );
+end shift4_load;
+
+architecture rtl of shift4_load is
+    signal s : std_logic_vector(3 downto 0) := (others => '0');
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity shift4_load is
+  port(
+    clk  : in  std_logic;
+    load : in  std_logic;
+    d    : in  std_logic_vector(3 downto 0);
+    din  : in  std_logic;
+    q    : out std_logic_vector(3 downto 0)
+  );
+end shift4_load;
+
+architecture rtl of shift4_load is
+    signal s : std_logic_vector(3 downto 0) := (others => '0');
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if load = '1' then
+                s <= d;
+            else
+                s <= s(2 downto 0) & din;
+            end if;
+        end if;
+    end process;
+    q <= s;
+end rtl;
+---- hint1
+Inside the clock edge, an `if load = '1' then ... else ... end if;` with the shift in the `else`.
+---- hint2
+`if load = '1' then s <= d; else s <= s(2 downto 0) & din; end if;`, and `q <= s;` after the process.
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        if load = '1' then
+            s <= d;
+        else
+            s <= s(2 downto 0) & din;
+        end if;
+    end if;
+end process;
+q <= s;
+```
+---- done
+A serial port works like this: load a byte, then shift it out one bit per tick on a single wire. The other end shifts it back in.

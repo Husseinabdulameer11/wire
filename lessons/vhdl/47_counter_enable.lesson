@@ -1,0 +1,74 @@
+title: A counter you can pause
+mode: vhdl
+chapter: Counting
+check: behaves
+cycles: 150
+random: en=0.5
+---- intro
+A counter should count only when told to. With `en` (enable) at 1 it counts up; with `en` at 0 it holds its number.
+
+Put the `+ 1` inside an `if`. When nothing gives `count` a new value, it keeps the old one.
+---- task
+Count up by one at each rising edge while `en` is 1, and hold the count while it is 0. `q` is the count.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity counter_en is
+  port(
+    clk : in  std_logic;
+    en  : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end counter_en;
+
+architecture rtl of counter_en is
+    signal count : unsigned(3 downto 0) := (others => '0');
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity counter_en is
+  port(
+    clk : in  std_logic;
+    en  : in  std_logic;
+    q   : out std_logic_vector(3 downto 0)
+  );
+end counter_en;
+
+architecture rtl of counter_en is
+    signal count : unsigned(3 downto 0) := (others => '0');
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if en = '1' then
+                count <= count + 1;
+            end if;
+        end if;
+    end process;
+    q <= std_logic_vector(count);
+end rtl;
+---- hint1
+Like the counter, with the `count <= count + 1;` inside `if en = '1' then ... end if;`.
+---- hint2
+Inside the clock edge: `if en = '1' then count <= count + 1; end if;`. After the process: `q <= std_logic_vector(count);`
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        if en = '1' then
+            count <= count + 1;
+        end if;
+    end if;
+end process;
+q <= std_logic_vector(count);
+```
+---- done
+Every timer in a computer has an enable like this, so a program can start and stop it.

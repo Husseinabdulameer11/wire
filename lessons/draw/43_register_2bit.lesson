@@ -1,0 +1,59 @@
+title: A two-bit register
+mode: draw
+chapter: Memory
+check: behaves
+parts: dff chip:my_mux
+needs: my_mux
+---- intro
+One bit of memory with **load** was one multiplexer and one flip-flop. A **register** is a row of them, all sharing the same `load` and the same clock, holding a whole number.
+
+When `load` is on, at the tick `q1 q0` takes `d1 d0`. Otherwise it keeps its number.
+---- task
+Build a two-bit register: `q1 q0` takes `d1 d0` at a tick while `load` is on, and keeps its value otherwise.
+---- start
+input d0 0 0
+input d1 0 150
+input load 0 280
+clock clk 0 340
+led q0 520 20
+led q1 520 170
+---- reference
+input d0, d1, load
+clock clk
+led q0, q1
+wire a[1], b[1]
+a = dff((a & ~load) | (d0 & load), clk)
+b = dff((b & ~load) | (d1 & load), clk)
+q0 = a
+q1 = b
+---- answer
+input d0 0 0
+input d1 0 150
+input load 0 280
+clock clk 0 340
+chip m0 my_mux 160 10
+dff f0 320 20
+chip m1 my_mux 160 160
+dff f1 320 170
+led q0 520 20
+led q1 520 170
+f0.q -> m0.a
+d0 -> m0.b
+load -> m0.s
+m0.y -> f0.d
+clk -> f0.clk
+f0.q -> q0
+f1.q -> m1.a
+d1 -> m1.b
+load -> m1.s
+m1.y -> f1.d
+clk -> f1.clk
+f1.q -> q1
+---- hint1
+Build bit 0 just as in the last lesson: my_mux into a flip-flop, the flip-flop's `q` back into the mux's `a`.
+---- hint2
+Then the same again for bit 1. Both muxes get `load` as `s`, and both flip-flops get `clk`.
+---- solution
+Each bit is a my_mux and a flip-flop: `q` back into `a`, `d` into `b`, `load` into `s`. The two bits share `load` and `clk`, so they load together.
+---- done
+Make it eight bits wide and you have a byte of memory. A processor's registers are exactly this, 32 or 64 bits wide.

@@ -12,7 +12,10 @@
  * The courses (TRACKS below) are folders of lessons, in order:
  *   lessons/draw/   drawn only: parts dragged in and wired, no code
  *   lessons/vhdl/   written only: VHDL, with Wire drawing it alongside
- * A lesson (lessons/<course>/<nn>_<name>.lesson) is a header and sections:
+ * A lesson (lessons/<course>/<nn>_<name>.lesson) is a header and sections.
+ * The number only sets the order: the lesson is <course>/<name> (what the
+ * page keeps progress under, and its address), so lessons can be renumbered
+ * and moved without anyone losing what they did.
  *   title: ...
  *   mode: draw | vhdl     optional; it must be the course's own
  *   chapter: ...          the heading it goes under
@@ -138,8 +141,9 @@ const dir = path.join(root, "lessons", tr.dir);
 const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => n.endsWith(".lesson")).sort() : [];
 if (!files.length) fail(`lessons/${tr.dir}: there are no lessons`);
 for (const f of files) {
-  const id = tr.dir + "/" + f.replace(/\.lesson$/, "");
+  const id = tr.dir + "/" + f.replace(/\.lesson$/, "").replace(/^\d+_/, "");
   try {
+    if (lessons.some(l => l.id === id)) throw new Error(`lessons/${tr.dir}/${f}: there is already a lesson called ${id.split("/")[1]} in this course`);
     const l = parse(path.join(dir, f));
     const mode = l.header.mode || tr.mode;
     if (mode !== tr.mode) throw new Error(`${id}: a ${mode} lesson in the ${tr.name} course (every lesson in lessons/${tr.dir} is mode: ${tr.mode})`);

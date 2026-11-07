@@ -1,0 +1,58 @@
+title: Sending a signal one way or the other
+mode: vhdl
+chapter: Choosing
+check: behaves
+---- intro
+A multiplexer picks one of many inputs. A **demultiplexer** does the opposite: it takes one input `d` and sends it to one of two outputs, chosen by `s`. The other output stays `'0'`.
+
+| s | y0 | y1 |
+|---|----|----|
+| 0 | `d` | 0 |
+| 1 | 0 | `d` |
+
+Each output is its own `when ... else` line.
+---- task
+Send `d` to `y0` when `s` is 0, and to `y1` when `s` is 1. The other output is `'0'`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity demux is
+  port(
+    d  : in  std_logic;
+    s  : in  std_logic;
+    y0 : out std_logic;
+    y1 : out std_logic
+  );
+end demux;
+
+architecture rtl of demux is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity demux is
+  port(
+    d  : in  std_logic;
+    s  : in  std_logic;
+    y0 : out std_logic;
+    y1 : out std_logic
+  );
+end demux;
+
+architecture rtl of demux is
+begin
+    y0 <= d when s = '0' else '0';
+    y1 <= d when s = '1' else '0';
+end rtl;
+---- hint1
+One line for each output, each `... <= d when s = ... else '0';`
+---- hint2
+`y0 <= d when s = '0' else '0';` and `y1 <= d when s = '1' else '0';`
+---- solution
+`y0 <= d when s = '0' else '0';` and `y1 <= d when s = '1' else '0';` Only one output can let `d` through at a time.
+---- done
+Multiplexers gather signals in, demultiplexers send them out. Memory chips use both to read and write one cell out of millions.

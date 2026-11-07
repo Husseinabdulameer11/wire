@@ -1,0 +1,84 @@
+title: A 7-segment display
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+The digits on a clock radio are made of seven segments, named `a` to `g`. `seg` has one bit per segment, `seg(6)` is `g` down to `seg(0)` is `a`, and a 1 lights it:
+
+```
+ aaa
+f   b
+ ggg
+e   c
+ ddd
+```
+
+So **1** lights `b` and `c`: `"0000110"`. **0** lights everything but `g`: `"0111111"`. Those two are in the starter. Work out the others the same way.
+---- task
+Make `seg` show the digit `n`, for 0 to 9. Anything else shows nothing (`"0000000"`).
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity seg7 is
+  port(
+    n   : in  std_logic_vector(3 downto 0);
+    seg : out std_logic_vector(6 downto 0)
+  );
+end seg7;
+
+architecture rtl of seg7 is
+begin
+    with n select seg <=
+        "0111111" when "0000",
+        "0000110" when "0001",
+        -- 2 to 9 here
+        "0000000" when others;
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity seg7 is
+  port(
+    n   : in  std_logic_vector(3 downto 0);
+    seg : out std_logic_vector(6 downto 0)
+  );
+end seg7;
+
+architecture rtl of seg7 is
+begin
+    with n select seg <=
+        "0111111" when "0000",
+        "0000110" when "0001",
+        "1011011" when "0010",
+        "1001111" when "0011",
+        "1100110" when "0100",
+        "1101101" when "0101",
+        "1111101" when "0110",
+        "0000111" when "0111",
+        "1111111" when "1000",
+        "1101111" when "1001",
+        "0000000" when others;
+end rtl;
+---- hint1
+Draw each digit on paper and list its segments; then write them as `gfedcba`, a 1 for each lit one. 2 is `a b d e g`.
+---- hint2
+2 is `"1011011"`, 3 is `"1001111"`, 4 is `"1100110"`, 5 is `"1101101"`, 6 is `"1111101"`, 7 is `"0000111"`, 8 is `"1111111"`, 9 is `"1101111"`.
+---- solution
+```
+with n select seg <=
+    "0111111" when "0000",
+    "0000110" when "0001",
+    "1011011" when "0010",
+    "1001111" when "0011",
+    "1100110" when "0100",
+    "1101101" when "0101",
+    "1111101" when "0110",
+    "0000111" when "0111",
+    "1111111" when "1000",
+    "1101111" when "1001",
+    "0000000" when others;
+```
+---- done
+The FPGA boards you will use have 7-segment displays, and this is the table that drives them. Next: a tiny calculator.

@@ -22,20 +22,22 @@ let st = { models: {}, code: {}, chips: {}, done: {}, fails: {}, hints: {}, last
 try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && typeof s === "object") st = Object.assign(st, s); } catch (e) {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
 /* the lessons were once one course, mixed: what was done then counts in the two courses */
-const OLD = { "01_switch": "draw/01_switch", "02_not": "draw/02_not", "03_and": "draw/03_and", "04_or": "draw/04_or", "05_wire": "vhdl/01_first",
-  "06_gates": "vhdl/03_and", "07_nand": "draw/05_nand", "08_nor": "vhdl/05_nor", "09_xor": "draw/08_xor", "10_signals": "vhdl/06_signals",
-  "11_majority": "draw/10_majority", "12_parity": "vhdl/08_parity", "13_half_adder": "draw/12_half_adder", "14_two_outputs": "vhdl/09_half_adder",
-  "15_full_adder": "draw/13_full_adder", "16_full_adder_vhdl": "vhdl/10_full_adder", "17_mux_gates": "draw/15_mux", "18_choose": "vhdl/12_choose",
-  "19_buses": "vhdl/13_buses", "20_slices": "vhdl/14_slices", "21_adder": "vhdl/15_adder", "22_decoder": "vhdl/16_decoder",
-  "23_dff_draw": "draw/18_flipflop", "24_flipflop": "vhdl/18_flipflop", "25_counter": "vhdl/21_counter" };
+const OLD = { "01_switch": "draw/switch", "02_not": "draw/not", "03_and": "draw/and", "04_or": "draw/or", "05_wire": "vhdl/first",
+  "06_gates": "vhdl/and", "07_nand": "draw/nand", "08_nor": "vhdl/nor", "09_xor": "draw/xor", "10_signals": "vhdl/signals",
+  "11_majority": "draw/majority", "12_parity": "vhdl/parity", "13_half_adder": "draw/half_adder", "14_two_outputs": "vhdl/half_adder",
+  "15_full_adder": "draw/full_adder", "16_full_adder_vhdl": "vhdl/full_adder", "17_mux_gates": "draw/mux", "18_choose": "vhdl/choose",
+  "19_buses": "vhdl/buses", "20_slices": "vhdl/slices", "21_adder": "vhdl/adder", "22_decoder": "vhdl/decoder",
+  "23_dff_draw": "draw/flipflop", "24_flipflop": "vhdl/flipflop", "25_counter": "vhdl/counter" };
+/* ...and for a while were numbered, draw/08_xor: now draw/xor */
+const renamed = k => OLD[k] || (/^(\w+)\/\d+_(\w+)$/.test(k) ? k.replace(/\/\d+_/, "/") : null);
 (function migrate() {
   let moved = false;
   for (const k of ["models", "code", "done", "fails", "hints", "solutionShown"]) {
     const o = st[k];
     if (!o) continue;
-    for (const old of Object.keys(o)) if (OLD[old]) { if (!(OLD[old] in o)) o[OLD[old]] = o[old]; delete o[old]; moved = true; }
+    for (const old of Object.keys(o)) { const nw = renamed(old); if (nw) { if (!(nw in o)) o[nw] = o[old]; delete o[old]; moved = true; } }
   }
-  if (OLD[st.last]) { st.last = OLD[st.last]; st.track = st.last.split("/")[0]; moved = true; }   /* back where they were, no picker */
+  if (renamed(st.last)) { st.last = renamed(st.last); st.track = st.last.split("/")[0]; moved = true; }   /* back where they were, no picker */
   if (moved) save();
 })();
 const trackOf = d => TRACKS.find(t => t.dir === d) || TRACKS[0];
@@ -415,7 +417,7 @@ function picker() {
 
 /* ---- start: the lesson in the address, else the one you were on, else ask which course */
 fixTab();
-const find = h => { const i = LESSONS.findIndex(l => l.id === h); return i >= 0 ? i : LESSONS.findIndex(l => l.id === OLD[h]); };
+const find = h => { const i = LESSONS.findIndex(l => l.id === h); return i >= 0 ? i : LESSONS.findIndex(l => l.id === renamed(h)); };
 const want = find(location.hash.slice(1)), last = LESSONS.findIndex(l => l.id === st.last);
 if (want >= 0) open(want);
 else if (last >= 0 && st.track) open(last);

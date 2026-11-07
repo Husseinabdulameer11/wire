@@ -1,0 +1,48 @@
+title: Turning a bus round
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+You can join single bits into a bus with `&`, in any order you like: `a(0) & a(1)` is a two-bit bus with `a(0)` on the left.
+
+Joining all four bits of `a` from the other end turns it round: bit 0 becomes bit 3, and so on.
+---- task
+Make `y` the bits of `a` in reverse order: for `a = "0001"`, `y = "1000"`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity reverse4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(3 downto 0)
+  );
+end reverse4;
+
+architecture rtl of reverse4 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity reverse4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(3 downto 0)
+  );
+end reverse4;
+
+architecture rtl of reverse4 is
+begin
+    y <= a(0) & a(1) & a(2) & a(3);
+end rtl;
+---- hint1
+Join the four single bits of `a` with `&`, starting from `a(0)`.
+---- hint2
+`y <= a(0) & a(1) & a(2) & a(3);`
+---- solution
+`y <= a(0) & a(1) & a(2) & a(3);` The leftmost thing joined becomes the top bit.
+---- done
+No gates at all: only wires crossing over. Some chips send bits lowest first and others highest first, and a reversal like this connects them.

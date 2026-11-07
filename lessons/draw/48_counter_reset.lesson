@@ -1,0 +1,60 @@
+title: Back to zero
+mode: draw
+chapter: Counting
+check: behaves
+parts: dff and not chip:my_xor
+needs: my_xor
+---- intro
+A counter needs a way back to 0. Here, when `rst` is on at a tick, both bits become 0, whatever they were. When `rst` is off, it counts as usual.
+
+Each flip-flop gets its usual next value, let through only while `rst` is **off**: an AND with NOT `rst`, the "letting a signal through" trick.
+---- task
+Make `q1 q0` count up one step per tick, and go back to 0 at a tick when `rst` is on.
+---- start
+input rst 0 0
+clock clk 0 280
+led q0 620 40
+led q1 620 200
+---- reference
+input rst
+clock clk
+led q0, q1
+wire a[1], b[1]
+a = dff(~a & ~rst, clk)
+b = dff((b ^ a) & ~rst, clk)
+q0 = a
+q1 = b
+---- answer
+input rst 0 0
+clock clk 0 280
+not nr 120 0
+not n0 160 100
+and g0 300 40
+dff f0 440 40
+chip x1 my_xor 240 200
+and g1 360 200
+dff f1 480 200
+led q0 620 40
+led q1 620 200
+rst -> nr.in
+f0.q -> n0.in
+n0 -> g0.0
+nr -> g0.1
+g0 -> f0.d
+clk -> f0.clk
+f0.q -> q0
+f1.q -> x1.a
+f0.q -> x1.b
+x1.y -> g1.0
+nr -> g1.1
+g1 -> f1.d
+clk -> f1.clk
+f1.q -> q1
+---- hint1
+Start from your counter: NOT `q0` feeds bit 0, `q1` XOR `q0` feeds bit 1. Now each of those goes through an AND before the flip-flop.
+---- hint2
+Make NOT `rst` once. AND it with NOT `q0` for the first flip-flop's `d`, and with the XOR for the second one's.
+---- solution
+The counter's next values, NOT `q0` and `q1` XOR `q0`, each go through an AND with NOT `rst` on the way to `d`. With `rst` on, both ANDs give 0.
+---- done
+This is a **synchronous** reset: it waits for the clock, like everything else in the circuit. Almost every flip-flop in a real design has one.

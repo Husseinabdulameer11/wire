@@ -1,0 +1,70 @@
+title: A flip-flop that flips
+mode: vhdl
+chapter: Memory
+check: behaves
+cycles: 100
+---- intro
+Feed a flip-flop its own value, turned round, and it flips at every edge: 0, 1, 0, 1.
+
+An output cannot be read inside the architecture, only written. So the value is kept in a **signal** `t`, which can be both, and the output is connected to it:
+
+```
+t <= not t;     -- inside the clock edge
+q <= t;         -- outside the process
+```
+---- task
+Make `q` flip at every rising edge of `clk`, keeping the value in the signal `t`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity toggle is
+  port(
+    clk : in  std_logic;
+    q   : out std_logic
+  );
+end toggle;
+
+architecture rtl of toggle is
+    signal t : std_logic := '0';
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity toggle is
+  port(
+    clk : in  std_logic;
+    q   : out std_logic
+  );
+end toggle;
+
+architecture rtl of toggle is
+    signal t : std_logic := '0';
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            t <= not t;
+        end if;
+    end process;
+    q <= t;
+end rtl;
+---- hint1
+Two parts: a clock process that sets `t <= not t;`, and a line after `end process;` that connects `q` to `t`.
+---- hint2
+Inside the clock edge: `t <= not t;`. After `end process;`: `q <= t;`
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        t <= not t;
+    end if;
+end process;
+q <= t;
+```
+---- done
+`q` flips half as often as the clock ticks: a **divide by two**. It is the first step of every counter.

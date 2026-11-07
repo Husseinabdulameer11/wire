@@ -1,0 +1,43 @@
+title: Waiting a tick
+mode: draw
+chapter: Memory
+check: behaves
+parts: dff
+---- intro
+A flip-flop's output can feed another flip-flop. At each tick, the second one copies what the first one **was** holding, just before the first one changes. So a value moves one flip-flop further at every tick.
+
+Set `d` to 1 and press **Step**: `q1` lights. Press **Step** again: now `q2` lights too, one tick later.
+---- task
+Chain two flip-flops: `d` into the first, the first into the second. `q1` shows the first, `q2` the second.
+---- start
+input d 0 0
+clock clk 0 140
+led q1 440 20
+led q2 440 110
+---- reference
+input d
+clock clk
+led q1, q2
+q1 = dff(d, clk)
+q2 = dff(q1, clk)
+---- answer
+input d 0 0
+clock clk 0 140
+dff f1 140 20
+dff f2 300 100
+led q1 440 20
+led q2 440 110
+d -> f1.d
+clk -> f1.clk
+f1.q -> f2.d
+clk -> f2.clk
+f1.q -> q1
+f2.q -> q2
+---- hint1
+Both flip-flops get the same clock, `clk`.
+---- hint2
+The first flip-flop's `q` goes to `q1` and to the second flip-flop's `d`. The second one's `q` goes to `q2`.
+---- solution
+`d` into flip-flop 1, its `q` into flip-flop 2 and to `q1`; flip-flop 2's `q` to `q2`; `clk` to both. Whatever `d` was shows on `q2` two ticks later.
+---- done
+A value marching from flip-flop to flip-flop is a **shift register**. Processors use the same idea to work on several instructions at once, one step apart: a **pipeline**.

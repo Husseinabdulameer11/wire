@@ -1,0 +1,84 @@
+title: A register with reset
+mode: vhdl
+chapter: Memory
+check: behaves
+cycles: 150
+random: rst=0.1 load=0.3
+---- intro
+Registers usually have both: `rst` sets them to zero, and `load` puts a new value in. When both are on, reset wins. An `elsif` says it in order:
+
+```
+if rst = '1' then
+    q <= (others => '0');
+elsif load = '1' then
+    q <= d;
+end if;
+```
+
+`(others => '0')` means "every bit 0", whatever the width.
+---- task
+At each rising edge: `q` becomes all zeros if `rst` is 1; else it takes `d` if `load` is 1; else it keeps its value.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity reg4_rst is
+  port(
+    clk  : in  std_logic;
+    rst  : in  std_logic;
+    load : in  std_logic;
+    d    : in  std_logic_vector(3 downto 0);
+    q    : out std_logic_vector(3 downto 0)
+  );
+end reg4_rst;
+
+architecture rtl of reg4_rst is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity reg4_rst is
+  port(
+    clk  : in  std_logic;
+    rst  : in  std_logic;
+    load : in  std_logic;
+    d    : in  std_logic_vector(3 downto 0);
+    q    : out std_logic_vector(3 downto 0)
+  );
+end reg4_rst;
+
+architecture rtl of reg4_rst is
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                q <= (others => '0');
+            elsif load = '1' then
+                q <= d;
+            end if;
+        end if;
+    end process;
+end rtl;
+---- hint1
+Inside the clock edge: `if rst = '1' then ... elsif load = '1' then ... end if;`
+---- hint2
+`if rst = '1' then q <= (others => '0'); elsif load = '1' then q <= d; end if;`
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        if rst = '1' then
+            q <= (others => '0');
+        elsif load = '1' then
+            q <= d;
+        end if;
+    end if;
+end process;
+```
+---- done
+The order of `if` and `elsif` is the priority: whatever is checked first wins. In hardware that is one multiplexer in front of another.

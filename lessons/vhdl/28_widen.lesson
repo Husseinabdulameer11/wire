@@ -1,0 +1,48 @@
+title: Making a bus wider
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+To put a 4-bit number into an 8-bit bus, add zeros at the top: `"0000" & a`. The number stays the same: 0101 and 00000101 are both 5. This is called **zero extension**.
+
+A bus written as a constant uses double quotes, `"0000"`, one character per bit.
+---- task
+Make the 8-bit `y` hold the 4-bit number `a`, with zeros in the top four bits.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity widen is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(7 downto 0)
+  );
+end widen;
+
+architecture rtl of widen is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity widen is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    y : out std_logic_vector(7 downto 0)
+  );
+end widen;
+
+architecture rtl of widen is
+begin
+    y <= "0000" & a;
+end rtl;
+---- hint1
+Four zeros, joined in front of `a`.
+---- hint2
+`y <= "0000" & a;`
+---- solution
+`y <= "0000" & a;` The four zeros become bits 7 to 4.
+---- done
+VHDL will not let you put 4 bits into 8 without saying how: the widths must match exactly. It catches a lot of mistakes.

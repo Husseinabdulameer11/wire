@@ -1,0 +1,55 @@
+title: A burglar alarm
+mode: vhdl
+chapter: Combining gates
+check: behaves
+---- intro
+A real problem now. The alarm `y` should sound when:
+
+- the alarm is **armed** and the **door** opens, or
+- someone presses the **panic** button, whatever the rest is doing.
+
+Turn the words into one line. Brackets keep "armed and door" together.
+---- task
+Make `y` 1 when the door opens while armed, or when panic is pressed.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity alarm is
+  port(
+    armed : in  std_logic;
+    door  : in  std_logic;
+    panic : in  std_logic;
+    y     : out std_logic
+  );
+end alarm;
+
+architecture rtl of alarm is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity alarm is
+  port(
+    armed : in  std_logic;
+    door  : in  std_logic;
+    panic : in  std_logic;
+    y     : out std_logic
+  );
+end alarm;
+
+architecture rtl of alarm is
+begin
+    y <= (armed and door) or panic;
+end rtl;
+---- hint1
+The words say it: (armed AND door) OR panic.
+---- hint2
+`y <= (armed and door) or panic;`
+---- solution
+`y <= (armed and door) or panic;` VHDL will not let you leave the brackets out when `and` and `or` are mixed: it makes you say which comes first.
+---- done
+Reading the problem out loud and writing down the ANDs and ORs as they come is how most circuits start.

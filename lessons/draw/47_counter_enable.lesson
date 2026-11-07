@@ -1,0 +1,59 @@
+title: A counter you can pause
+mode: draw
+chapter: Counting
+check: behaves
+parts: dff and chip:my_xor
+needs: my_xor
+---- intro
+A counter should count only when told to. With `en` (enable) on it counts as before; with `en` off it holds its number.
+
+Use the "flip only when asked" idea for each bit:
+
+- `q0` flips when `en` is on: the new `q0` is `q0` XOR `en`
+- `q1` flips when `en` is on **and** `q0` is 1: the new `q1` is `q1` XOR (`en` AND `q0`)
+---- task
+Make `q1 q0` count up one step per tick while `en` is on, and hold while it is off.
+---- start
+input en 0 0
+clock clk 0 260
+led q0 580 40
+led q1 580 200
+---- reference
+input en
+clock clk
+led q0, q1
+wire a[1], b[1]
+a = dff(a ^ en, clk)
+b = dff(b ^ (en & a), clk)
+q0 = a
+q1 = b
+---- answer
+input en 0 0
+clock clk 0 260
+chip x0 my_xor 160 30
+dff f0 320 40
+and g1 300 150
+chip x1 my_xor 400 190
+dff f1 480 200
+led q0 580 40
+led q1 580 200
+f0.q -> x0.a
+en -> x0.b
+x0.y -> f0.d
+clk -> f0.clk
+f0.q -> q0
+en -> g1.0
+f0.q -> g1.1
+f1.q -> x1.a
+g1 -> x1.b
+x1.y -> f1.d
+clk -> f1.clk
+f1.q -> q1
+---- hint1
+Bit 0 is the "flip only when asked" circuit with `en` as its `t`.
+---- hint2
+Bit 1 is the same, but its "asked" is `en` AND `q0`: an AND gate feeding the second my_xor.
+---- solution
+Flip-flop 0 takes `q0` XOR `en`. An AND gives `en` AND `q0`, and flip-flop 1 takes `q1` XOR that. With `en` off, neither changes.
+---- done
+Every timer in a computer has an enable like this, so a program can start and stop it.

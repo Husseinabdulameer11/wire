@@ -1,0 +1,67 @@
+title: Choosing one of four
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+`with ... select` can choose a signal, not only a constant. A 2-bit select `s` picks one of the four bits of `d`:
+
+| s | y |
+|---|---|
+| 00 | `d(0)` |
+| 01 | `d(1)` |
+| 10 | `d(2)` |
+| 11 | `d(3)` |
+
+The last case is usually written `when others`, which covers anything left.
+---- task
+Make `y` the bit of `d` that `s` points at.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity mux4 is
+  port(
+    d : in  std_logic_vector(3 downto 0);
+    s : in  std_logic_vector(1 downto 0);
+    y : out std_logic
+  );
+end mux4;
+
+architecture rtl of mux4 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity mux4 is
+  port(
+    d : in  std_logic_vector(3 downto 0);
+    s : in  std_logic_vector(1 downto 0);
+    y : out std_logic
+  );
+end mux4;
+
+architecture rtl of mux4 is
+begin
+    with s select y <=
+        d(0) when "00",
+        d(1) when "01",
+        d(2) when "10",
+        d(3) when others;
+end rtl;
+---- hint1
+Four cases, like the decoder, but each gives a bit of `d` instead of a constant.
+---- hint2
+`with s select y <= d(0) when "00", d(1) when "01", d(2) when "10", d(3) when others;`
+---- solution
+```
+with s select y <=
+    d(0) when "00",
+    d(1) when "01",
+    d(2) when "10",
+    d(3) when others;
+```
+---- done
+A processor picks one of its 32 registers to read with a multiplexer like this, 32 inputs wide.

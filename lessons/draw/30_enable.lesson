@@ -1,0 +1,40 @@
+title: Letting a signal through
+mode: draw
+chapter: Choosing
+check: behaves
+parts: and or not
+---- intro
+An AND gate can be a **gate** in the everyday sense: a door that lets a signal through or holds it back.
+
+Wire a signal `d` into one input and a control `en` (enable) into the other. When `en` is 1, the output is whatever `d` is. When `en` is 0, the output is 0, whatever `d` does.
+
+| en | y |
+|----|---|
+| 0 | 0 |
+| 1 | `d` |
+---- task
+Let `d` through to `y` only while `en` is on.
+---- start
+input d 0 0
+input en 0 70
+led y 300 30
+---- reference
+input d, en
+led y
+y = d & en
+---- answer
+input d 0 0
+input en 0 70
+and g1 140 20
+led y 300 30
+d -> g1.0
+en -> g1.1
+g1 -> y
+---- hint1
+One gate is enough. Which one gives 0 whenever one input is 0?
+---- hint2
+An AND gate, with `d` in one input and `en` in the other.
+---- solution
+`d` AND `en`: with `en` off the AND gives 0; with `en` on it gives `d`.
+---- done
+This is the idea behind every chooser in this chapter: let one signal through and hold the others back.

@@ -1,0 +1,49 @@
+title: Are two numbers equal?
+mode: draw
+chapter: Arithmetic
+check: behaves
+parts: or not chip:my_xor
+needs: my_xor
+---- intro
+Two numbers are equal when **every** pair of bits is the same. For two-bit numbers `a1 a0` and `b1 b0`:
+
+- XOR finds a pair that **differs**: `a1` XOR `b1`, and `a0` XOR `b0`
+- the numbers are equal when **neither** pair differs: that is a NOR, an OR followed by a NOT
+---- task
+Light `eq` when `a1 a0` and `b1 b0` are the same number.
+---- start
+input a0 0 0
+input b0 0 60
+input a1 0 150
+input b1 0 210
+led eq 520 100
+---- reference
+input a0, b0, a1, b1
+led eq
+eq = ~((a0 ^ b0) | (a1 ^ b1))
+---- answer
+input a0 0 0
+input b0 0 60
+input a1 0 150
+input b1 0 210
+chip x0 my_xor 140 20
+chip x1 my_xor 140 170
+or o1 280 100
+not n1 400 100
+led eq 520 100
+a0 -> x0.a
+b0 -> x0.b
+a1 -> x1.a
+b1 -> x1.b
+x0.y -> o1.0
+x1.y -> o1.1
+o1 -> n1.in
+n1 -> eq
+---- hint1
+One my_xor for the `0` bits, one for the `1` bits.
+---- hint2
+OR the two XORs ("some bit differs") and turn it round with a NOT.
+---- solution
+Each my_xor is 1 if its pair differs. The OR is 1 if any pair differs, and the NOT turns that into "all the same".
+---- done
+Comparing for equality is a row of XORs and one big NOR, for any number of bits. Processors use it to decide whether to jump in a program.

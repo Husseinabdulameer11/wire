@@ -1,0 +1,52 @@
+title: Subtracting numbers
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+`-` works on `unsigned` numbers just as `+` does. With 4 bits there are no negative numbers, so 3 − 5 **wraps round**, like a car's odometer going backwards past zero: 3 − 5 gives 14 (16 − 2).
+
+As with the adder, read the inputs as numbers with `unsigned(...)` and turn the answer back into bits with `std_logic_vector(...)`.
+---- task
+Make `d` the 4-bit difference `a` − `b`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity sub4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    b : in  std_logic_vector(3 downto 0);
+    d : out std_logic_vector(3 downto 0)
+  );
+end sub4;
+
+architecture rtl of sub4 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity sub4 is
+  port(
+    a : in  std_logic_vector(3 downto 0);
+    b : in  std_logic_vector(3 downto 0);
+    d : out std_logic_vector(3 downto 0)
+  );
+end sub4;
+
+architecture rtl of sub4 is
+begin
+    d <= std_logic_vector(unsigned(a) - unsigned(b));
+end rtl;
+---- hint1
+Like the adder, with `-` instead of `+`, and no `resize` this time.
+---- hint2
+`d <= std_logic_vector(unsigned(a) - unsigned(b));`
+---- solution
+`d <= std_logic_vector(unsigned(a) - unsigned(b));` Try 3 − 5: the answer is 1110, which is 14.
+---- done
+Wrapping round is how computers really store negative numbers: in 4 bits, 1110 can mean −2. That is called **two's complement**.

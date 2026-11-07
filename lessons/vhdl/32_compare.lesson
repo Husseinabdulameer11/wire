@@ -1,0 +1,63 @@
+title: Comparing numbers
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+Processors compare numbers all the time: is the count done, is this bigger than that? In VHDL a comparison is a condition, and `when ... else` turns it into a bit:
+
+```
+eq <= '1' when a = b else '0';
+```
+
+`=` works on any two buses. To ask which is **bigger**, the bits must be read as numbers, with `unsigned(...)` from `numeric_std`: `unsigned(a) > unsigned(b)`. Without it VHDL does not know whether `"1000"` means 8 or something else.
+---- task
+`eq` is 1 when `a` and `b` are equal, and `gt` is 1 when `a` is bigger than `b`, both read as numbers from 0 to 15.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity compare4 is
+  port(
+    a  : in  std_logic_vector(3 downto 0);
+    b  : in  std_logic_vector(3 downto 0);
+    eq : out std_logic;
+    gt : out std_logic
+  );
+end compare4;
+
+architecture rtl of compare4 is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity compare4 is
+  port(
+    a  : in  std_logic_vector(3 downto 0);
+    b  : in  std_logic_vector(3 downto 0);
+    eq : out std_logic;
+    gt : out std_logic
+  );
+end compare4;
+
+architecture rtl of compare4 is
+begin
+    eq <= '1' when a = b else '0';
+    gt <= '1' when unsigned(a) > unsigned(b) else '0';
+end rtl;
+---- hint1
+Two lines, each `... <= '1' when <condition> else '0';`.
+---- hint2
+`eq <= '1' when a = b else '0';` and `gt <= '1' when unsigned(a) > unsigned(b) else '0';`
+---- solution
+```
+eq <= '1' when a = b else '0';
+gt <= '1' when unsigned(a) > unsigned(b) else '0';
+```
+For `a = "1001"` (9) and `b = "0110"` (6), `eq` is 0 and `gt` is 1.
+---- done
+`<`, `<=`, `>=` and `/=` (not equal) work the same way. Next: more tables.

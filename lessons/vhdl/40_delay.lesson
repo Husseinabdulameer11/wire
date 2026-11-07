@@ -1,0 +1,75 @@
+title: Waiting a tick
+mode: vhdl
+chapter: Memory
+check: behaves
+cycles: 100
+---- intro
+Two flip-flops in a row delay a signal by two ticks: at each edge the second copies what the first **was** holding, just before the first changes.
+
+In VHDL, both copies go in the same process. Every `<=` inside a clock edge uses the values from **before** the edge, so the order of the lines does not matter:
+
+```
+s1 <= d;
+q  <= s1;
+```
+
+`s1` is a signal: the wire between the two flip-flops.
+---- task
+Make `q` show what `d` was two clock edges ago, using the signal `s1` as the first flip-flop.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity delay2 is
+  port(
+    clk : in  std_logic;
+    d   : in  std_logic;
+    q   : out std_logic
+  );
+end delay2;
+
+architecture rtl of delay2 is
+    signal s1 : std_logic := '0';
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity delay2 is
+  port(
+    clk : in  std_logic;
+    d   : in  std_logic;
+    q   : out std_logic
+  );
+end delay2;
+
+architecture rtl of delay2 is
+    signal s1 : std_logic := '0';
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            s1 <= d;
+            q  <= s1;
+        end if;
+    end process;
+end rtl;
+---- hint1
+Both lines go inside the same `if rising_edge(clk) then`.
+---- hint2
+`s1 <= d;` and `q <= s1;`, inside the clock edge.
+---- solution
+```
+process (clk)
+begin
+    if rising_edge(clk) then
+        s1 <= d;
+        q  <= s1;
+    end if;
+end process;
+```
+Set `d` to 1 and Step twice: `q` follows on the second step.
+---- done
+Swap the two lines and nothing changes: at the edge, all the flip-flops copy at once. Thinking of it as a program running line by line is the commonest VHDL mistake.

@@ -1,0 +1,71 @@
+title: A full adder from half adders
+mode: vhdl
+chapter: Arithmetic
+check: behaves
+---- intro
+There is another way to build the full adder: from two half adders, as you would by hand.
+
+- the first adds `a` and `b`: sum `s1`, carry `c1`
+- the second adds `cin` to `s1`: that sum is `s`, and its carry is `c2`
+- if either of them carried, the full adder carries: `cout` is `c1` or `c2`
+
+The starter declares the three signals for you.
+---- task
+Build the full adder from two half adders, using the signals `s1`, `c1` and `c2`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity full_adder2 is
+  port(
+    a    : in  std_logic;
+    b    : in  std_logic;
+    cin  : in  std_logic;
+    s    : out std_logic;
+    cout : out std_logic
+  );
+end full_adder2;
+
+architecture rtl of full_adder2 is
+    signal s1, c1, c2 : std_logic;
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity full_adder2 is
+  port(
+    a    : in  std_logic;
+    b    : in  std_logic;
+    cin  : in  std_logic;
+    s    : out std_logic;
+    cout : out std_logic
+  );
+end full_adder2;
+
+architecture rtl of full_adder2 is
+    signal s1, c1, c2 : std_logic;
+begin
+    s1   <= a xor b;
+    c1   <= a and b;
+    s    <= s1 xor cin;
+    c2   <= s1 and cin;
+    cout <= c1 or c2;
+end rtl;
+---- hint1
+Five lines: two for the first half adder, two for the second, one for `cout`.
+---- hint2
+`s1 <= a xor b;` `c1 <= a and b;` `s <= s1 xor cin;` `c2 <= s1 and cin;` `cout <= c1 or c2;`
+---- solution
+```
+s1   <= a xor b;
+c1   <= a and b;
+s    <= s1 xor cin;
+c2   <= s1 and cin;
+cout <= c1 or c2;
+```
+It does exactly what the two-line full adder did, built a different way.
+---- done
+Two different circuits, one behaviour: the checker tried every input and could not tell them apart. Designers pick whichever is smaller or faster.

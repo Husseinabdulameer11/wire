@@ -1,0 +1,65 @@
+title: One wire per number: a decoder
+mode: vhdl
+chapter: Buses and numbers
+check: behaves
+---- intro
+A **decoder** turns a number into one wire per value: the 2-bit input `a` (0 to 3) lights exactly one of the four outputs `y(0)` to `y(3)`. It is how a computer picks one memory chip, or one register, from a number.
+
+`with ... select` gives a value for each case, like a table:
+
+```
+with a select y <=
+    "0001" when "00",
+    "0010" when "01",
+    ...
+```
+---- task
+Light `y(0)` for `a = "00"`, `y(1)` for `"01"`, `y(2)` for `"10"` and `y(3)` for `"11"`.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity decoder is
+  port(
+    a : in  std_logic_vector(1 downto 0);
+    y : out std_logic_vector(3 downto 0)
+  );
+end decoder;
+
+architecture rtl of decoder is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity decoder is
+  port(
+    a : in  std_logic_vector(1 downto 0);
+    y : out std_logic_vector(3 downto 0)
+  );
+end decoder;
+
+architecture rtl of decoder is
+begin
+    with a select y <=
+        "0001" when "00",
+        "0010" when "01",
+        "0100" when "10",
+        "1000" when others;
+end rtl;
+---- hint1
+Four cases, one line each; the last can be `when others`, which covers anything left.
+---- hint2
+The values are `"0001"`, `"0010"`, `"0100"` and `"1000"`: the 1 moves left as `a` grows.
+---- solution
+```
+with a select y <=
+    "0001" when "00",
+    "0010" when "01",
+    "0100" when "10",
+    "1000" when others;
+```
+---- done
+`with ... select` is the text version of a truth table. Next: choosing with a table.

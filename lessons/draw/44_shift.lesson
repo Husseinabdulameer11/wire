@@ -1,0 +1,50 @@
+title: A shift register
+mode: draw
+chapter: Memory
+check: behaves
+parts: dff
+---- intro
+Chain three flip-flops and a bit moves along them, one place per tick: in at `din`, then `q0`, then `q1`, then `q2`. After three ticks the last three bits that came in are all there, side by side.
+
+That is how a **serial** link, one wire carrying one bit after another, becomes a number you can read all at once.
+---- task
+Build a three-bit shift register: `din` into the first flip-flop, each one into the next. Show them on `q0`, `q1` and `q2`.
+---- start
+input din 0 0
+clock clk 0 160
+led q0 580 0
+led q1 580 80
+led q2 580 160
+---- reference
+input din
+clock clk
+led q0, q1, q2
+q0 = dff(din, clk)
+q1 = dff(q0, clk)
+q2 = dff(q1, clk)
+---- answer
+input din 0 0
+clock clk 0 160
+dff f0 140 0
+dff f1 280 70
+dff f2 420 150
+led q0 580 0
+led q1 580 80
+led q2 580 160
+din -> f0.d
+f0.q -> f1.d
+f1.q -> f2.d
+clk -> f0.clk
+clk -> f1.clk
+clk -> f2.clk
+f0.q -> q0
+f1.q -> q1
+f2.q -> q2
+---- hint1
+It is the "waiting a tick" circuit with one more flip-flop.
+---- hint2
+`din` into flip-flop 0, each `q` into the next one's `d` and to its light, and `clk` into all three.
+---- solution
+Three flip-flops in a row on one clock: a bit put on `din` shows on `q0` after one tick, `q1` after two, `q2` after three.
+---- done
+Shift registers are everywhere: USB, network cables and the SPI chips on every circuit board send bits one at a time and collect them like this.

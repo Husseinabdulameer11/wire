@@ -1,0 +1,47 @@
+title: Flip only when asked
+mode: draw
+chapter: Memory
+check: behaves
+parts: dff chip:my_xor
+needs: my_xor
+---- intro
+Your flip-flop that flips changes at **every** tick. Often you want it to flip only when a control `t` (toggle) is on, and keep its value otherwise:
+
+| t | at the tick, q becomes |
+|---|---|
+| 0 | `q` (it stays) |
+| 1 | NOT `q` (it flips) |
+
+Look at the table: the new `q` is `q` XOR `t`. XOR with 0 changes nothing, XOR with 1 flips it.
+---- task
+Make `q` flip at a tick only while `t` is on, using a flip-flop and **my_xor**.
+---- start
+input t 0 0
+clock clk 0 120
+led q 440 40
+---- reference
+input t
+clock clk
+led q
+wire w[1]
+w = dff(w ^ t, clk)
+q = w
+---- answer
+input t 0 0
+clock clk 0 120
+chip x1 my_xor 140 30
+dff f1 280 40
+led q 440 40
+f1.q -> x1.a
+t -> x1.b
+x1.y -> f1.d
+clk -> f1.clk
+f1.q -> q
+---- hint1
+The flip-flop's `d` comes from my_xor.
+---- hint2
+my_xor gets the flip-flop's own `q` and `t`. The flip-flop's `q` also goes to the light.
+---- solution
+my_xor of `q` and `t` feeds `d`. With `t` off, `d` is `q` and nothing changes; with `t` on, `d` is NOT `q` and it flips.
+---- done
+This is a **T flip-flop**. Chain them, each one's `t` from the bits before it, and you get a counter.

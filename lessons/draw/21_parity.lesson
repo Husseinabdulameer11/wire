@@ -1,0 +1,52 @@
+title: Odd or even: parity
+mode: draw
+chapter: Your own chips
+check: behaves
+parts: and or not chip:my_xor
+needs: my_xor
+---- intro
+XOR has another meaning: it is 1 when an **odd** number of its inputs are 1. One 1 is odd, two 1s are even.
+
+Chain two XORs and you can count three bits the same way: every time another 1 comes in, the answer flips. This is a **parity** bit. Memory chips and network links send one along with the data, to spot a bit that went wrong on the way.
+
+| a | b | c | y |
+|---|---|---|---|
+| 0 | 0 | 0 | 0 |
+| 0 | 0 | 1 | 1 |
+| 0 | 1 | 0 | 1 |
+| 0 | 1 | 1 | 0 |
+| 1 | 0 | 0 | 1 |
+| 1 | 0 | 1 | 0 |
+| 1 | 1 | 0 | 0 |
+| 1 | 1 | 1 | 1 |
+---- task
+Light `y` when an odd number of `a`, `b` and `c` are on. Use two **my_xor** chips.
+---- start
+input a 0 0
+input b 0 60
+input c 0 140
+led y 400 80
+---- reference
+input a, b, c
+led y
+y = a ^ b ^ c
+---- answer
+input a 0 0
+input b 0 60
+input c 0 140
+chip x1 my_xor 120 20
+chip x2 my_xor 260 80
+led y 400 80
+a -> x1.a
+b -> x1.b
+x1.y -> x2.a
+c -> x2.b
+x2.y -> y
+---- hint1
+It is the same idea as "all three": chain two parts, the first gets `a` and `b`, the second gets its answer and `c`.
+---- hint2
+The first my_xor gets `a` and `b`. The second gets the first one's `y` and `c`, and its `y` goes to the light.
+---- solution
+XOR `a` with `b`, then XOR that with `c`. One switch on: odd, the light is on. Two: even, off. Three: odd again.
+---- done
+Two XORs check three bits; for 32 bits you would chain 31. Next: the XOR does arithmetic.

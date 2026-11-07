@@ -1,0 +1,40 @@
+title: NOT from a NAND
+mode: draw
+chapter: NAND does everything
+check: behaves
+parts: nand
+---- intro
+Remember the fun fact from the NAND lesson: with enough NAND gates you can build **any** circuit. This chapter shows it. The parts list has only NAND gates.
+
+Look at the NAND table again, at the two rows where both inputs are the same:
+
+| a | b | NAND |
+|---|---|---|
+| 0 | 0 | 1 |
+| 1 | 1 | 0 |
+
+If both inputs get the same wire, NAND gives the opposite of it.
+---- task
+Build a NOT gate out of one NAND gate: `y` is the opposite of `a`.
+---- start
+input a 0 20
+led y 300 20
+---- reference
+input a
+led y
+y = ~a
+---- answer
+input a 0 20
+nand g1 140 20
+led y 300 20
+a -> g1.0
+a -> g1.1
+g1 -> y
+---- hint1
+Both of the NAND gate's inputs can come from the same switch: drag from `a` twice.
+---- hint2
+`a` into both inputs of the NAND gate, and its output into `y`.
+---- solution
+`a` goes into both inputs of the NAND. 0 NAND 0 is 1, and 1 NAND 1 is 0: a NOT gate.
+---- done
+One NAND, wired to itself, is a NOT. Next: AND.
