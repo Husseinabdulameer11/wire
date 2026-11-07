@@ -194,6 +194,7 @@ static int cur_inst;              /* instance being built, 0 = the circuit */
 
 /* instances: where each use of a component sits (0 is the circuit itself) */
 typedef struct { int comp, parent; const char *name; int nlen; int line, file; } Inst;
+#define SPARE (-2)   /* the parent of an unused component kept for the drawing or the VHDL (check_unused) */
 static Inst *insts; static int ninsts, capinsts;
 
 static Node *new_node(int kind, const gram_node *at)
@@ -2263,16 +2264,37 @@ static void compile_scope(gram_node *first, int top)
 
 
 /* a component that is never used is still checked: expand it once on
- * scratch nets, then throw the result away */
+ * scratch nets, then throw the result away. With keep_unused (the VHDL, and
+ * the playground making a drawing: --keep-unused) the ones written in the
+ * circuit's own file are kept, as a spare instance whose parent is SPARE:
+ * no scope has it as a child, so nothing draws it, connects it or puts it
+ * in the circuit, but its inside is there to be shown or written out. A
+ * chip you made and have not placed yet is still part of the design. */
+static int keep_unused;
 static void check_unused(void)
 {
     int ci, i;
     for (ci = 0; ci < ncomps; ci++) {
         Comp *cp = &comps[ci];
-        int outer[MAXIO], inner[MAXIO], nn = nnodes, nt = nnets, ntp = ntaps, ni = ninsts;
+        int outer[MAXIO], inner[MAXIO], nn = nnodes, nt = nnets, ntp = ntaps, ni = ninsts, id;
         if (cp->used) continue;
         for (i = 0; i < cp->nin; i++) outer[i] = new_net(cp->inw[i]);
-        expand(ci, outer, inner, cp->id, NULL);
+        id = expand(ci, outer, inner, cp->id, NULL);
+        if (keep_unused && file_of(cp->node) == 0) {
+            insts[id].parent = SPARE;
+            for (i = 0; i < cp->nout; i++) {   /* its outputs, as a use would have them */
+                Node *n;
+                int saved = cur_inst;
+                cur_inst = id;
+                n = new_node(K_PIN_OUT, cp->outid[i]);
+                n->name = cp->outname[i];
+                n->nlen = (int)strlen(cp->outname[i]);
+                node_in(n, "", inner[i]);
+                node_out(n, "", new_net(cp->outw[i]));
+                cur_inst = saved;
+            }
+            continue;
+        }
         nnodes = nn; nnets = nt; ntaps = ntp; ninsts = ni;
     }
 }
@@ -2403,6 +2425,12 @@ static void finish(void)
         for (j = 0; j < nodes[i].nout; j++) nets[find(nodes[i].out[j])].drivers++;
         for (j = 0; j < nodes[i].nin; j++) nets[find(nodes[i].in[j])].readers++;
     }
+    /* a spare chip's inputs come from nowhere: nothing outside uses it yet */
+    for (i = 0; i < nnodes; i++)
+        if (!nodes[i].dead && nodes[i].kind == K_PIN_IN && nodes[i].inst > 0 && insts[nodes[i].inst].parent == SPARE) {
+            Net *n = &nets[find(nodes[i].in[0])];
+            if (!n->drivers) n->drivers = 1;
+        }
     make_buses();
     for (i = 0; i < nnets; i++) {
         Net *n = &nets[i];
@@ -2425,8 +2453,23 @@ static void finish(void)
         canon[i] = (find(i) == i && (nets[i].drivers || nets[i].readers)) ? j++ : -1;
 
     {
-        int parts = -n_in - n_out, chips = ninsts - 1;
-        for (i = 0; i < nnodes; i++) parts += !nodes[i].dead && nodes[i].kind != K_PIN_IN && nodes[i].kind != K_PIN_OUT;
+        /* what is counted is the circuit: not a spare chip (check_unused) or what is inside it */
+        int parts = -n_in - n_out, chips = 0, k;
+        char *spare = (char *)calloc((size_t)ninsts + 1, 1), *seen = (char *)calloc((size_t)nnets + 1, 1);
+        for (i = 1; i < ninsts; i++) {
+            int p = i;
+            while (p > 0) p = insts[p].parent;
+            spare[i] = p == SPARE;
+            chips += !spare[i];
+        }
+        for (i = 0; i < nnodes; i++) {
+            if (nodes[i].dead || spare[nodes[i].inst]) continue;
+            parts += nodes[i].kind != K_PIN_IN && nodes[i].kind != K_PIN_OUT;
+            for (k = 0; k < nodes[i].nout; k++) seen[find(nodes[i].out[k])] = 1;
+            for (k = 0; k < nodes[i].nin; k++) seen[find(nodes[i].in[k])] = 1;
+        }
+        for (i = 0, j = 0; i < nnets; i++) j += canon[i] >= 0 && seen[i];
+        free(spare); free(seen);
         fprintf(stderr, "%s: %d input%s, %d output%s, %d part%s, %d chip%s, %d wire%s\n", src_name,
                 n_in, plural(n_in), n_out, plural(n_out), parts, plural(parts), chips, plural(chips), j, plural(j));
     }
@@ -2687,6 +2730,7 @@ int main(int argc, char **argv)
             return 0;
         } else if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--json")) json = 1;
+        else if (!strcmp(argv[i], "--keep-unused")) keep_unused = 1;
         else if (!strcmp(argv[i], "--to-vhdl")) to_vhdl = 1;
         else if (!strcmp(argv[i], "--to-wire")) to_wire = 1;
         else if (!strcmp(argv[i], "--check")) check = 1;
@@ -2740,6 +2784,7 @@ int main(int argc, char **argv)
     insts[0].parent = -1;
     ninsts = 1;
     compile_scope(prog->child, 1);
+    if (to_vhdl) keep_unused = 1;   /* every chip of the design becomes an entity, used or not */
     check_unused();
     finish();
     if (check) return 0;

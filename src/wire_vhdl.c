@@ -1353,6 +1353,15 @@ static char *vhdl_generate(const char *top, const char *fname)
         vbf(&vout, "\n");
     }
     vemit_tree(0);
+    /* the chips the circuit does not use (yet): entities too, as the design has them */
+    for (i = 1; i < ninsts; i++) {
+        if (insts[i].parent != SPARE || vcomp_find(insts[i].comp) >= 0) continue;
+        vcomps = (VComp *)grow(vcomps, &capvcomps, nvcomps + 1, sizeof *vcomps);
+        memset(&vcomps[nvcomps], 0, sizeof *vcomps);
+        vcomps[nvcomps].comp = insts[i].comp;
+        nvcomps++;
+        vemit_tree(i);
+    }
     vemit_entity(0, vtop_entity);
     if (vrenamed.n) {
         /* Wire names that are VHDL words */

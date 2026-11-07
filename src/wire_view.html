@@ -2284,7 +2284,7 @@ function openView(id) {
     requestAnimationFrame(applyView);
   } else requestAnimationFrame(fit);
 }
-function goUp() { if (V && V.id !== 0) openView(D.insts[V.id].parent); }
+function goUp() { if (V && V.id !== 0) openView(Math.max(0, D.insts[V.id].parent)); }   /* a spare chip (parent -2) goes up to the circuit */
 
 /* ================================================================ book */
 /* Pdfs read beside the circuit (wire --book, or Open PDF). With "Follow
@@ -2895,7 +2895,7 @@ document.title = D.title || D.file;
 $("tb-name").textContent = D.title || D.file.replace(/\.wire$/, "");
 $("tb-file").textContent = baseName(D.file);
 const comps = nodes.filter(n => !SOURCES.has(n.kind) && !SINKS.has(n.kind) && !["split", "merge", "const", "pin_in", "pin_out", "bus"].includes(n.kind)).length;
-const chips = D.insts ? D.insts.length - 1 : 0;
+const chips = D.insts ? D.insts.filter((ins, i) => { let p = i; while (p > 0) p = D.insts[p].parent; return i > 0 && p !== -2; }).length : 0;   /* not the spare ones: not in the circuit (yet) */
 $("tb-parts").textContent = `${comps} part${comps === 1 ? "" : "s"}${chips ? `, ${chips} chip${chips === 1 ? "" : "s"}` : ""}, ${ttIn.length + clocks.length} in, ${ttOut.length} out`;
 
 WireSim.create(D).then(s => {
@@ -3057,6 +3057,36 @@ window.wirePage = {
 /* where every part of the circuit is drawn now, by node: the playground uses
  * it to keep the layout when a written circuit becomes a drawing */
 window.wireGoView = id => openView(id);
+/* for the playground's Write view: the chips written in this file, as Draw
+ * lists them (the circuit's tree, then the ones not used yet), where each is
+ * written, and going to one or asking which one is on screen */
+const ownChip = (ins, i) => i > 0 && ins.builtin == null && ins.defFile === 0;
+window.wireChips = () => {
+  const out = [], seen = new Set();
+  const walk = (scope, depth) => {
+    const here = new Set();
+    D.insts.forEach((ins, i) => {
+      if (ins.parent !== scope || !ownChip(ins, i) || here.has(ins.comp)) return;
+      here.add(ins.comp);
+      if (!seen.has(ins.comp)) { seen.add(ins.comp); out.push({ comp: ins.comp, line: ins.defLine, depth, spare: false }); }
+      if (depth < 12) walk(i, depth + 1);
+    });
+  };
+  walk(0, 1);
+  D.insts.forEach((ins, i) => {
+    if (ins.parent !== -2 || !ownChip(ins, i) || seen.has(ins.comp)) return;
+    seen.add(ins.comp); out.push({ comp: ins.comp, line: ins.defLine, depth: 0, spare: true });
+  });
+  return out;
+};
+window.wireGoComp = comp => {
+  if (!comp) { openView(0); return true; }
+  let k = D.insts.findIndex((ins, i) => ownChip(ins, i) && ins.comp === comp && ins.parent !== -2);
+  if (k < 0) k = D.insts.findIndex((ins, i) => ownChip(ins, i) && ins.comp === comp);
+  if (k > 0) openView(k);
+  return k > 0;
+};
+window.wireViewComp = () => { if (!V || !V.id) return null; let i = V.id; while (i > 0 && !ownChip(D.insts[i], i)) i = D.insts[i].parent; return i > 0 ? D.insts[i].comp : null; };
 window.wireLayout = () => {
   const v = views.get(0);
   if (!v) return null;
