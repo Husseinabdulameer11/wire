@@ -1,0 +1,39 @@
+title: A flip-flop that flips
+mode: draw
+chapter: Memory
+check: behaves
+parts: dff not
+---- intro
+A flip-flop's output can go back into its own input. Put a NOT gate on the way and something new happens: at every clock tick the flip-flop copies the **opposite** of what it holds, so its output flips, 0, 1, 0, 1.
+
+Feeding an output back like this is called **feedback**. Without a flip-flop in the loop, a NOT feeding itself would never settle; with one, the loop only moves one step per tick.
+
+Press **Step** to tick the clock once, or **Run** to keep it going.
+---- task
+Make the light `q` flip at every tick of `clk`, using one flip-flop and one NOT gate.
+---- start
+clock clk 0 80
+led q 400 20
+---- reference
+clock clk
+led q
+wire t[1]
+t = dff(~t, clk)
+q = t
+---- answer
+clock clk 0 80
+dff f1 160 20
+not n1 160 120
+led q 400 20
+clk -> f1.clk
+f1.q -> n1.in
+n1 -> f1.d
+f1.q -> q
+---- hint1
+The flip-flop's `q` goes to the light, and also into a NOT gate. Where does the NOT gate's output go?
+---- hint2
+Wire the NOT gate's output back into the flip-flop's `d` input, and `clk` into its `clk`.
+---- solution
+`q` goes to the light and into the NOT gate, and the NOT gate goes back into `d`. Each tick, the flip-flop takes the opposite of what it held. The light flips at every tick.
+---- done
+The light flips once per tick: it goes on and off half as often as the clock does. That makes this circuit a **divide by two**, and it is the first step of a counter.

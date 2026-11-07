@@ -1,0 +1,58 @@
+title: Adding two-bit numbers
+mode: draw
+chapter: Arithmetic
+check: behaves
+parts: chip:my_half_adder chip:my_full_adder
+needs: my_xor my_half_adder my_full_adder
+---- intro
+Two bits can hold the numbers 0 to 3: the number `a` is the pair `a1 a0`, where `a1` is worth 2 and `a0` is worth 1. So `a1` on and `a0` off is 2.
+
+Adding two of them is long addition, column by column, from the right:
+
+- the right column adds `a0` and `b0`. Nothing carries into it, so a **half adder** is enough.
+- the left column adds `a1`, `b1` **and** the carry from the right column: a **full adder**.
+
+The biggest answer is 3 + 3 = 6, binary **110**, so the sum has three lights: `s0`, `s1`, and the last carry `c`.
+---- task
+Add the two-bit numbers `a1 a0` and `b1 b0`. Light `s0` and `s1` for the sum, and `c` for the carry out of the left column.
+---- start
+input a0 0 0
+input b0 0 60
+input a1 0 160
+input b1 0 220
+led s0 440 20
+led s1 440 170
+led c 440 240
+---- reference
+input a0, b0, a1, b1
+led s0, s1, c
+s0 = a0 ^ b0
+k = a0 & b0
+s1 = a1 ^ b1 ^ k
+c = (a1 & b1) | (a1 & k) | (b1 & k)
+---- answer
+input a0 0 0
+input b0 0 60
+input a1 0 160
+input b1 0 220
+chip h1 my_half_adder 160 10
+chip f1 my_full_adder 280 170
+led s0 440 20
+led s1 440 170
+led c 440 240
+a0 -> h1.a
+b0 -> h1.b
+h1.sum -> s0
+a1 -> f1.a
+b1 -> f1.b
+h1.carry -> f1.cin
+f1.s -> s1
+f1.cout -> c
+---- hint1
+The half adder gets `a0` and `b0`; its `sum` is `s0`. The full adder gets `a1` and `b1`.
+---- hint2
+The half adder's `carry` goes into the full adder's `cin`. The full adder's `s` is `s1`, and its `cout` is `c`.
+---- solution
+The half adder adds the right column: `a0` and `b0` in, `sum` to `s0`. Its `carry` goes on to the full adder's `cin`, which adds it to `a1` and `b1`: `s` to `s1`, `cout` to `c`. Try 3 + 3: all four switches on gives `c s1 s0` = 1 1 0, which is 6.
+---- done
+That is a **ripple-carry adder**: the carry ripples from column to column. Add a full adder for every extra bit, and you can add numbers as big as you like. A 64-bit processor has 64 columns.

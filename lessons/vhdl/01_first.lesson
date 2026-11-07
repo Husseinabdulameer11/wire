@@ -1,16 +1,18 @@
-title: From drawing to text
+title: Your first circuit
 check: behaves
 mode: vhdl
 chapter: Signals and gates
 ---- intro
-So far you have drawn circuits. Engineers usually **write** them instead, in a language called **VHDL**, and a program turns the text into a circuit. On the right, Wire draws whatever you write, as you type.
+Everything a computer does is made of **signals** that are either **0** (off) or **1** (on). A digital circuit is wires carrying those signals, and parts that work on them.
+
+Engineers describe circuits as text, in a language called **VHDL**, and a program turns the text into a circuit. On the right, Wire draws whatever you write, as you type: switches for the inputs, lights for the outputs.
 
 A VHDL circuit has two parts:
 
 - the **entity** is the outside: the pins. Here, one input `a` and one output `y`. It is written for you.
 - the **architecture** is the inside: what happens between the pins. You write that, between `begin` and `end`.
 
-`<=` means "is connected to". The line `y <= a;` is the wire from your very first lesson: `y` follows `a`. Every line ends with a semicolon `;`.
+`<=` means "is connected to". The line `y <= a;` is a wire from `a` to `y`: `y` follows `a`. Every line ends with a semicolon `;`.
 ---- task
 Connect `y` to `a`: write `y <= a;` where it says `-- write it here`. Then click the switch `a` on the right.
 ---- start
@@ -48,6 +50,6 @@ Replace the line `-- write it here` with `y <= a;`, keeping the semicolon at the
 ---- hint2
 The whole line is `    y <= a;` (the spaces in front are only to make it tidy). If the message at the bottom says "syntax error", look for a missing `;`.
 ---- solution
-`y <= a;` connects the output `y` to the input `a`: the same as the wire you drew in the first lesson.
+`y <= a;` connects the output `y` to the input `a`. Click the switch `a` on the right: the light `y` follows it.
 ---- done
-That one line is a whole circuit. `std_logic` in the entity means "one wire carrying 0 or 1". Everything you drew can be written like this.
+That one line is a whole circuit. `std_logic` in the entity means "one wire carrying 0 or 1". Every circuit in this course is written like this, a line at a time.

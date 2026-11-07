@@ -1,0 +1,48 @@
+title: Hold, or load
+mode: draw
+chapter: Memory
+check: behaves
+parts: dff chip:my_mux
+needs: my_mux
+---- intro
+A plain flip-flop takes a new value at **every** tick. A memory that is useful should keep its value until you **ask** it to change. The switch `load` says when:
+
+- `load` is 0: at the tick, the flip-flop takes what it already holds, so nothing changes
+- `load` is 1: at the tick, it takes `d`
+
+That is a choice between two inputs, which your **my_mux** makes. One bit of memory like this is one bit of a **register**; a processor's registers are rows of them.
+---- task
+Make `q` keep its value at each tick, unless `load` is on, when it takes the value of `d`.
+---- start
+input d 0 0
+input load 0 80
+clock clk 0 160
+led q 440 40
+---- reference
+input d, load
+clock clk
+led q
+wire t[1]
+t = dff((t & ~load) | (d & load), clk)
+q = t
+---- answer
+input d 0 0
+input load 0 80
+clock clk 0 160
+chip m1 my_mux 140 30
+dff f1 280 40
+led q 440 40
+f1.q -> m1.a
+d -> m1.b
+load -> m1.s
+m1.y -> f1.d
+clk -> f1.clk
+f1.q -> q
+---- hint1
+The multiplexer's output goes into the flip-flop's `d`. `load` is the multiplexer's `s`.
+---- hint2
+When `s` is 0 the multiplexer passes `a`, so `a` is what the flip-flop already holds: wire the flip-flop's `q` back into it. `d` goes into `b`.
+---- solution
+`q` goes back into my_mux's `a`, `d` into `b`, `load` into `s`, and the mux into the flip-flop's `d`. With `load` off, the flip-flop keeps copying itself; with it on, it copies `d`.
+---- done
+Flip `d` with `load` off and press Step: nothing happens. That is memory you control. Eight of these side by side, sharing `load`, hold a byte.

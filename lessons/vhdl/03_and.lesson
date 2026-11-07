@@ -3,15 +3,20 @@ check: behaves
 mode: vhdl
 chapter: Signals and gates
 ---- intro
-In VHDL the gates are words: `not`, `and`, `or`, `xor`, `nand`. You write them between signals, much as you would in a sentence:
+In VHDL the gates are words: `not`, `and`, `or`, `xor`. You write them between signals, much as you would in a sentence.
 
-- `y <= not a;` is the NOT gate
-- `y <= a and b;` is the AND gate
-- `y <= a or b;` is OR
+An **AND gate** has two inputs. Its output is 1 only when **both** inputs are 1. Think of two switches in a row: the light only comes on if the first **and** the second are on.
 
-This entity has two inputs, `a` and `b`. Watch the drawing on the right change as you type.
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 0 |
+| 0 | 1 | 0 |
+| 1 | 0 | 0 |
+| 1 | 1 | 1 |
+
+A table like this, with one row for every value the inputs can have, is a **truth table**. This entity has two inputs, `a` and `b`. Watch the drawing on the right change as you type.
 ---- task
-Write the AND gate you drew: `y` is on only when both `a` and `b` are on.
+Write an AND gate: `y` is on only when both `a` and `b` are on.
 ---- start
 library ieee;
 use ieee.std_logic_1164.all;
@@ -51,4 +56,4 @@ It is one line, like `y <= a;`, with the gate's word between the two inputs.
 ---- solution
 `y <= a and b;` is an AND gate with `a` and `b` as its inputs and `y` as its output. Click the switches on the right to try all four combinations.
 ---- done
-Try changing `and` to `or` and watch the gate in the drawing change, then put it back. The text and the circuit are the same thing.
+Try changing `and` to `or` and watch the gate in the drawing change. The text and the circuit are the same thing. OR is next.

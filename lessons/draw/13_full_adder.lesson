@@ -4,6 +4,7 @@ chapter: Arithmetic
 check: behaves
 parts: or chip:my_half_adder
 needs: my_xor my_half_adder
+keep: my_full_adder
 ---- intro
 To add numbers of many bits, each column adds **three** bits: the two digits, and the **carry** coming in from the column to its right (as in long addition on paper). The part that does it is the **full adder**: inputs `a`, `b` and `cin` (carry in), outputs `s` (sum) and `cout` (carry out).
 
@@ -45,4 +46,4 @@ The second half adder's `sum` is `s`. Each half adder has a `carry`: OR them tog
 ---- solution
 Half adder 1 adds `a` and `b`; half adder 2 adds `cin` to that sum and gives `s`. An OR of the two carries is `cout`. 1 + 1 + 1 = 3, binary 11: `s` 1, `cout` 1.
 ---- done
-Chain these and you can add numbers of any size: the `cout` of one column goes into the `cin` of the next. Every processor adds like this.
+Chain these and you can add numbers of any size: the `cout` of one column goes into the `cin` of the next. Every processor adds like this. Your full adder is kept as a chip, **my_full_adder**: next, it adds numbers of two bits.

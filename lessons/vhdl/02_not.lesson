@@ -1,0 +1,53 @@
+title: The NOT gate
+mode: vhdl
+chapter: Signals and gates
+check: behaves
+---- intro
+A **gate** is a part that looks at its inputs and decides its output. The simplest is the **NOT gate**: it turns a 1 into a 0, and a 0 into a 1. It always does the opposite.
+
+| a | y |
+|---|---|
+| 0 | 1 |
+| 1 | 0 |
+
+In VHDL the gate is a word, written in front of the signal it turns round: `not a`.
+---- task
+Make `y` the opposite of `a`. Then click `a` on the right and watch the light do the opposite.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity inverter is
+  port(
+    a : in  std_logic;
+    y : out std_logic
+  );
+end inverter;
+
+architecture rtl of inverter is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity inverter is
+  port(
+    a : in  std_logic;
+    y : out std_logic
+  );
+end inverter;
+
+architecture rtl of inverter is
+begin
+    y <= not a;
+end rtl;
+---- hint1
+It is the line from the last lesson with one word added in front of `a`.
+---- hint2
+`y <= not a;`
+---- solution
+`y <= not a;` When `a` is 0 the light is on, and when `a` is 1 it is off.
+---- done
+The drawing on the right shows the NOT gate as a triangle with a small circle: the circle means "turned round". You will see that circle again.

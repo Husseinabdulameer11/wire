@@ -15,7 +15,7 @@ Time to make your circuit do arithmetic. Adding two single bits gives 0, 1 or 2.
 | 1 | 0 | 0 | 1 |
 | 1 | 1 | 1 | 0 |
 
-This circuit is called a **half adder**. Your XOR from the last lesson is in the list on the left, under **Chips**.
+This circuit is called a **half adder**. Your XOR is in the list on the left, under **Chips**.
 ---- task
 Build the half adder: light `sum` and `carry` as the table says. Look closely at each column: you have built both of them before.
 ---- start
@@ -42,10 +42,10 @@ a -> g1.0
 b -> g1.1
 g1 -> carry
 ---- hint1
-Compare the `sum` column with the XOR table from the last lesson, and the `carry` column with the AND table.
+Compare the `sum` column with the XOR table, and the `carry` column with the AND table.
 ---- hint2
 Place your **my_xor** chip and wire `a` and `b` into it and its output to `sum`. Then an AND gate, also fed by `a` and `b`, into `carry`. Both gates share the same two inputs.
 ---- solution
 `sum` is your XOR of `a` and `b`, and `carry` is an AND of them. 1 + 1 gives sum 0 and carry 1: binary 10, which is 2.
 ---- done
-Your circuit adds! It is kept as a chip too, **my_half_adder**: two of them and an OR gate make a **full adder**, which you build after writing this one as text.
+Your circuit adds! It is kept as a chip too, **my_half_adder**: two of them and an OR gate make a **full adder**, which you build next.

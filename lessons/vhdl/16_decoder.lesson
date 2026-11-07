@@ -62,4 +62,4 @@ with a select y <=
     "1000" when others;
 ```
 ---- done
-`with ... select` is the text version of a truth table. Next: circuits that remember.
+`with ... select` is the text version of a truth table. Next: comparing numbers.

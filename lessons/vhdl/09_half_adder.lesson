@@ -3,9 +3,16 @@ check: behaves
 mode: vhdl
 chapter: Arithmetic
 ---- intro
-A circuit can have several outputs: each gets its own line. Here is the half adder you drew, with outputs `sum` and `carry`.
+Time to make a circuit do arithmetic. Adding two single bits gives 0, 1 or 2. Written in binary, 2 is **10**, so the answer needs two outputs: **sum** (the right digit) and **carry** (the left one). This is a **half adder**.
 
-The order of the lines does not matter. Unlike a program, a circuit is not run line by line: all of its gates are there at the same time, working at once.
+| a | b | carry | sum |
+|---|---|-------|-----|
+| 0 | 0 | 0 | 0 |
+| 0 | 1 | 0 | 1 |
+| 1 | 0 | 0 | 1 |
+| 1 | 1 | 1 | 0 |
+
+Look at the columns: `sum` is XOR, and `carry` is AND. Each output gets its own line. The order of the lines does not matter. Unlike a program, a circuit is not run line by line: all of its gates are there at the same time, working at once.
 ---- task
 Build the half adder: `sum` is `a` XOR `b`, and `carry` is `a` AND `b`.
 ---- start
@@ -48,6 +55,6 @@ Two lines, one for each output. The XOR gate's word is `xor`.
 ---- hint2
 `sum <= a xor b;` and `carry <= a and b;`
 ---- solution
-`sum <= a xor b;` and `carry <= a and b;`. In the drawing this took a chip and a gate; here it is two lines.
+`sum <= a xor b;` and `carry <= a and b;`. 1 + 1 gives `carry` 1 and `sum` 0: binary 10, which is 2.
 ---- done
 Swap the two lines round and nothing changes: they describe two gates that exist side by side. That is the biggest difference between VHDL and a programming language.

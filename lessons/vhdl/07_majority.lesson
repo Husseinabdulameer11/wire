@@ -1,0 +1,65 @@
+title: Majority vote
+mode: vhdl
+chapter: Combining gates
+check: behaves
+---- intro
+Three switches vote: `y` is 1 when **at least two** of `a`, `b` and `c` are on. This is a **majority** circuit; computers that must not fail use it, letting three copies of a part vote and taking the answer most of them give.
+
+Three inputs, each 0 or 1, make 2 × 2 × 2 = 8 rows:
+
+| a | b | c | y |
+|---|---|---|---|
+| 0 | 0 | 0 | 0 |
+| 0 | 0 | 1 | 0 |
+| 0 | 1 | 0 | 0 |
+| 0 | 1 | 1 | 1 |
+| 1 | 0 | 0 | 0 |
+| 1 | 0 | 1 | 1 |
+| 1 | 1 | 0 | 1 |
+| 1 | 1 | 1 | 1 |
+
+Say it in words first: "a and b, or a and c, or b and c". Brackets keep each pair together.
+---- task
+Make `y` 1 when at least two of the three inputs are 1.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity majority is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    c : in  std_logic;
+    y : out std_logic
+  );
+end majority;
+
+architecture rtl of majority is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity majority is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    c : in  std_logic;
+    y : out std_logic
+  );
+end majority;
+
+architecture rtl of majority is
+begin
+    y <= (a and b) or (a and c) or (b and c);
+end rtl;
+---- hint1
+Each pair being on is one AND, in brackets. OR the three pairs together.
+---- hint2
+`y <= (a and b) or (a and c) or (b and c);`
+---- solution
+`y <= (a and b) or (a and c) or (b and c);` If any pair is on, `y` is on. The drawing shows three AND gates and the ORs joining them.
+---- done
+Breaking a problem into "which cases make it 1" and OR-ing them together works for any truth table. Designers call it a **sum of products**.

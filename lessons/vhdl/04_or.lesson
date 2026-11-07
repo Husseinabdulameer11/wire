@@ -1,0 +1,57 @@
+title: OR: at least one
+mode: vhdl
+chapter: Signals and gates
+check: behaves
+---- intro
+The **OR gate** is AND's partner. Its output is 1 when **at least one** input is 1: think of two switches side by side, either of which turns the light on.
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 0 |
+| 0 | 1 | 1 |
+| 1 | 0 | 1 |
+| 1 | 1 | 1 |
+
+Its word is `or`.
+---- task
+Make `y` come on when `a` is on, or `b` is on, or both.
+---- start
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity or_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end or_gate;
+
+architecture rtl of or_gate is
+begin
+    -- write it here
+end rtl;
+---- answer
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity or_gate is
+  port(
+    a : in  std_logic;
+    b : in  std_logic;
+    y : out std_logic
+  );
+end or_gate;
+
+architecture rtl of or_gate is
+begin
+    y <= a or b;
+end rtl;
+---- hint1
+The same shape of line as the AND gate, with a different word.
+---- hint2
+`y <= a or b;`
+---- solution
+`y <= a or b;` Only when both switches are off does the light go out.
+---- done
+NOT, AND and OR are the three basic gates. Every digital circuit, however big, can be built from them. Next you will start putting them together.

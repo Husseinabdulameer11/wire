@@ -39,4 +39,4 @@ Drag an **OR** gate between the switches and the light, then wire `a` and `b` in
 ---- solution
 One OR gate: `a` and `b` into its inputs, its output into `y`. Only when both switches are off does the light go out.
 ---- done
-NOT, AND and OR are the three basic gates. Every digital circuit, however big, can be built from them. Next you will write one of them as text.
+NOT, AND and OR are the three basic gates. Every digital circuit, however big, can be built from them. Next you will start putting them together.

@@ -72,4 +72,4 @@ end process;
 ```
 Flip `d` while the clock is stopped: `q` does not change until the next Step.
 ---- done
-That is memory: `q` holds its value between clock edges, whatever `d` does. Counters, registers, state machines and whole processors are built from flip-flops like this one. Next: many of them, counting.
+That is memory: `q` holds its value between clock edges, whatever `d` does. Counters, registers, state machines and whole processors are built from flip-flops like this one. Next: a memory that only changes when you ask it to.

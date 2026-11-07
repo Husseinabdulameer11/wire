@@ -1,0 +1,58 @@
+title: Counting
+mode: draw
+chapter: Memory
+check: behaves
+parts: dff not chip:my_xor
+needs: my_xor
+---- intro
+Two flip-flops can count from 0 to 3: the number is `q1 q0`. Look at how the bits change as the count goes up:
+
+| count | q1 | q0 |
+|-------|----|----|
+| 0 | 0 | 0 |
+| 1 | 0 | 1 |
+| 2 | 1 | 0 |
+| 3 | 1 | 1 |
+| 0 | 0 | 0 |
+
+- `q0` flips at every tick: the flip-flop that flips, from the last lesson but one.
+- `q1` flips only when `q0` is 1. "Flip when the other is 1" is an XOR: the new `q1` is `q1` XOR `q0`.
+---- task
+Make `q1 q0` count 0, 1, 2, 3, 0 ... one step per tick of `clk`.
+---- start
+clock clk 0 200
+led q0 560 80
+led q1 560 200
+---- reference
+clock clk
+led q0, q1
+wire a[1], b[1]
+a = dff(~a, clk)
+b = dff(b ^ a, clk)
+q0 = a
+q1 = b
+---- answer
+clock clk 0 200
+not n1 160 0
+dff f0 160 80
+chip x1 my_xor 260 200
+dff f1 400 200
+led q0 560 80
+led q1 560 200
+clk -> f0.clk
+f0.q -> n1.in
+n1 -> f0.d
+f0.q -> q0
+f1.q -> x1.a
+f0.q -> x1.b
+x1.y -> f1.d
+clk -> f1.clk
+f1.q -> q1
+---- hint1
+Build `q0` first: a flip-flop with a NOT gate from its `q` back to its `d`, as before.
+---- hint2
+For `q1`, a second flip-flop whose `d` comes from my_xor. The XOR gets the second flip-flop's own `q` and the first one's `q`. Both flip-flops get `clk`.
+---- solution
+Flip-flop 0 has a NOT from `q` to `d`, so `q0` flips every tick. Flip-flop 1 takes `q1` XOR `q0`, so it flips when `q0` is 1. Press Step four times: 0, 1, 2, 3, and round to 0.
+---- done
+Your circuit counts! Flip-flops remember the number and gates work out the next one: that is how every counter, clock and processor steps through time. From a switch and a light to here, all of it drawn.

@@ -3,9 +3,16 @@ mode: vhdl
 chapter: Combining gates
 check: behaves
 ---- intro
-In the last lesson you chained an AND and a NOT. In VHDL that is one line, with brackets saying what happens first, as in arithmetic: in `not (a and b)` the AND comes first and the NOT turns its answer round.
+Gates can be chained: one gate's output goes into the next. In VHDL that is one line, with brackets saying what happens first, as in arithmetic: in `not (a and b)` the AND comes first and the NOT turns its answer round. That one is called **NAND**.
 
 Now the other way round: **NOR** ("not or") is an OR followed by a NOT. It gives 1 only when **both** inputs are 0.
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 1 |
+| 0 | 1 | 0 |
+| 1 | 0 | 0 |
+| 1 | 1 | 0 |
 
 Without brackets, `not a or b` means `(not a) or b`: a different circuit. VHDL makes you write what you mean.
 ---- task

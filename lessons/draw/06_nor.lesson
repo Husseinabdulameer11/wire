@@ -1,0 +1,44 @@
+title: NOR: neither one
+mode: draw
+chapter: Combining gates
+check: behaves
+parts: and or not
+---- intro
+You just turned an AND round with a NOT. Do the same to an OR and you get **NOR** ("not or"): it gives 1 only when **neither** input is on.
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 1 |
+| 0 | 1 | 0 |
+| 1 | 0 | 0 |
+| 1 | 1 | 0 |
+
+Compare it with the OR table: every value in the `y` column is the other way round.
+---- task
+Build NOR: make `y` light only when both `a` and `b` are off. Use two gates.
+---- start
+input a 0 0
+input b 0 60
+led y 360 30
+---- reference
+input a, b
+led y
+y = ~(a | b)
+---- answer
+input a 0 0
+input b 0 60
+or o1 120 20
+not n1 240 30
+led y 360 30
+a -> o1.0
+b -> o1.1
+o1 -> n1.in
+n1 -> y
+---- hint1
+It is the NAND from the last lesson with one gate swapped: which gate gives the table here once it is turned round?
+---- hint2
+An OR gate gets `a` and `b`; its output goes into a NOT gate, and the NOT gate into `y`.
+---- solution
+`a` and `b` go into an OR gate, the OR into a NOT, the NOT into `y`. The OR is 1 if either switch is on, and the NOT turns that into "neither".
+---- done
+NAND and NOR are both "a gate, then turn it round". A light that comes on when nobody presses anything is a NOR.

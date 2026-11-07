@@ -35,7 +35,7 @@ b -> g1.1
 g1 -> n1.in
 n1 -> y
 ---- hint1
-First build the AND, as in the last lesson. Then think about what you need to do to its answer to get the table here: every value is turned round.
+First build the AND, as in the AND lesson. Then think about what you need to do to its answer to get the table here: every value is turned round.
 ---- hint2
 Put a NOT gate between the AND gate and the light: the AND's output into the NOT, the NOT's output into `y`.
 ---- solution

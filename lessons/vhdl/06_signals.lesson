@@ -3,15 +3,22 @@ check: behaves
 mode: vhdl
 chapter: Combining gates
 ---- intro
-In a drawing, a wire between two gates has no name. In VHDL it needs one: a **signal**. You declare it between `architecture` and `begin`:
+**XOR** ("exclusive or") is 1 when its two inputs are **different**. VHDL has the word `xor`, but here you build it yourself from AND, OR and NOT: "at least one is on, **and not** both".
+
+| a | b | y |
+|---|---|---|
+| 0 | 0 | 0 |
+| 0 | 1 | 1 |
+| 1 | 0 | 1 |
+| 1 | 1 | 0 |
+
+That needs wires between gates, and in VHDL a wire inside the circuit needs a name: a **signal**. You declare it between `architecture` and `begin`:
 
 ```
 signal either : std_logic;
 ```
 
-and then use it like any input or output: give it a value with `<=`, and read it in other lines.
-
-The starter declares two signals for the XOR you built from AND, OR and NOT: `either` (a OR b) and `both` (a AND b).
+and then use it like any input or output: give it a value with `<=`, and read it in other lines. The starter declares two: `either` (a OR b) and `both` (a AND b).
 ---- task
 Build XOR from AND, OR and NOT using the two signals: set `either` and `both`, then make `y` "either, and not both".
 ---- start
@@ -60,6 +67,6 @@ either <= a or b;
 both   <= a and b;
 y      <= either and not both;
 ```
-Each signal is a wire with a name; the drawing shows the four gates you built by hand.
+Each signal is a wire with a name; the drawing shows the four gates.
 ---- done
 Signals let you build big circuits out of named pieces, the same way chips did in the drawing. Real designs have hundreds of them.

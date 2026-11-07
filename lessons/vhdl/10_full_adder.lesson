@@ -3,7 +3,9 @@ mode: vhdl
 chapter: Arithmetic
 check: behaves
 ---- intro
-The full adder as text. `s` is 1 when an odd number of the three inputs are 1, which you wrote in the parity lesson. `cout` is 1 when at least two of them are, which is the majority vote you drew.
+To add numbers of many bits, each column adds **three** bits: the two digits, and the **carry** coming in from the column to its right, as in long addition on paper. The part that does it is the **full adder**: inputs `a`, `b` and `cin` (carry in), outputs `s` (sum) and `cout` (carry out).
+
+`s` is 1 when an odd number of the three inputs are 1, which you wrote in the parity lesson. `cout` is 1 when at least two of them are: the majority vote.
 
 Big circuits are made of small ones you already know.
 ---- task

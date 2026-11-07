@@ -14,7 +14,7 @@ Some questions need several gates working together. **XOR** ("exclusive or") ans
 | 1 | 0 | 1 |
 | 1 | 1 | 0 |
 
-There is no XOR in the list this time: you build it from AND, OR and NOT. The circuit you make becomes a **chip** of your own, which you use in the next lesson.
+There is no XOR in the list this time: you build it from AND, OR and NOT. The circuit you make becomes a **chip** of your own, which you use from the next lesson on.
 ---- task
 Make `y` light up when `a` and `b` are different, using only AND, OR and NOT gates.
 ---- start
@@ -44,7 +44,7 @@ g2 -> y
 ---- hint1
 Say it in words: "a OR b is on, AND NOT (a AND b)". In other words: at least one is on, but not both.
 ---- hint2
-You need four gates: an OR for "at least one", the NAND from the last lesson (AND then NOT) for "not both", and one more AND to join the two answers. An output can go to several inputs: drag from it more than once.
+You need four gates: an OR for "at least one", the NAND you built (AND then NOT) for "not both", and one more AND to join the two answers. An output can go to several inputs: drag from it more than once.
 ---- solution
 An OR gate gets `a` and `b` (at least one is on). An AND gate also gets `a` and `b`, followed by a NOT (not both are on). A last AND gate joins the two, and its output goes to `y`.
 ---- done

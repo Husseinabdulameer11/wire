@@ -3,6 +3,7 @@ mode: draw
 chapter: Choosing
 check: behaves
 parts: and or not
+keep: my_mux
 ---- intro
 A **multiplexer** chooses: a select input `s` decides which of two inputs goes through to `y`. When `s` is 0, `y` is `a`; when `s` is 1, `y` is `b`. It is how a circuit picks between results.
 
@@ -42,4 +43,4 @@ One AND gets `a` and NOT `s`; the other gets `b` and `s`. OR their outputs into 
 ---- solution
 `a AND (NOT s)` passes `a` while `s` is 0, `b AND s` passes `b` while `s` is 1, and the OR gives whichever one is let through.
 ---- done
-Four gates to choose. In VHDL there is a much shorter way to say it, as you will see next.
+Four gates to choose. It is kept as a chip, **my_mux**, with `s` choosing between `a` and `b`: you will build bigger switches from it.
