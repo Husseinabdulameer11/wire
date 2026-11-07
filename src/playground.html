@@ -1680,7 +1680,7 @@ function netlistToModel(D, lay, defs, dir) {
   D.insts.forEach((ins, c) => {
     if (c === 0 || ins.parent !== -2 || comps[ins.comp]) return;
     const pins = D.nodes.filter(n => n.inst === c);
-    comps[ins.comp] = { ins: pins.filter(n => n.kind === "pin_in").map(n => [n.name, D.nets[n.out[0]].w]),
+    comps[ins.comp] = { ins: pins.filter(n => n.kind === "pin_in" || n.kind === "input").map(n => [n.name, D.nets[n.out[0]].w]),
                         outs: pins.filter(n => n.kind === "pin_out").map(n => [n.name, D.nets[n.in[0]].w]) };
   });
   const inline = new Set(defs.filter(d => d.comp).map(d => d.comp)), chips = {}, keepText = new Set();

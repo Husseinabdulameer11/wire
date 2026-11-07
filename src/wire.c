@@ -2282,6 +2282,11 @@ static void check_unused(void)
         id = expand(ci, outer, inner, cp->id, NULL);
         if (keep_unused && file_of(cp->node) == 0) {
             insts[id].parent = SPARE;
+            /* on the playground's page (--keep-unused) its inputs are switches
+             * you click, as when you draw it; the VHDL (to_vhdl) needs its pins */
+            if (keep_unused == 2)
+                for (i = nn; i < nnodes; i++)
+                    if (nodes[i].inst == id && nodes[i].kind == K_PIN_IN) { nodes[i].kind = K_INPUT; nodes[i].nin = 0; }
             for (i = 0; i < cp->nout; i++) {   /* its outputs, as a use would have them */
                 Node *n;
                 int saved = cur_inst;
@@ -2730,7 +2735,7 @@ int main(int argc, char **argv)
             return 0;
         } else if (!strcmp(argv[i], "-o") && i + 1 < argc) out = argv[++i];
         else if (!strcmp(argv[i], "--json")) json = 1;
-        else if (!strcmp(argv[i], "--keep-unused")) keep_unused = 1;
+        else if (!strcmp(argv[i], "--keep-unused")) keep_unused = 2;
         else if (!strcmp(argv[i], "--to-vhdl")) to_vhdl = 1;
         else if (!strcmp(argv[i], "--to-wire")) to_wire = 1;
         else if (!strcmp(argv[i], "--check")) check = 1;
@@ -2784,7 +2789,7 @@ int main(int argc, char **argv)
     insts[0].parent = -1;
     ninsts = 1;
     compile_scope(prog->child, 1);
-    if (to_vhdl) keep_unused = 1;   /* every chip of the design becomes an entity, used or not */
+    if (to_vhdl) keep_unused = 1;   /* every chip of the design becomes an entity, used or not (with its pins) */
     check_unused();
     finish();
     if (check) return 0;

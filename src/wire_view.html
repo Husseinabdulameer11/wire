@@ -409,6 +409,11 @@ function hostCall(fn, ...args) { try { const h = parent !== window && parent.wir
 const SVGNS = "http://www.w3.org/2000/svg";
 const nets = D.nets.map((n, i) => ({ id: i, w: n.w, name: n.name, v: 0, k: 0, driver: null, readers: [] }));
 const nodes = D.nodes.map((n, i) => Object.assign({ id: i, x: 0, y: 0, state: 0, lastClk: 0 }, n));
+/* a chip not used yet (the playground's Write page keeps them, with parent -2)
+ * is only there to be looked at and tried: its switches are not the circuit's */
+const spareInst = new Set();
+(D.insts || []).forEach((ins, i) => { let p = i; while (p > 0) p = D.insts[p].parent; if (i > 0 && p === -2) spareInst.add(i); });
+const inCircuit = n => !spareInst.has(n.inst);
 const SOURCES = new Set(["input", "button", "clock", "keypad"]);
 const MEMS = new Set(["rom", "ram"]);
 const SINKS = new Set(["output", "led", "seg7", "hex"]);
@@ -1838,7 +1843,7 @@ $("reset").onclick = () => {
 };
 
 /* =========================================================== truth table */
-const ttIn = nodes.filter(n => n.kind === "input" || n.kind === "button" || n.kind === "keypad");
+const ttIn = nodes.filter(n => (n.kind === "input" || n.kind === "button" || n.kind === "keypad") && inCircuit(n));
 const ttOut = nodes.filter(n => SINKS.has(n.kind));
 const ttBits = ttIn.reduce((s, n) => s + nets[n.out[0]].w, 0);
 let tableOpen = false, tableRows = [], tableChip = null, tableToken = 0;
@@ -2894,7 +2899,7 @@ addEventListener("resize", () => { if (scopeOpen) drawScope(); });
 document.title = D.title || D.file;
 $("tb-name").textContent = D.title || D.file.replace(/\.wire$/, "");
 $("tb-file").textContent = baseName(D.file);
-const comps = nodes.filter(n => !SOURCES.has(n.kind) && !SINKS.has(n.kind) && !["split", "merge", "const", "pin_in", "pin_out", "bus"].includes(n.kind)).length;
+const comps = nodes.filter(n => inCircuit(n) && !SOURCES.has(n.kind) && !SINKS.has(n.kind) && !["split", "merge", "const", "pin_in", "pin_out", "bus"].includes(n.kind)).length;
 const chips = D.insts ? D.insts.filter((ins, i) => { let p = i; while (p > 0) p = D.insts[p].parent; return i > 0 && p !== -2; }).length : 0;   /* not the spare ones: not in the circuit (yet) */
 $("tb-parts").textContent = `${comps} part${comps === 1 ? "" : "s"}${chips ? `, ${chips} chip${chips === 1 ? "" : "s"}` : ""}, ${ttIn.length + clocks.length} in, ${ttOut.length} out`;
 
@@ -2902,7 +2907,7 @@ WireSim.create(D).then(s => {
   bindSim(s);
   nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
   if (EDIT && EDIT.states) nodes.forEach(n => {
-    if (SOURCES.has(n.kind) && n.name in EDIT.states) n.state = EDIT.states[n.name] & mask(nets[n.out[0]].w);
+    if (SOURCES.has(n.kind) && inCircuit(n) && n.name in EDIT.states) n.state = EDIT.states[n.name] & mask(nets[n.out[0]].w);
   });
   openView(0);
   simulate();
@@ -3018,7 +3023,7 @@ window.wirePage = {
   },
   words(n) { return sim ? sim.words(n.id) : null; },
   setInput(name, v) {
-    const n = nodes.find(x => x.name === name && SOURCES.has(x.kind));
+    const n = nodes.find(x => x.name === name && SOURCES.has(x.kind) && inCircuit(x));
     if (!n) return false;
     n.state = v & mask(nets[n.out[0]].w);
     simulate();
@@ -3109,7 +3114,7 @@ if (EDIT) {
   /* what the playground keeps when it makes the page again */
   window.wireEditState = () => ({
     view: Object.assign({}, view),
-    states: Object.fromEntries(nodes.filter(n => SOURCES.has(n.kind) && n.kind !== "clock" && n.name).map(n => [n.name, n.state]))
+    states: Object.fromEntries(nodes.filter(n => SOURCES.has(n.kind) && n.kind !== "clock" && n.name && inCircuit(n)).map(n => [n.name, n.state]))
   });
   window.wireCentre = () => toWorld(sheet.clientWidth / 2, sheet.clientHeight / 2);
 }
