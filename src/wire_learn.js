@@ -166,6 +166,19 @@ const notHere = () => { msg.className = "err"; msg.textContent = "That part is n
 wireCanvas.add = function (kind, x, y) { if (!allowed(kind)) { notHere(); return; } return add0.call(this, kind, x, y); };
 wireCanvas.arm = function (kind) { if (!allowed(kind)) { notHere(); return; } return arm0.call(this, kind); };
 wireCanvas.openChip = () => false;   /* your chip opens inside the circuit, to look at, not as a sheet to change */
+/* going inside a chip: the playground hides the circuit's own path (Circuit ›
+ * chip) and shows it beside its list of chips, which a lesson does not have.
+ * So here the circuit shows its path itself, as it does on its own page,
+ * and Circuit takes you back out. */
+const viewPath0 = wireCanvas.viewPath;
+wireCanvas.viewPath = function (list) {
+  const r = viewPath0.call(this, list);
+  const inside = !!(list && list.length);
+  document.querySelectorAll("iframe").forEach(f => {
+    try { const n = f.contentWindow.document.getElementById("crumbs"); if (n) n.hidden = !inside; } catch (e) {}
+  });
+  return r;
+};
 /* every signal in a lesson is one bit; a flip-flop wired in a loop (its q
  * back into its d) has no width Wire can work out, so say it is 1 */
 /* a lesson just opened is shown fresh: fitted on screen, every switch at 0,
