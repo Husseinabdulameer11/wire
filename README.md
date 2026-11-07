@@ -6,6 +6,10 @@
 **Try it without installing anything:** draw or write your own circuit in
 the [playground](https://husseinabdulameer11.github.io/wire/playground.html),
 or open any of the [examples](https://husseinabdulameer11.github.io/wire/).
+New to logic gates? The [lessons](https://husseinabdulameer11.github.io/wire/learn.html)
+start from a switch and a light, and the
+[exercises](https://husseinabdulameer11.github.io/wire/exam.html) check the
+VHDL you write (see [Learning and exercises](#learning-and-exercises)).
 The site is built and published from this repository on every push
 (`.github/workflows/pages.yml`).
 
@@ -102,12 +106,23 @@ Nothing is installed and nothing leaves the browser.
   examples whose VHDL Wire reads open as VHDL there, and **Save .wire**
   gives the Wire your VHDL turned into.
 
-Draw, Wire and VHDL are three views of **one circuit**. Change it in one,
-switch, and the other view is made from it (going back without changing
-anything gives you exactly what you left). A switch that would lose part of
-the circuit does not happen, and the page says why: the drawing has no
-tri-state bus or keypad yet, and Wire cannot read a tri-state bus back from
-VHDL yet.
+Draw, Wire and VHDL are three views of **one design**: the circuit and
+every chip you made for it. Change it in one, switch, and the other view is
+made from it (going back without changing anything gives you exactly what
+you left). A switch that would lose part of the design does not happen, and
+the page says why: the drawing has no tri-state bus or keypad yet, and Wire
+cannot read a tri-state bus back from VHDL yet.
+
+- **The same chips everywhere.** Write has the list Draw has: the circuit,
+  its chips as a tree, and **Not used yet:** the chips you made but have not
+  placed. Picking one there opens it in the circuit and goes to where it is
+  written (its `component` in Wire, its `entity` in VHDL). A chip you have
+  not placed yet is part of the design in every view: it is kept going from
+  Wire or VHDL back to Draw, and it is an entity in the VHDL. You can try it
+  in Write too: its inputs are switches, as on its sheet in Draw.
+- **Where you are goes with you.** Inside a chip in Draw, Write and VHDL open
+  at that chip, and back; compiling again as you type keeps the chip on
+  screen.
 
 **Save .vhd** gives the circuit in VHDL for Vivado, **Save .wire** keeps it,
 and **Copy link** makes a link that opens the same circuit for someone else.
@@ -181,6 +196,42 @@ netlists, the VHDL and the error messages.
   gate. `tests/sim/inside.js` checks every inside against its part.
 - Drag parts to move them (the layout is remembered in the browser), drag
   the background to pan, scroll or pinch to zoom. **Tidy** lays it out again.
+
+## Learning and exercises
+
+Two pages on the site are for learning digital circuits from nothing, both
+running Wire in the browser like the playground.
+
+**The lessons** (`learn.html`) are the playground with a lesson beside it.
+The first visit asks how you want to learn:
+
+- **Drawing**: drag parts in and wire them, no code. 50 lessons, from a
+  switch and a light, through NAND making every other gate, adders,
+  multiplexers, a one-bit ALU and flip-flops, to counters and a state
+  machine. Some circuits you build become chips (`my_xor`, `my_half_adder`,
+  `my_mux` ...) that later lessons give you to use.
+- **VHDL**: write the circuit, and Wire draws it as you type. 50 lessons,
+  from `y <= a;` through buses, numbers, `with ... select`, a 7-segment
+  table and a 4-bit ALU, to registers, counters and a traffic light state
+  machine with an enum type and `case`.
+
+Each course goes from easy to hard on its own, and you can switch at any
+time. A lesson checks your circuit (a light that must come on, or every
+input against a reference), gives two hints, and offers the solution once
+you have seen both hints or tried three times. Progress stays in your
+browser. A lesson is a file in `lessons/draw/` or `lessons/vhdl/`
+(`nn_name.lesson`; the number is only the order), and `tools/learn.js`
+describes the format.
+
+**The exercises** (`exam.html`) are questions you answer in VHDL: 68 of them
+in three levels, Easy (24), Medium (24) and Hard (20), from a single gate to
+an ALU, a debouncer, a vending machine and a UART transmitter. **Check**
+compiles your answer and runs it against tests made from a solution (every
+input, or hundreds of clock cycles with random inputs), and shows the
+first input (or clock cycle) it got wrong; **See your circuit** draws your
+answer. The solutions are not in the page, only what they do. An exercise is a file in `exercises/<level>/`, and
+`tools/exam.js` describes the format. Each has a deliberately wrong answer
+too, and `make test` fails if the tests do not catch it.
 
 ## The language
 
@@ -622,7 +673,10 @@ component full_adder(a, b, cin) -> (s, cout) {
   extra `wire`s if you need to fix a width; inputs, outputs, LEDs and clocks
   belong to the circuit, not to components. Components can use other
   components, but not themselves.
-- **Every component is checked**, even ones nothing uses yet.
+- **Every component is checked**, even ones nothing uses yet. In the VHDL
+  (`--to-vhdl`) each component of the circuit's own file is an entity, used
+  or not: a chip you have not placed yet is still part of the design. Those
+  of imported libraries are only there when they are used.
 
 ### Libraries
 
@@ -833,6 +887,8 @@ alu.wire:9:8: error: add has no output called carry; it has sum and cout
 ```
 
 `make test` runs the examples, checks the error messages in `tests/errors`,
+checks every lesson (its answer passes, its start does not) and every
+exercise (its solution passes its own tests, its wrong answer fails them),
 and (if Node is installed) runs `tests/sim/simtest.js`, which checks the
 WebAssembly simulator against the original JavaScript one on every example
 and on the circuits in `tests/sim`: both get the same random clicks, clock
@@ -849,7 +905,7 @@ Wire needs gram, like Crib does. With a gram checkout next to this folder
 ```
 make            # build/wire
 make test
-make site       # every example as a page, plus an index: build/site
+make site       # every example as a page, plus an index, the lessons and the exercises: build/site
 make install    # PREFIX=/usr/local
 ```
 
@@ -876,7 +932,9 @@ Releases (installer, archives, Docker image) are made by pushing a version
 tag; see [RELEASING.md](RELEASING.md).
 
 `wire --json file.wire` prints the netlist, if you want to feed it to
-something else.
+something else. With `--keep-unused` it also has the components of the file
+that nothing uses yet, each as a spare instance whose `parent` is `-2` (the
+playground uses it to draw and show them).
 
 `node tests/sim/run.js build/wire examples/notes/sap1.wire 200 outp`
 runs a circuit's clock without a browser, with inputs set, until it halts,
