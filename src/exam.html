@@ -173,6 +173,14 @@ const STORE = "wire-exam-1";
 let saved = { code: {}, done: {}, tried: {}, last: null };
 try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s && typeof s === "object") saved = Object.assign(saved, s); } catch (e) {}
 const keep = () => { try { localStorage.setItem(STORE, JSON.stringify(saved)); } catch (e) {} };
+/* exercises were once numbered (easy/04_or3), now they are easy/or3: what was kept carries over */
+const renamed = k => /^\w+\/\d+_\w+$/.test(k) ? k.replace(/\/\d+_/, "/") : null;
+(function () {
+  let moved = false;
+  for (const o of [saved.code, saved.done, saved.tried]) for (const k of Object.keys(o || {})) { const n = renamed(k); if (n) { if (!(n in o)) o[n] = o[k]; delete o[k]; moved = true; } }
+  if (renamed(saved.last)) { saved.last = renamed(saved.last); moved = true; }
+  if (moved) keep();
+})();
 
 /* ---- the question text: paragraphs, - and 1. lists, ``` blocks, | tables, `code`, **bold** */
 function inline(s) {
@@ -414,8 +422,9 @@ $("ovclose").onclick = () => { $("overlay").hidden = true; $("ovframe").src = "a
 addEventListener("keydown", e => { if (e.key === "Escape" && !$("overlay").hidden) $("ovclose").click(); });
 
 /* ---- start: the exercise in the address, or the last one, or the first */
-addEventListener("hashchange", () => { const id = location.hash.slice(1); if (id && (!current || id !== current.id)) open(id, true); });
-open(ALL.some(e => e.id === location.hash.slice(1)) ? location.hash.slice(1) : saved.last && ALL.some(e => e.id === saved.last) ? saved.last : ALL[0].id);
+addEventListener("hashchange", () => { const h = location.hash.slice(1), id = renamed(h) || h; if (id && (!current || id !== current.id)) open(id, true); });
+const want = renamed(location.hash.slice(1)) || location.hash.slice(1);
+open(ALL.some(e => e.id === want) ? want : saved.last && ALL.some(e => e.id === saved.last) ? saved.last : ALL[0].id);
 ready.catch(e => { $("result").className = "result bad"; $("result").innerHTML = `<h4>Wire could not start here</h4><p>${esc(e.message)}</p>`; $("check").disabled = $("see").disabled = true; });
 </script>
 </body>

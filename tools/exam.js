@@ -8,7 +8,9 @@
  *   node tools/exam.js build/wire build/web build/site     writes exam.html (make site)
  *   node tools/exam.js build/wire --check                 only checks the exercises (make test)
  *
- * An exercise (exercises/<level>/<nn>_<name>.ex) is a header and sections:
+ * An exercise (exercises/<level>/<nn>_<name>.ex) is a header and sections.
+ * The number only sets the order: the exercise is <level>/<name> (what the
+ * page keeps your code and progress under), so exercises can be renumbered.
  *   title: ...                        what the list shows
  *   table: yes                        show the solution's truth table in the question
  *   cycles: 300                       a circuit with a clock: how many cycles to try
@@ -62,7 +64,8 @@ const fail = msg => { failures++; console.error("FAIL " + msg); };
 for (const lv of levels) {
   const dir = path.join(root, "exercises", lv.dir);
   for (const f of fs.readdirSync(dir).filter(n => n.endsWith(".ex")).sort()) {
-    const id = lv.dir + "/" + f.replace(/\.ex$/, "");
+    const id = lv.dir + "/" + f.replace(/\.ex$/, "").replace(/^\d+_/, "");
+    if (lv.exercises.some(x => x.id === id)) { fail(`exercises/${lv.dir}/${f}: there is already an exercise called ${id.split("/")[1]} in this level`); continue; }
     let ex;
     try { ex = parse(path.join(dir, f)); } catch (e) { fail(e.message); continue; }
     let D;
