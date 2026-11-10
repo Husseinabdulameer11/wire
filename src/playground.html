@@ -1655,7 +1655,14 @@ function buildSheet(D, scope, lay, comps) {
   /* a tri-state that never talks (enable a fixed 0) on a bus: a pin nothing is wired to */
   const silent = i => N[i].kind === "tri" && !N[i].name && (c => c && !c.value)(constOf(N[i].in[1]))
     && readers(N[i].out[0]).every(j => N[j].kind === "bus");
-  const shown = i => N[i].kind === "const" ? !!(N[i].value && (readers(N[i].out[0]).some(j => N[j].kind !== "merge") || chipReads(N[i].out[0])))
+  /* a 0 the circuit has (VHDL's '0', Wire's 0b00) is a constant part; the
+   * playground's own Wire writes a 0 for a pin nothing is wired to, and that
+   * stays an empty pin, unless it is a constant part of the drawing (k1 = 0b00) */
+  const src = n => { const f = D.files && D.files[n.file]; return f && f.source || ""; };
+  const drawnZero = n => /^# drawn in the Wire playground$/m.test(src(n))
+    && !/^\s*[A-Za-z_]\w*\s*=\s*0b[01]+\s*$/.test(src(n).split("\n")[n.line - 1] || "");
+  const shown = i => N[i].kind === "const"
+    ? !!((N[i].value || !drawnZero(N[i])) && (readers(N[i].out[0]).some(j => N[j].kind !== "merge" && !silent(j)) || chipReads(N[i].out[0])))
     : !silent(i);
   const order = [...top].filter(shown)
     .sort((a, b) => (SOURCE.has(kindOf(N[b])) || SINK.has(kindOf(N[b]))) - (SOURCE.has(kindOf(N[a])) || SINK.has(kindOf(N[a]))));
@@ -1685,7 +1692,8 @@ function buildSheet(D, scope, lay, comps) {
     if (d.chip != null) { links.push({ from: { id: idOf.get("c" + d.chip), pin: d.pin }, to }); return; }
     if (!idOf.has(d.i)) return;   /* a 0, only in a join, or a silent tri-state: the pin stays unwired */
     const f = N[d.i];
-    links.push({ from: { id: idOf.get(d.i), pin: f.kind === "split" ? String(d.p) : f.kind === "pin_in" ? "out" : f.outNames[d.p] }, to });
+    /* a pin, or the input of a chip not used yet: its one output is "out" */
+    links.push({ from: { id: idOf.get(d.i), pin: f.kind === "split" ? String(d.p) : f.kind === "pin_in" || f.kind === "input" ? "out" : f.outNames[d.p] }, to });
   };
   for (const i of order) {
     const n = N[i], k = kindOf(n), p = { id: idOf.get(i), kind: k, name: names.get(i), x: 0, y: 0 };

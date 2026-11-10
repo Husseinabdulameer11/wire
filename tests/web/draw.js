@@ -75,11 +75,14 @@ const mask = w => w >= 32 ? 0xFFFFFFFF : ((1 << w) >>> 0) - 1;
 function compare(A, B) {
   const mk = D => { const s = WireSim.createSync(D); D.nets.forEach((n, i) => { s.setV(i, 0); s.setK(i, mask(n.w)); }); s.simulate(); return s; };
   const a = mk(A), b = mk(B);
-  const top = (D, kinds) => D.nodes.map((n, j) => ({ n, j })).filter(x => x.n.inst === 0 && kinds.includes(x.n.kind));
-  const pair = kinds => top(A, kinds).map(x => ({ x, y: top(B, kinds).find(y => y.n.name === x.n.name) }));
-  const ins = pair(["input", "button", "keypad"]), outs = pair(["output", "led", "hex", "seg7"]);
+  /* the circuit's inputs and outputs, and those of every chip not used yet
+   * (it is in the netlist, with inputs of its own, to be tried on its own) */
+  const where = (D, n) => n.inst === 0 ? "" : D.insts[n.inst].parent === -2 ? D.insts[n.inst].comp + "." : null;
+  const top = (D, kinds) => D.nodes.map((n, j) => ({ n, j, at: where(D, n) })).filter(x => x.at != null && kinds.includes(x.n.kind) && (x.at === "" || x.n.kind !== "pin_in"));
+  const pair = kinds => top(A, kinds).map(x => ({ x, y: top(B, kinds).find(y => y.at === x.at && y.n.name === x.n.name) }));
+  const ins = pair(["input", "button", "keypad"]), outs = pair(["output", "led", "hex", "seg7", "pin_out"]).filter(p => p.x.at === "" || p.x.n.kind === "pin_out");
   const lost = [...ins, ...outs].filter(p => !p.y);
-  if (lost.length) return `the drawing has no ${lost.map(p => p.x.n.name).join(", ")}`;
+  if (lost.length) return `the drawing has no ${lost.map(p => p.x.at + p.x.n.name).join(", ")}`;
   const clocked = A.nodes.some(n => n.kind === "clock");
   let s = 0x2545f491;
   const rnd = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; return s >>>= 0; };
@@ -92,7 +95,7 @@ function compare(A, B) {
     }
     for (const p of outs) {
       const va = val(a, A, p.x.n.in[0]), vb = val(b, B, p.y.n.in[0]);
-      if (va !== vb) return `after ${step + 1} steps ${p.x.n.name} is ${va}, but ${vb} in the drawing`;
+      if (va !== vb) return `after ${step + 1} steps ${p.x.at}${p.x.n.name} is ${va}, but ${vb} in the drawing`;
     }
   }
   return null;
@@ -115,7 +118,7 @@ for (const f of files) {
   if (m.why) { bad(m.why); continue; }
   const tmp = path.join(dir, `.draw_${process.pid}.wire`);
   fs.writeFileSync(tmp, P.genCode(m.model));
-  const back = run(["--json", path.basename(tmp)], dir);
+  const back = run(["--json", "--keep-unused", path.basename(tmp)], dir);
   fs.unlinkSync(tmp);
   if (back.status !== 0) { bad(`the drawing's Wire does not work: ${back.stderr.trim().split("\n")[0].split(path.basename(tmp) + ":").join("line ")}`); continue; }
   const diff = compare(JSON.parse(j.stdout), JSON.parse(back.stdout));
