@@ -2716,7 +2716,7 @@ int main(int argc, char **argv)
             printf("wire %s - describe a digital circuit, get an interactive page\n\n"
                    "usage: wire [-o out.html] file.wire\n\n"
                    "  file.wire        writes file.html next to it\n"
-                   "  file.vhd         VHDL works too (one entity; assignments, when/else, with/select)\n"
+                   "  file.vhd         VHDL works too (entities, packages, processes, tri-state; README)\n"
                    "  --to-wire        print the Wire a .vhd file is turned into\n"
                    "  -o out.html      write the page somewhere else\n"
                    "  --json           print the netlist as JSON instead\n"

@@ -124,6 +124,7 @@ typedef struct {
 typedef struct {
     gram_node *ent, *arch;
     int used, top, done, ctx;
+    int tb;                      /* no ports: a testbench, for simulation only; not read */
     char *wname;                 /* its name in Wire */
     VSym *ports, *gens;          /* gens: the generics, with their values */
     int nports, ngens;
@@ -4631,7 +4632,7 @@ static void vi_seq(gram_node *first)
         case VHDL_R_exitst: vi_seq_exit(st); break;
         case VHDL_R_retst: vi_seq_return(st); break;
         case VHDL_R_pcall: vi_proc_call(st); break;
-        case VHDL_R_nullst: case VHDL_R_assert: break;
+        case VHDL_R_nullst: case VHDL_R_assert: case VHDL_R_reportst: break;
         case VHDL_R_ident: break;   /* end function name; */
         case VHDL_R_waitst: vi_fail(st, "wait is for simulation; a process for hardware has a sensitivity list instead"); break;
         default: vi_fail(st, "this kind of statement is not supported yet in a process");
@@ -5248,7 +5249,7 @@ static int vi_null_else(const gram_node *rest)
     const gram_node *k;
     if (!rest || rest->rule != VHDL_R_elsep) return 0;
     for (k = rest->child->child; k; k = k->next)
-        if (k->rule != VHDL_R_nullst && k->rule != VHDL_R_assert) return 0;
+        if (k->rule != VHDL_R_nullst && k->rule != VHDL_R_assert && k->rule != VHDL_R_reportst) return 0;
     return 1;
 }
 
@@ -5316,7 +5317,7 @@ static int vi_proc_shape(gram_node *first, gram_node **clk, int *neg, gram_node 
     gram_node *k, *st = NULL, *fw = NULL, *lw = NULL, *c2, *r2, *rb2, *cb2;
     int n = 0, nw = 0, nedge = 0, n2;
     for (k = first; k; k = k->next)
-        if (k->rule != VHDL_R_ident && k->rule != VHDL_R_nullst && k->rule != VHDL_R_assert) {
+        if (k->rule != VHDL_R_ident && k->rule != VHDL_R_nullst && k->rule != VHDL_R_assert && k->rule != VHDL_R_reportst) {
             if (!fw) fw = k;
             lw = k;
             st = k;
@@ -5372,7 +5373,7 @@ static int vi_reset_vals(gram_node *first, VReset **out)
         gram_node *id, *a1, *v;
         VSym *s;
         int i, cnt = 1, base;
-        if (st->rule == VHDL_R_nullst || st->rule == VHDL_R_assert) continue;
+        if (st->rule == VHDL_R_nullst || st->rule == VHDL_R_assert || st->rule == VHDL_R_reportst) continue;
         if (st->rule != VHDL_R_sassign)
             vi_fail(st, "the reset part of a clocked process only gives signals constant values (<=)");
         id = st->child->child; a1 = id->next;
@@ -5959,7 +5960,7 @@ static int vi_ram_walk(gram_node *first, const gram_node *name, gram_node **cond
 {
     gram_node *st;
     for (st = first; st; st = st->next) {
-        if (st->rule == VHDL_R_ident || st->rule == VHDL_R_nullst || st->rule == VHDL_R_assert) continue;
+        if (st->rule == VHDL_R_ident || st->rule == VHDL_R_nullst || st->rule == VHDL_R_assert || st->rule == VHDL_R_reportst) continue;
         if (name && st->rule != VHDL_R_sassign && !vi_writes(st, name)) { (*nother)++; continue; }   /* not about the ram */
         if (st->rule == VHDL_R_ifst) {   /* if c then ... end if, nothing else */
             gram_node *c = st->child, *body;
@@ -6256,7 +6257,7 @@ static int vi_only_rams(gram_node *first, gram_node *proc)
 {
     gram_node *st;
     for (st = first; st; st = st->next) {
-        if (st->rule == VHDL_R_ident || st->rule == VHDL_R_nullst || st->rule == VHDL_R_assert) continue;
+        if (st->rule == VHDL_R_ident || st->rule == VHDL_R_nullst || st->rule == VHDL_R_assert || st->rule == VHDL_R_reportst) continue;
         if (st->rule == VHDL_R_ifst) {
             gram_node *c = st->child;
             if (c->rule == VHDL_R_label) c = c->next;
@@ -7092,23 +7093,32 @@ static char *vhdl_to_wire(const char *text, size_t len, const char *file, size_t
     if (!vi_ents[vi_nents - 1]->arch) vi_fail(vi_ents[vi_nents - 1]->ent->child, "%.*s has no architecture",
                                               VT(vi_ents[vi_nents - 1]->ent->child));
 
+    /* an entity without ports beside others is a testbench (wait for, report ...):
+     * for a simulator, not hardware; the design is what it tests */
+    {
+        int nport = 0;
+        for (ln = 0; ln < vi_nbase; ln++) if (vi_kid(vi_ents[ln]->ent, VHDL_R_ports)) nport++;
+        if (nport)
+            for (ln = 0; ln < vi_nbase; ln++) if (!vi_kid(vi_ents[ln]->ent, VHDL_R_ports)) vi_ents[ln]->tb = 1;
+    }
     /* which entities are placed by others; the top is one nobody places (the last, if several) */
-    for (ln = 0; ln < vi_nbase; ln++) vi_mark_used(vi_ents[ln]->arch->child->next->next);
+    for (ln = 0; ln < vi_nbase; ln++) if (!vi_ents[ln]->tb) vi_mark_used(vi_ents[ln]->arch->child->next->next);
     {
         int t = -1;
-        for (ln = 0; ln < vi_nbase; ln++) if (!vi_ents[ln]->used) t = ln;
+        for (ln = 0; ln < vi_nbase; ln++) if (!vi_ents[ln]->used && !vi_ents[ln]->tb) t = ln;
         if (t < 0) vi_fail(vi_ents[vi_nbase - 1]->ent->child, "every entity is used by another one, so none is the top");
         vi_ents[t]->top = 1;
     }
     for (ln = 0; ln < vi_nbase; ln++) {
         VEnt *e = vi_ents[ln];
+        if (e->tb) continue;
         e->wname = vi_unique(vi_fmt("%.*s", VT(e->ent->child)));
         vi_ent_ports(e);
     }
 
     /* the entities on their own lines; then the copies for generic maps (which
      * can make more copies) after the last line */
-    for (ln = 0; ln < vi_nbase; ln++) vi_ent_emit(vi_ents[ln]);
+    for (ln = 0; ln < vi_nbase; ln++) if (!vi_ents[ln]->tb) vi_ent_emit(vi_ents[ln]);
     for (ln = vi_nbase; ln < vi_nents; ln++) vi_ent_emit(vi_ents[ln]);
 
     for (ln = 1; ln <= vi_nlines; ln++) {

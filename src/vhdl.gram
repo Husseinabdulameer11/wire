@@ -87,7 +87,7 @@ pdecls    <- (variable / constant / typedecl / subtype / alias / funcdecl / proc
 variable  <- ~SHARED? ~VARIABLE idlist ~':' type (~':=' expr)? ~';' ;
 
 # ---- sequential statements (inside a process) --------------------------
-sstmt     <^ ifst / casest / loopst / exitst / nullst / waitst / retst / vassign / sassign / assert / pcall ;
+sstmt     <^ ifst / casest / loopst / exitst / nullst / waitst / retst / vassign / sassign / assert / reportst / pcall ;
 retst     <- ~RETURN expr? ~';' ;
 pcall     <- name ~';' ;
 sassign   <- target ~'<=' wave ~';' ;
@@ -109,6 +109,8 @@ forgen    <- ~FOR ident ~IN (drange / rangeof) ~GENERATE gdecls? cstmt* ~END ~GE
 ifgen     <- ~IF expr ~GENERATE gdecls? cstmt* ~END ~GENERATE ident? ~';' ;
 gdecls    <- adecl* ~BEGIN ;
 assert    <- label? ASSERT (!';' .)* ~';' ;
+# report "..." severity note;  (a message for the simulator, on its own)
+reportst  <- label? REPORT (!';' .)* ~';' ;
 
 inst      <- label (~ENTITY selname (~'(' ident ~')')? / ~COMPONENT? ident) gmap? pmap ~';' ;
 gmap      <- ~GENERIC ~MAP ~'(' assoc (~',' assoc)* ~')' ;
@@ -212,6 +214,7 @@ RETURN    <= 'return'i ![A-Za-z0-9_] ;
 PURE      <= 'pure'i ![A-Za-z0-9_] ;
 IMPURE    <= 'impure'i ![A-Za-z0-9_] ;
 UNTIL     <= 'until'i ![A-Za-z0-9_] ;
+REPORT    <= 'report'i ![A-Za-z0-9_] ;
 PACKAGE   <= 'package'i ![A-Za-z0-9_] ;
 BODY      <= 'body'i ![A-Za-z0-9_] ;
 PROCEDURE <= 'procedure'i ![A-Za-z0-9_] ;

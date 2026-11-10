@@ -571,6 +571,9 @@ circuit from Wire to VHDL and back:
   drives too: the inputs `data_in` and `data_oe` (the outside world drives
   it while `data_oe` is 1) and the output `data`, the bus. Two drivers at
   once are a conflict: Wire shows the bits as unknown, VHDL as `X`.
+- **Testbenches.** An entity without ports beside others is a testbench
+  (`wait for 10 ns`, `report`, `assert`): it is for a simulator, so Wire
+  leaves it out and shows the design it tests.
 - **Chips from chips.** Every entity but the top one becomes a chip (a Wire
   component), and `port map` (named or by position, `entity work.x` or a
   component, a port whole or in parts: `x(3 downto 0) => a, x(7 downto 4) =>
