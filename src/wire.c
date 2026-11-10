@@ -123,6 +123,7 @@ typedef struct {
     int drivers;   /* components writing it */
     int readers;   /* components reading it */
     const char *name; int nlen;
+    const char *bus; int blen;   /* declared as this bus (bus data[8]) */
     const gram_node *at;
 } Net;
 
@@ -187,6 +188,7 @@ typedef struct {
     int screentext;               /* ... that shows characters, not pixels */
     unsigned long *mem; long memlen; /* initial contents: words 0..memlen-1 */
     int dead;                     /* merged into an identical gate */
+    const char *bus; int blen;    /* a bus part: the name it was declared with */
 } Node;
 
 static Node *nodes; static int nnodes, capnodes;
@@ -913,6 +915,7 @@ static void join(int a, int b)
         fail(nets[b].at, "a %d-bit and a %d-bit wire are connected", nets[a].w, nets[b].w);
     if (!nets[a].w) nets[a].w = nets[b].w;
     if (!nets[a].name) { nets[a].name = nets[b].name; nets[a].nlen = nets[b].nlen; }
+    if (!nets[a].bus) { nets[a].bus = nets[b].bus; nets[a].blen = nets[b].blen; }
     nets[b].parent = a;
 }
 
@@ -1262,6 +1265,9 @@ static int build(gram_node *e, int dst, int want)
             if (np >= MAXIO) fail(c, "too many parts");
             parts[np] = build(c, -1, 0);
             widths[np] = nets[find(parts[np])].w;
+            /* a chip's output whose chip comes later is not built yet:
+             * its width is known all the same */
+            if (!widths[np] && (widths[np] = ew(c)) > 0) set_width(parts[np], widths[np], c);
             total += widths[np++];
         }
         if (total > MAXW) fail(e, "this is %d bits; the limit is %d", total, MAXW);
@@ -1463,6 +1469,7 @@ static void write_json(void)
             for (j = 0; j < m; j++) fprintf(jf, "%s[%d,%d]", j ? "," : "", n->range[j][0], n->range[j][1]);
             fputc(']', jf);
         }
+        if (n->kind == K_BUS && n->bus) { fputs(",\"bus\":", jf); jstr(n->bus, n->blen); }
         if (n->kind == K_CONST) fprintf(jf, ",\"value\":%lu", n->value);
         if (n->kind == K_COUNTER) fprintf(jf, ",\"bits\":%d", n->bits);
         if (n->kind == K_MUL && n->sgn) fprintf(jf, ",\"sa\":%d,\"sb\":%d", n->sgn & 1, n->sgn >> 1 & 1);
@@ -2126,6 +2133,8 @@ static void compile_scope(gram_node *first, int top)
         nets[sc->syms[i].net].nlen = sc->syms[i].len;
         nets[sc->syms[i].net].at = sc->syms[i].decl;
     }
+    for (i = 0; i < sc->nsyms; i++)
+        if (sc->syms[i].dkind == D_BUS) { nets[sc->syms[i].net].bus = sc->syms[i].name; nets[sc->syms[i].net].blen = sc->syms[i].len; }
 
     /* 2. widths */
     for (i = 0; i < sc->nsyms; i++) sym_width(&sc->syms[i]);
@@ -2329,7 +2338,14 @@ static void make_buses(void)
         if (!nodes[i].dead) for (j = 0; j < nodes[i].nout; j++) drv[find(nodes[i].out[j])] = i;
     for (r = 0; r < nnets; r++) {
         int list[MAXIO], port[MAXIO], nl = 0, b, w;
-        if (find(r) != r || nets[r].drivers < 2) continue;
+        /* a declared bus gets its part even with one tri() on it, so a drawing
+         * can show it and wire more onto it */
+        if (find(r) != r || nets[r].drivers < (nets[r].bus ? 1 : 2)) continue;
+        if (nets[r].drivers == 1) {
+            for (i = 0, b = -1; i < nnodes && b < 0; i++)
+                if (!nodes[i].dead) for (j = 0; j < nodes[i].nout; j++) if (find(nodes[i].out[j]) == r) b = i;
+            if (b < 0 || !tri_like(b, drv, 0)) continue;
+        }
         for (i = 0; i < nnodes; i++) {
             if (nodes[i].dead) continue;
             for (j = 0; j < nodes[i].nout; j++) {
@@ -2354,6 +2370,8 @@ static void make_buses(void)
         new_node(K_BUS, nets[r].at);
         nodes[b].name = nets[r].name;
         nodes[b].nlen = nets[r].nlen;
+        nodes[b].bus = nets[r].bus;
+        nodes[b].blen = nets[r].blen;
         for (k = 0; k < nl; k++) {
             int nt = new_net(w);
             nets[nt].drivers = 1;

@@ -310,11 +310,14 @@ const KINDS = {
   hex:     { label: "Hex digit", group: "io", prefix: "digit" },
   seg7:    { label: "7-segment", group: "io", prefix: "disp" },
   screen:  { label: "Screen", group: "io", prefix: "screen" },
+  keypad:  { label: "Keypad", group: "io", prefix: "keys" },
   and: { label: "AND", group: "gates", n: 2 }, or: { label: "OR", group: "gates", n: 2 },
   not: { label: "NOT", group: "gates" }, buf: { label: "Buffer", group: "gates" },
+  tri: { label: "Tri-state", group: "gates", prefix: "tri" },
   nand: { label: "NAND", group: "gates", n: 2 }, nor: { label: "NOR", group: "gates", n: 2 },
   xor: { label: "XOR", group: "gates", n: 2 }, xnor: { label: "XNOR", group: "gates", n: 2 },
   mux:     { label: "Mux", group: "blocks", n: 2 },
+  demux:   { label: "Demux", group: "blocks", prefix: "dmx", n: 2 },
   add:     { label: "Adder", group: "blocks", prefix: "add" },
   mul:     { label: "Multiplier", group: "blocks", prefix: "mul" },
   compare: { label: "Compare", group: "blocks", prefix: "cmp" },
@@ -329,6 +332,7 @@ const KINDS = {
   const:   { label: "Constant", group: "buses", prefix: "k", bits: 4 },
   split:   { label: "Split", group: "buses", prefix: "split" },
   join:    { label: "Join", group: "buses", prefix: "join" },
+  bus:     { label: "Bus", group: "buses", prefix: "bus", bits: 4, n: 2 },   /* where several tri-states take turns */
   chip:    { label: "Chip", prefix: "chip" }      /* from the palette's Chips: one of the circuit's components */
 };
 /* a bus range as text and back: [7, 4] is 7:4, [0, 0] is 0 */
@@ -341,7 +345,7 @@ function parseRanges(t) {
   });
   return rs.length && rs.every(r => r && r[0] >= r[1] && r[0] < 32) ? rs : null;
 }
-const SOURCE = new Set(["input", "button", "clock"]), SINK = new Set(["output", "led", "hex", "seg7"]);
+const SOURCE = new Set(["input", "button", "clock", "keypad"]), SINK = new Set(["output", "led", "hex", "seg7"]);
 const insOf = (p, m = model) => {
   const k = p.kind;
   if (SOURCE.has(k)) return [];
@@ -349,13 +353,16 @@ const insOf = (p, m = model) => {
   if (k === "tff") return ["t", "clk", ...(p.rst ? ["rst"] : [])];
   if (k === "jkff") return ["j", "k", "clk", ...(p.rst ? ["rst"] : [])];
   if (k === "decoder") return ["sel", ...(p.en ? ["en"] : [])];
+  if (k === "tri") return ["in", "en"];
+  if (k === "demux") return ["d", "sel"];
+  if (k === "bus") return Array.from({ length: p.n || 2 }, (_, i) => String(i));
   if (GATE_NAMES[k]) return Array.from({ length: p.n || 2 }, (_, i) => String(i));
   if (k === "mux") return [...Array.from({ length: p.n || 2 }, (_, i) => "d" + i), "sel"];
   if (k === "add") return p.cin ? ["a", "b", "cin"] : ["a", "b"];
   if (k === "mul") return ["a", "b"];
   if (k === "compare") return ["a", "b"];
   if (k === "dff") return ["d", "clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : [])];
-  if (k === "counter") return ["clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : [])];
+  if (k === "counter") return ["clk", ...(p.en ? ["en"] : []), ...(p.rst ? ["rst"] : []), ...(p.load ? ["load", "d"] : []), ...(p.down ? ["down"] : [])];
   if (k === "split") return ["in"];
   if (k === "const") return [];
   if (k === "rom") return ["addr"];
@@ -372,6 +379,7 @@ const outsOf = (p, m = model) => {
   if (k === "compare") return ["lt", "eq", "gt"];
   if (k === "dff" || k === "tff" || k === "jkff") return ["q", "nq"];
   if (k === "encoder") return ["out", "valid"];
+  if (k === "demux") return Array.from({ length: p.n || 2 }, (_, i) => "o" + i);
   if (k === "rom" || k === "ram" || k === "screen") return ["q"];
   if (k === "counter") return ["q", "carry"];
   if (k === "split") return p.ranges.map((_, i) => String(i));
@@ -412,7 +420,11 @@ const ICONS = {
   encoder: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M4 7H9M4 11H9M4 15H9M4 19H9M31 13H36"/>',
   split: '<path d="M4 13H16" stroke-width="3"/><path class="f" d="M16 4H19V22H16Z"/><path d="M19 8H34M19 18H34"/>',
   join: '<path d="M6 8H21M6 18H21"/><path class="f" d="M21 4H24V22H21Z"/><path d="M24 13H36" stroke-width="3"/>',
-  chip: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M17 3A3 3 0 0 0 23 3"/><path d="M4 9H9M4 17H9M31 13H36"/>'
+  chip: '<rect class="f" x="9" y="3" width="22" height="20" rx="2"/><path d="M17 3A3 3 0 0 0 23 3"/><path d="M4 9H9M4 17H9M31 13H36"/>',
+  tri: '<path d="M4 9H11M27 9H36M4 21H19V14"/><path class="f" d="M11 2L27 9L11 16Z"/>',
+  bus: '<path d="M4 7H18M4 19H18M18 13H36" stroke-width="1.6"/><path d="M18 3V23" stroke-width="5" stroke-linecap="round"/>',
+  demux: '<path d="M4 13H13M28 8H36M28 18H36M20 24V20"/><path class="f" d="M13 8L28 3V23L13 18Z"/>',
+  keypad: '<rect class="f" x="8" y="2" width="22" height="22" rx="2"/><path d="M12 6h4v4h-4zM18 6h4v4h-4zM24 6h2v4h-2zM12 12h4v4h-4zM18 12h4v4h-4zM12 18h4v3h-4zM18 18h4v3h-4z" stroke-width="1"/><path d="M30 13H36"/>'
 };
 
 /* ============================================================ the drawing
@@ -492,13 +504,44 @@ function sheetLines(m, sh) {
     if (f.kind === "split") return `${f.name}_${l.from.pin}`;
     if (f.kind === "join") return f.name;
     if (f.kind === "chip") return `${f.name}.${l.from.pin}`;
+    if (f.kind === "demux") return `${f.name}[${l.from.pin.slice(1)}]`;
     const outs = outsOf(f, m);
     return f.kind === "compare" || l.from.pin !== outs[0] ? `${f.name}.${l.from.pin}` : f.name;
   };
   const body = [];
-  const regs = sh.parts.filter(p => p.kind === "dff" && p.w);
-  if (regs.length) body.push(`wire ${regs.map(p => `${p.name}[${p.w}]`).join(", ")}`);
-  for (const p of sh.parts) {
+  /* widths written out where a loop could leave Wire guessing: a register's,
+   * and a join's (its pieces may come back to it through a split) */
+  const regs = sh.parts.filter(p => p.kind === "dff" && p.w).map(p => `${p.name}[${p.w}]`)
+    .concat(sh.parts.filter(p => p.kind === "join").map(p => `${p.name}[${p.ranges.reduce((s, r) => s + rangeW(r), 0)}]`));
+  if (regs.length) body.push(`wire ${regs.join(", ")}`);
+  /* a bus: Wire numbers the parts talking on it in the order they are
+   * written, so each one is written just before the line that puts it on
+   * the bus, in the order of the bus's pins. A pin nothing is wired to gets
+   * a tri-state that never talks (the page does not draw it), so the bus
+   * keeps its pins. */
+  const onBus = new Map(), drvOf = new Map();
+  for (const b of sh.parts) if (b.kind === "bus") {
+    const seen = new Set();
+    drvOf.set(b.id, insOf(b, m).map(pin => {
+      const l = into.get(b.id + ":" + pin), f = l && byId.get(l.from.id);
+      if (!f || seen.has(f.id + ":" + l.from.pin)) return null;
+      seen.add(f.id + ":" + l.from.pin);
+      if (!onBus.has(f.id)) onBus.set(f.id, b.id);
+      return { f, v: from(b, pin) };
+    }));
+  }
+  const done = new Set();
+  const emit = p => {
+    if (done.has(p.id)) return;
+    done.add(p.id);
+    if (p.kind !== "bus") { partLines(p); return; }
+    body.push(`bus ${p.name}${bitsOf(p)}`);
+    drvOf.get(p.id).forEach(d => {
+      if (d && onBus.get(d.f.id) === p.id) emit(d.f);
+      body.push(`${p.name} = ${d ? d.v : `tri(${lit(0, p.bits || 1)}, 0b0)`}`);
+    });
+  };
+  const partLines = p => {
     const k = p.kind, opt = (name, pin) => {
       const v = from(p, pin);
       return `, ${name} = ${v}`;
@@ -506,6 +549,12 @@ function sheetLines(m, sh) {
     if (GATE_NAMES[k]) body.push(`${p.name} = ${k}(${insOf(p, m).map(pin => from(p, pin)).join(", ")})`);
     else if (k === "not") body.push(`${p.name} = not(${from(p, "in")})`);
     else if (k === "buf") body.push(`${p.name} = buf(${from(p, "in")})`);
+    else if (k === "tri") body.push(`${p.name} = tri(${from(p, "in")}, ${from(p, "en")})`);
+    else if (k === "demux") {
+      /* its outputs are one per value of sel: unwired, sel is as wide as that needs */
+      const v = from(p, "sel");
+      body.push(`${p.name} = demux(${from(p, "d")}, sel = ${v === "0" ? lit(0, Math.max(1, Math.log2(p.n || 2))) : v})`);
+    }
     else if (k === "encoder" || k === "decoder") {
       /* nothing wired in: a 0 as wide as the part's input, which sets its size */
       const pin = k === "encoder" ? "in" : "sel", v = from(p, pin), x = v === "0" ? lit(0, p.bits || (k === "encoder" ? 4 : 2)) : v;
@@ -518,7 +567,11 @@ function sheetLines(m, sh) {
     else if (k === "mul") body.push(`${p.name} = mul(${from(p, "a")}, ${from(p, "b")}${p.sa && p.sb ? ", signed = 1" : p.sa ? ", sa = 1" : p.sb ? ", sb = 1" : ""})`);
     else if (k === "compare") body.push(`${p.name} = compare(${from(p, "a")}, ${from(p, "b")})`);
     else if (k === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
-    else if (k === "counter") body.push(`${p.name} = counter(${from(p, "clk")}, bits = ${p.bits || 4}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
+    else if (k === "counter") {
+      const d = from(p, "d");
+      body.push(`${p.name} = counter(${from(p, "clk")}, bits = ${p.bits || 4}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""}` +
+        `${p.load ? `${opt("load", "load")}, d = ${d === "0" ? lit(0, p.bits || 4) : d}` : ""}${p.down ? opt("down", "down") : ""})`);
+    }
     else if (k === "screen") {
       const pin = (name, w) => { const v = from(p, name); return v === "0" ? lit(0, w) : v; };
       const data = (p.data || "").trim() ? `, data = "${p.data.trim()}"` : "";
@@ -544,7 +597,9 @@ function sheetLines(m, sh) {
         return v === "0" ? lit((p.consts && p.consts[i]) || 0, rangeW(r)) : v;
       }).join(", ")}}`);
     }
-  }
+  };
+  for (const p of sh.parts) if (!onBus.has(p.id)) emit(p);
+  for (const p of sh.parts) emit(p);   /* a part on a bus whose own pins are gone */
   const sinks = sh.parts.filter(p => SINK.has(p.kind)).map(p => `${p.name} = ${from(p, "in")}`);
   return { body, sinks };
 }
@@ -560,7 +615,7 @@ function cpuText(c) {
   if (c.regs) o.push(`regs = "${c.regs}"`);
   return `cpu ${/^[A-Za-z_]/.test(n) ? n : "c" + n} (${o.join(", ")})`;
 }
-const DECL = { input: "input ", button: "button", clock: "clock ", output: "output", led: "led   ", hex: "hex   ", seg7: "seg7  " };
+const DECL = { input: "input ", button: "button", clock: "clock ", keypad: "keypad", output: "output", led: "led   ", hex: "hex   ", seg7: "seg7  " };
 const bitsOf = p => (p.bits || 1) > 1 ? `[${p.bits}]` : "";
 function componentText(m, name) {
   const sh = m.chips[name], { ins, outs } = chipPins(m, name), { body, sinks } = sheetLines(m, sh);
@@ -886,9 +941,9 @@ window.wireCanvas = {
     if (comp && model.at && model.chips[comp] && uses(model, comp, model.at)) {
       msg.className = "err"; msg.textContent = `${comp} cannot go inside ${model.at}: ${comp === model.at ? "a chip cannot hold itself" : `${comp} has ${model.at} inside it`}.`; return;
     }
-    if (model.at && ["button", "clock", "led", "hex", "seg7"].includes(kind)) {
+    if (model.at && ["button", "clock", "keypad", "led", "hex", "seg7"].includes(kind)) {
       msg.className = "err";
-      msg.textContent = "A chip talks to the outside through its inputs and outputs: put buttons, clocks and lights in the main circuit (a clock comes in as an input).";
+      msg.textContent = "A chip talks to the outside through its inputs and outputs: put buttons, clocks, keypads and lights in the main circuit (a clock comes in as an input).";
       return;
     }
     disarm();
@@ -1308,35 +1363,39 @@ function showProps() {
       if (n !== p.value) change(() => { p.value = n; });
     });
   }
-  if (k === "input" || k === "output" || k === "counter" || k === "const") {
+  if (k === "input" || k === "output" || k === "counter" || k === "const" || k === "bus") {
     const b = field("Bits", Object.assign(document.createElement("input"), { type: "number", min: 1, max: 32, value: p.bits || 1 }));
     b.addEventListener("change", () => {
       const v = Math.max(1, Math.min(32, parseInt(b.value, 10) || 1));
       if (v !== (p.bits || 1)) change(() => { p.bits = v; if (k === "const" && v < 32) p.value = (p.value || 0) % 2 ** v; });
     });
   }
-  if (GATE_NAMES[k] || k === "mux") {
+  if (GATE_NAMES[k] || k === "mux" || k === "demux" || k === "bus") {
+    /* a bus: how many tri-states may talk on it */
     const sel = document.createElement("select");
-    (k === "mux" ? [2, 4, 8, 16] : [2, 3, 4, 5, 6, 7, 8]).forEach(v => sel.append(new Option(String(v), String(v), false, v === (p.n || 2))));
-    field(k === "mux" ? "Data inputs" : "Inputs", sel);
+    (k === "mux" || k === "demux" ? [2, 4, 8, 16] : k === "bus" ? [1, 2, 3, 4, 5, 6, 7, 8, 12, 16] : [2, 3, 4, 5, 6, 7, 8])
+      .forEach(v => sel.append(new Option(String(v), String(v), false, v === (p.n || 2))));
+    field(k === "mux" ? "Data inputs" : k === "demux" ? "Outputs" : k === "bus" ? "Drivers" : "Inputs", sel);
+    if (k === "bus") sel.title = "How many tri-states (or chip outputs that are tri-states) can be wired onto the bus";
     sel.addEventListener("change", () => {
       const v = +sel.value;
       change(m => {
         p.n = v;
-        const keep = new Set(insOf(p));
+        const keepIn = new Set(insOf(p)), keepOut = new Set(outsOf(p));
         const sh = sheet(m);
-        sh.links = sh.links.filter(l => l.to.id !== p.id || keep.has(l.to.pin));
+        sh.links = sh.links.filter(l => (l.to.id !== p.id || keepIn.has(l.to.pin)) && (l.from.id !== p.id || keepOut.has(l.from.pin)));
       });
     });
   }
-  const tick = (label, key) => {
+  /* pins: the inputs it adds (the key's own name, unless said) */
+  const tick = (label, key, pins = [key]) => {
     const c = Object.assign(document.createElement("input"), { type: "checkbox", checked: !!p[key] });
     const l = document.createElement("label");
     l.append(c, " " + label);
     row.append(l);
     c.addEventListener("change", () => change(m => {
       p[key] = c.checked;
-      if (!c.checked) { const sh = sheet(m); sh.links = sh.links.filter(x => !(x.to.id === p.id && x.to.pin === key)); }
+      if (!c.checked) { const sh = sheet(m); sh.links = sh.links.filter(x => !(x.to.id === p.id && pins.includes(x.to.pin))); }
     }));
   };
   if (k === "decoder" || k === "encoder") {
@@ -1413,6 +1472,7 @@ function showProps() {
     });
   }
   if (k === "dff" || k === "counter") { tick("Enable input", "en"); tick("Reset input", "rst"); }
+  if (k === "counter") { tick("Load input (load, d)", "load", ["load", "d"]); tick("Count down input", "down"); }
   if (k === "tff" || k === "jkff") tick("Reset input", "rst");
   if (k === "decoder") tick("Enable input", "en");
   if (k === "add") tick("Carry in", "cin");
@@ -1537,10 +1597,6 @@ $("mode-write").onclick = () => go("write", lang);
 const pathFor = (key, d) => (d ? d + "/" : "") + fileName() + (key === "vhdl" ? ".vhd" : ".wire");
 const firstError = (r, path) => (r.err.trim().split("\n").find(l => /error/.test(l)) || r.err.trim().split("\n")[0] || `exit ${r.code}`)
   .split(path + ":").join("line ");
-/* the parts the drawing cannot show, in words */
-const NOT_DRAWN = { split: "slices or joins of a bus", merge: "slices or joins of a bus", rom: "a rom", ram: "a ram",
-  tri: "a tri-state driver", bus: "a bus", seg7: "a 7-segment display", keypad: "a keypad", tff: "a T flip-flop",
-  jkff: "a JK flip-flop", demux: "a demux", decoder: "a decoder", encoder: "an encoder", buf: "a buffer" };
 /* the chips of a Wire text: its imports and component blocks, as written */
 function wireDefs(text) {
   const out = [], lines = text.split("\n");
@@ -1584,8 +1640,7 @@ function buildSheet(D, scope, lay, comps) {
   for (const i of top) {
     const n = N[i];
     if (n.kind === "const") continue;
-    if (!KINDS[kindOf(n)]) return { why: `the drawing cannot show ${NOT_DRAWN[n.kind] || n.kind}` };
-    if (n.kind === "counter" && n.inNames.some(x => !["clk", "en", "rst"].includes(x))) return { why: "the drawing's counter has no load, d or down" };
+    if (!KINDS[kindOf(n)]) return { why: `the drawing cannot show a ${n.kind}` };
     if (scope && ["button", "clock", "led", "hex", "seg7", "keypad"].includes(n.kind)) return { why: "a chip with a button, clock or light inside" };
     if (n.kind === "led" && D.nets[n.in[0]].w !== 1) return { why: "an LED in the drawing is one bit" };
   }
@@ -1597,8 +1652,11 @@ function buildSheet(D, scope, lay, comps) {
   const readers = net => [...top].filter(j => N[j].in.includes(net));
   /* a chip's input pin reads it too: cin = 0b1 into a chip must stay a 1 */
   const chipReads = net => chipPins.some(cp => cp.ins.some(x => x[2] === net));
-  const shown = i => N[i].kind !== "const"
-    || (N[i].value && (readers(N[i].out[0]).some(j => N[j].kind !== "merge") || chipReads(N[i].out[0])));
+  /* a tri-state that never talks (enable a fixed 0) on a bus: a pin nothing is wired to */
+  const silent = i => N[i].kind === "tri" && !N[i].name && (c => c && !c.value)(constOf(N[i].in[1]))
+    && readers(N[i].out[0]).every(j => N[j].kind === "bus");
+  const shown = i => N[i].kind === "const" ? !!(N[i].value && (readers(N[i].out[0]).some(j => N[j].kind !== "merge") || chipReads(N[i].out[0])))
+    : !silent(i);
   const order = [...top].filter(shown)
     .sort((a, b) => (SOURCE.has(kindOf(N[b])) || SINK.has(kindOf(N[b]))) - (SOURCE.has(kindOf(N[a])) || SINK.has(kindOf(N[a]))));
   for (const i of order) if (SOURCE.has(kindOf(N[i])) || SINK.has(kindOf(N[i]))) keep(i, N[i].name);
@@ -1606,7 +1664,8 @@ function buildSheet(D, scope, lay, comps) {
   for (const i of order) {
     if (names.has(i)) continue;
     const n = N[i], k = kindOf(n);
-    let name = n.kind === "split" || n.kind === "merge" ? "" : n.name || (n.out.length ? D.nets[n.out[0]].name : "");
+    /* a bus is called what it was declared as (its wire may have an output's name) */
+    let name = n.kind === "split" || n.kind === "merge" ? "" : n.kind === "bus" && n.bus ? n.bus : n.name || (n.out.length ? D.nets[n.out[0]].name : "");
     if (!ok(name)) {
       const base = KINDS[k].prefix || k;
       for (let j = 1; ; j++) if (ok(base + j)) { name = base + j; break; }
@@ -1624,7 +1683,7 @@ function buildSheet(D, scope, lay, comps) {
     const d = drv.get(net);
     if (!d) return;
     if (d.chip != null) { links.push({ from: { id: idOf.get("c" + d.chip), pin: d.pin }, to }); return; }
-    if (N[d.i].kind === "const" && !idOf.has(d.i)) return;   /* a 0, or only in a join: the pin stays unwired */
+    if (!idOf.has(d.i)) return;   /* a 0, only in a join, or a silent tri-state: the pin stays unwired */
     const f = N[d.i];
     links.push({ from: { id: idOf.get(d.i), pin: f.kind === "split" ? String(d.p) : f.kind === "pin_in" ? "out" : f.outNames[d.p] }, to });
   };
@@ -1633,7 +1692,9 @@ function buildSheet(D, scope, lay, comps) {
     place(p, lay && lay[i], SOURCE.has(k), SINK.has(k));
     if (k === "input") p.bits = D.nets[n.out[0]].w;
     if (k === "output") p.bits = D.nets[n.in[0]].w;
-    if (k === "counter") p.bits = n.bits || D.nets[n.out[0]].w;
+    if (k === "counter") { p.bits = n.bits || D.nets[n.out[0]].w; p.load = n.inNames.includes("load"); p.down = n.inNames.includes("down"); }
+    if (k === "bus") { p.bits = D.nets[n.out[0]].w; p.n = n.in.length; }
+    if (k === "demux") p.n = n.out.length;
     if (GATE_NAMES[k]) p.n = n.in.length;
     if (k === "mux") p.n = n.in.length - 1;
     if (k === "add") p.cin = n.inNames.includes("cin");
@@ -1658,7 +1719,7 @@ function buildSheet(D, scope, lay, comps) {
       n.in.forEach((net, j) => { const d = drv.get(net), c = constOf(net); if (c && c.value && !idOf.has(d.i)) (p.consts = p.consts || {})[j] = c.value; });
     }
     parts.push(p);
-    if (n.kind !== "pin_in") n.in.forEach((net, j) => linkTo(net, { id: p.id, pin: GATE_NAMES[k] || k === "join" ? String(j) : k === "split" ? "in" : k === "output" ? "in" : n.inNames[j] }));
+    if (n.kind !== "pin_in") n.in.forEach((net, j) => linkTo(net, { id: p.id, pin: GATE_NAMES[k] || k === "join" || k === "bus" ? String(j) : k === "split" ? "in" : k === "output" ? "in" : n.inNames[j] }));
   }
   for (const cp of chipPins) {
     const ins = D.insts[cp.c], p = { id: idOf.get("c" + cp.c), kind: "chip", comp: ins.comp, name: names.get("c" + cp.c), x: 0, y: 0,

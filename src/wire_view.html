@@ -617,6 +617,9 @@ function makeView(id) {
     });
   });
   if (EDIT && id === 0) items.forEach(it => {
+    /* a drawn bus is the part named as the bus was declared (its wire may
+     * have an output's name) */
+    if (it.kind === "bus" && it.bus) { it.name = it.bus; return; }
     /* the playground's splits and joins have names of their own: the Wire it
      * writes gives a split the line  name_0 = bus[...]  and a join  name = {...} */
     if ((it.kind !== "split" && it.kind !== "merge" && it.kind !== "const") || it.name) return;
@@ -650,7 +653,8 @@ function editPlace(V) {
     const t = V.items[r.node], ip = t.g.ins[r.port];
     n.x = t.x + ip.x - n.g.w;
     n.y = t.y + ip.y - n.g.outs[0].y;
-    if (n.kind === "const") n.hidden = true;
+    /* and a tri-state that never talks, on a bus pin nothing is wired to */
+    if (n.kind === "const" || (n.kind === "tri" && !n.name)) n.hidden = true;
   });
 }
 

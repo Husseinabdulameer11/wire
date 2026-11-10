@@ -114,6 +114,7 @@ test: $(WIRE)
 	    grep -qF "$$(sed -n 's/^-- expect: //p' $$f)" build/err.txt || { echo "$$f: wrong error:"; cat build/err.txt; exit 1; }; \
 	done
 	@if command -v node >/dev/null 2>&1; then node tests/sim/simtest.js $(WIRE) && node tests/sim/inside.js $(WIRE) || exit 1; \
+	   node tests/web/draw.js $(WIRE) || exit 1; \
 	   node tests/sim/run.js $(WIRE) examples/notes/sap1.wire 200 outp | grep -q "outp = 28" \
 	     || { echo "examples/notes/sap1.wire: the SAP-1 did not compute 16 + 20 + 24 - 32 = 28"; exit 1; }; \
 	   node tests/sim/run.js $(WIRE) tests/vhdl_in/rv32im.vhd 2000 out_port | grep -q "out_port = 965487436" \

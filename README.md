@@ -78,13 +78,15 @@ change it, and `make test` runs every check.
 `playground.html` is Wire itself, compiled to WebAssembly, in a page.
 Nothing is installed and nothing leaves the browser.
 
-- **Draw:** drag parts onto the circuit (inputs, buttons, clocks, outputs,
-  LEDs, hex digits, 7-segment displays, screens, every gate and a buffer, a mux, an
-  adder, a comparator, D, T and JK flip-flops, a counter, a decoder, an
-  encoder, a rom and a ram with their contents, constants, and splits and
-  joins for buses), drag from pin to pin to wire them, and click
-  a part to rename it or change its width, its number of inputs, its pieces,
-  or whether it has an enable, a reset or a carry in. **Chips** work as in
+- **Draw:** drag parts onto the circuit (inputs, buttons, clocks, keypads,
+  outputs, LEDs, hex digits, 7-segment displays, screens, every gate, a
+  buffer and a tri-state, a mux and a demux, an adder, a comparator, D, T and
+  JK flip-flops, a counter, a decoder, an encoder, a rom and a ram with their
+  contents, constants, splits and joins, and a **bus** that several
+  tri-states take turns driving), drag from pin to pin to wire them, and click
+  a part to rename it or change its width, its number of inputs (a bus: how
+  many drivers it has), its pieces, or whether it has an enable, a reset, a
+  carry in, or (a counter) a load and a count-down input. **Chips** work as in
   Logisim: **+ New chip** opens an empty sheet for one (`half_adder`), its
   inputs and outputs are its pins, and back in the main circuit it is in the
   palette under Chips; place two and an OR gate and you have a full adder.
@@ -110,7 +112,9 @@ Draw, Wire and VHDL are three views of **one design**: the circuit and
 every chip you made for it. Change it in one, switch, and the other view is
 made from it (going back without changing anything gives you exactly what
 you left). A switch that would lose part of the design does not happen, and
-the page says why: the drawing has no tri-state bus or keypad yet.
+the page says why. Everything Wire and VHDL make has a part in the drawing,
+tri-state buses too: VHDL that gives a signal `'Z'` opens in Draw as
+tri-states, and several of them on one signal as a bus part.
 
 - **The same chips everywhere.** Write has the list Draw has: the circuit,
   its chips as a tree, and **Not used yet:** the chips you made but have not
@@ -131,7 +135,10 @@ tap where it goes, and wire it with a finger.
 It is the same compiler as the `wire` command, byte for byte:
 `tests/web/webtest.js` runs both on every example, every circuit in
 `tests/sim` and every error in `tests/errors`, and compares the pages, the
-netlists, the VHDL and the error messages.
+netlists, the VHDL and the error messages. And `tests/web/draw.js` (part
+of `make test`) opens every example and every test circuit, Wire and VHDL,
+in Draw the way the playground does, and checks that the drawing simulates
+exactly like the circuit it came from.
 
 ## On the page
 
