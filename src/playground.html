@@ -688,8 +688,19 @@ async function wire(args, mainPath, mainText) {
  * change, so going back gives exactly the text you left. A switch that would
  * lose part of the circuit (the drawing has no rom, say) does not happen,
  * and the page says why. */
+/* Who writes Wire: a developer. Everyone else draws or writes VHDL; Wire
+ * still runs underneath (the drawing is Wire, VHDL is read into Wire), it is
+ * just not offered as a language. playground.html?dev=1 turns the Wire
+ * editor, Save .wire and the drawing's Wire on in this browser, ?dev=0 off. */
+const DEV = (() => {
+  try {
+    const q = new URLSearchParams(location.search);
+    if (q.has("dev")) { if (q.get("dev") === "0") localStorage.removeItem("wire-dev"); else localStorage.setItem("wire-dev", "1"); }
+    return localStorage.getItem("wire-dev") === "1";
+  } catch (e) { return false; }
+})();
 let mode = "draw";             /* draw: the drawing; write: the code editor */
-let lang = "wire";             /* what the code editor holds: wire or vhdl */
+let lang = DEV ? "wire" : "vhdl";   /* what the code editor holds: wire or vhdl */
 let dir = "";                  /* the example's folder, where its imports are */
 let dirty = false;             /* the circuit was changed since it was loaded */
 const views = { draw: null, wire: null, vhdl: null };
@@ -702,7 +713,7 @@ const viewKey = () => mode === "draw" ? "draw" : lang;
 const VIEW_NAMES = { draw: "Draw", wire: "Wire", vhdl: "VHDL" };
 const vhdlNow = () => mode === "write" && lang === "vhdl";
 const fileName = () => ($("name").value.replace(/[^A-Za-z0-9_]/g, "") || "my_circuit");
-const ext = () => vhdlNow() ? ".vhd" : ".wire";
+const ext = () => vhdlNow() ? ".vhd" : ".wire";   /* the file Wire compiles */
 const mainPath = () => {
   const d = mode === "write" ? dir : (model && model.dir) || "";
   return (d ? d + "/" : "") + fileName() + ext();
@@ -835,6 +846,8 @@ function show(html) {
     frontUrl = url;
     front = 1 - front;
     $("loading").hidden = true;
+    /* the page's Source is the drawing's Wire: not shown without Wire */
+    if (!DEV && mode === "draw") try { frames[front].contentWindow.document.getElementById("srcbtn").hidden = true; } catch (e) {}
     readPageCpu();
     if (mode === "write") { try { if (writeAt) frames[front].contentWindow.wireGoComp(writeAt); } catch (e) {} showWriteChips(); }
     if (window.wireLearn) window.wireLearn.shown();
@@ -1491,7 +1504,7 @@ $("tidy").onclick = () => {
   /* the circuit page lays it out in columns and tells us where it put things */
   try { frames[front].contentWindow.document.getElementById("tidy").click(); } catch (e) {}
 };
-$("tocode").onclick = () => go("write", "wire");
+$("tocode").onclick = () => go("write", DEV ? "wire" : "vhdl");
 
 /* ======================================================== writing: editor */
 const KW = "circuit|import|component|input|output|wire|led|seg7|hex|button|clock|bus|keypad";
@@ -1581,7 +1594,7 @@ function setMode(m) {
   $("draw").hidden = m !== "draw";
   $("editor").hidden = m !== "write";
   $("tab-side").textContent = m === "draw" ? "Parts" : "Code";
-  $("langbox").hidden = m !== "write";
+  $("langbox").hidden = m !== "write" || !DEV;
   $("wchips").hidden = m !== "write" || !!window.wireLearn;
   $("side").style.gridTemplateRows = $("wchips").hidden ? "" : "auto 1fr auto";   /* the list, the code, the message */
   showLang();
@@ -1590,8 +1603,16 @@ function setMode(m) {
   persist();
   schedule(0);
 }
+if (!DEV) {
+  $("mode-write").textContent = "VHDL";
+  $("mode-write").title = "Write the circuit in VHDL";
+  $("savewire").hidden = true;
+  $("gen").hidden = $("gen").previousElementSibling.hidden = true;   /* The Wire it makes */
+  $("tocode").textContent = "Edit as VHDL";
+  $("tocode").title = "Carry on in the VHDL editor with this circuit";
+}
 $("mode-draw").onclick = () => go("draw");
-$("mode-write").onclick = () => go("write", lang);
+$("mode-write").onclick = () => go("write", DEV ? lang : "vhdl");
 
 /* ---- switching views: the one you go to is made from the circuit */
 const pathFor = (key, d) => (d ? d + "/" : "") + fileName() + (key === "vhdl" ? ".vhd" : ".wire");
@@ -1813,6 +1834,7 @@ async function makeView(to) {
 }
 let switching = false;
 async function go(m, l = lang) {
+  if (!DEV && m === "write") l = "vhdl";
   const to = m === "draw" ? "draw" : l;
   if (switching || to === viewKey()) { showLang(); return; }
   switching = true;
@@ -1828,7 +1850,7 @@ async function go(m, l = lang) {
       try { r = await makeView(to); } catch (e) { r = { why: String(e.message || e) }; }
       if (r.why) {
         showLang();
-        if (mode === "draw" && to === "vhdl") {   /* Write was asked for: Wire can show any drawing */
+        if (mode === "draw" && to === "vhdl" && DEV) {   /* Write was asked for: Wire can show any drawing */
           switching = false;
           pendingNote = `Opened as Wire, not VHDL: ${r.why}`;
           await go("write", "wire");
@@ -1857,14 +1879,14 @@ async function go(m, l = lang) {
 function showLang() {
   const v = vhdlNow();
   $("lang").value = lang;
-  $("ext").textContent = ext();
+  $("ext").textContent = DEV ? ext() : ".vhd";   /* without Wire, what you save is VHDL */
   src.setAttribute("aria-label", v ? "VHDL source" : "Wire source");
   $("savewire").title = v ? "Download the Wire this VHDL is turned into" : "Download the Wire source";
   $("savevhd").title = v ? "Download your VHDL" : "Download the circuit as VHDL-93, ready for Vivado";
   for (const o of ex.querySelectorAll("option")) {
     if (!o.value) continue;
-    o.disabled = lang === "vhdl" && !VHD[o.value];
-    o.title = o.disabled ? "Its VHDL uses what Wire does not read" : "";
+    o.disabled = DEV && lang === "vhdl" && !VHD[o.value];
+    o.title = o.disabled ? "Its VHDL uses what Wire does not read" : !DEV && !VHD[o.value] ? "Opens as a drawing (it has no VHDL Wire reads)" : "";
   }
 }
 $("lang").onchange = () => go("write", $("lang").value);
@@ -1897,10 +1919,20 @@ ex.addEventListener("change", () => {
   const p = ex.value;
   if (!p) return;
   if (dirty && !confirm("Replace your circuit with the example? Your changes to it are not kept.")) { ex.value = ""; return; }
-  const v = lang === "vhdl" && VHD[p];
+  /* without Wire: its VHDL if it has one, opened where you are (VHDL or Draw);
+   * else it opens as a drawing */
+  const was = mode, v = (DEV ? lang === "vhdl" : true) && VHD[p];
   isaUser = { name: "my_cpu.isa", text: "" };   /* an instruction set is the circuit's: an example brings its own */
   loadCode(v ? "vhdl" : "wire", FILES[v ? VHD[p] : p], p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, ""), p.slice(0, p.lastIndexOf("/")));
+  if (!DEV) { if (!v) leaveWire(); else if (was === "draw") go("draw"); }
 });
+/* without Wire, a circuit that came as Wire (an example, an old link, what was
+ * kept from before) is shown as a drawing, or else as VHDL */
+async function leaveWire() {
+  if (DEV || LEARN || viewKey() !== "wire") return;
+  await go("draw");
+  if (viewKey() === "wire") await go("write", "vhdl");
+}
 
 const STARTER_CODE = `circuit "My circuit"
 
@@ -2089,10 +2121,10 @@ function validModel(m) {
       views[l] = { text, dir: q.get("d") || "" }; source = l; lang = l; m = "write"; dirty = true; $("name").value = q.get("n") || "my_circuit";
     } catch (e) {}
   } else if (q.get("ex") && FILES[q.get("ex")]) {
-    const p = q.get("ex");
-    views.draw = views.vhdl = null;
-    views.wire = { text: FILES[p], dir: p.slice(0, p.lastIndexOf("/")) };
-    source = "wire"; lang = "wire"; m = "write"; dirty = false;
+    const p = q.get("ex"), key = !DEV && VHD[p] ? "vhdl" : "wire";
+    views.draw = views.wire = views.vhdl = null;
+    views[key] = { text: FILES[key === "vhdl" ? VHD[p] : p], dir: p.slice(0, p.lastIndexOf("/")) };
+    source = key; lang = key; m = "write"; dirty = false;
     ex.value = p;
     $("name").value = p.slice(p.lastIndexOf("/") + 1).replace(/\.wire$/, "");
   }
@@ -2102,6 +2134,7 @@ function validModel(m) {
   if (m === "write") { src.value = views[lang].text; dir = views[lang].dir; }
   fitName();
   setMode(m);
+  leaveWire();
 })();
 ready.catch(fatal);
 </script>

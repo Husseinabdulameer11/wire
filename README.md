@@ -101,12 +101,15 @@ Nothing is installed and nothing leaves the browser.
   cannot work (a 4-bit bus into a 1-bit gate) is undone, and the page says
   why. The drawing is written as Wire as you go (**Edit as code** carries on
   from it), so it simulates and turns into VHDL like any other circuit.
-- **Write:** write the circuit in Wire, or start from any example (its
-  imports and rom files come with it). It is drawn and simulated as you
-  type, with the error and its line marked when there is one. The menu next
-  to Write switches the editor to **VHDL** (see [VHDL in](#vhdl-in)); the
-  examples whose VHDL Wire reads open as VHDL there, and **Save .wire**
-  gives the Wire your VHDL turned into.
+- **VHDL:** write the circuit in VHDL (see [VHDL in](#vhdl-in)), or start
+  from any example. It is drawn and simulated as you type, with the error
+  and its line marked when there is one. An example opens as its VHDL when
+  Wire reads it, and as a drawing when it has none.
+- **Wire, for developers:** the playground offers Draw and VHDL only. Open
+  `playground.html?dev=1` once and that browser gets **Write** instead of
+  VHDL, with a menu for Wire or VHDL, **Save .wire**, the Wire a drawing
+  makes and the page's Source; `?dev=0` turns it off again. Wire runs
+  underneath either way (the drawing is Wire, and VHDL is read into Wire).
 
 Draw, Wire and VHDL are three views of **one design**: the circuit and
 every chip you made for it. Change it in one, switch, and the other view is
