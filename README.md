@@ -110,8 +110,7 @@ Draw, Wire and VHDL are three views of **one design**: the circuit and
 every chip you made for it. Change it in one, switch, and the other view is
 made from it (going back without changing anything gives you exactly what
 you left). A switch that would lose part of the design does not happen, and
-the page says why: the drawing has no tri-state bus or keypad yet, and Wire
-cannot read a tri-state bus back from VHDL yet.
+the page says why: the drawing has no tri-state bus or keypad yet.
 
 - **The same chips everywhere.** Write has the list Draw has: the circuit,
   its chips as a tree, and **Not used yet:** the chips you made but have not
@@ -553,11 +552,30 @@ reads), and the VHDL Wire writes itself, so the playground can switch a
 circuit from Wire to VHDL and back:
 
 - **Entities and their architectures.** Ports and signals of `std_logic`,
-  `std_logic_vector`, `unsigned`, `signed`, `boolean` and `integer range
-  0 to n`, `downto` or `to`; integer generics and constants.
+  `std_logic_vector`, `unsigned`, `signed`, `boolean`, `integer range a to b`
+  (negative values too) and records, `downto` or `to`; ports `in`, `out`,
+  `buffer` and `inout`; generics and constants that are integers, booleans,
+  bits or vectors. `subtype`, `type small is range 0 to 9`, `alias` (also
+  given values through) and `x'range` / `x'reverse_range` work as in VHDL.
+- **Packages.** `package p is ... end package;` with its `package body`, and
+  `use work.p.all;` before an entity: types, subtypes, constants, functions
+  and procedures shared by every entity that uses it (a package may use
+  another).
+- **Tri-state.** `'Z'` as the whole value given to a signal (`y <= x when oe
+  = '1' else (others => 'Z');`, a `'Z'` arm of `with ... select`, a process
+  that gives `'Z'` on some paths, a register given `'Z'`) is a `tri()`.
+  Several statements or chips driving one signal make it a Wire `bus`, and
+  an `inout` port of a chip is a pin each way (`data_in`, what the bus
+  outside has, and `data`, what the chip drives on it), so chips share a
+  data bus as on a board. At the top an `inout` port is a bus the page
+  drives too: the inputs `data_in` and `data_oe` (the outside world drives
+  it while `data_oe` is 1) and the output `data`, the bus. Two drivers at
+  once are a conflict: Wire shows the bits as unknown, VHDL as `X`.
 - **Chips from chips.** Every entity but the top one becomes a chip (a Wire
   component), and `port map` (named or by position, `entity work.x` or a
-  component) places it, so a full adder can be built from half adders and an
+  component, a port whole or in parts: `x(3 downto 0) => a, x(7 downto 4) =>
+  b`, a record port whole or field by field) places it, so a full adder can
+  be built from half adders and an
   adder from full adders, as deep as you like. Click a chip on the page to go
   inside. The top entity is the one no other entity uses. A `generic map`
   with other values makes a copy of the chip for them (`ripple_n8`), and
@@ -567,10 +585,14 @@ circuit from Wire to VHDL and back:
   comparators.
 - **Processes.** A clocked process (`if rising_edge(clk) then`, or with an
   asynchronous reset first: `if reset = '1' then ... elsif rising_edge(clk)
-  then`) becomes flip-flops, with an enable where a value is only sometimes
-  given; a process of logic (every signal given a value on every path)
-  becomes gates. Inside: `if`/`elsif`/`else`, `case`, `for` loops with
-  `exit`, variables and `null`. An input used as a clock becomes a Wire
+  then`, or `wait until rising_edge(clk);` first or last) becomes
+  flip-flops, with an enable where a value is only sometimes given; a
+  process of logic (every signal given a value on every path) becomes gates.
+  A process may have its clock edge beside logic and variables (`process
+  (all)`), or several edges of one clock: what is given a value on the edge
+  is a register, the rest is logic. Inside: `if`/`elsif`/`else`, `case`
+  (choices can be ranges, `when 0 to 3`), `for` loops with `exit`, variables
+  (arrays too) and `null`. An input used as a clock becomes a Wire
   `clock`, with Run and Step on the page. A big process (a dozen parts or
   more) next to other processes or chips is drawn as a **chip of its own**,
   named after its label (or `process_42`, its line), with the signals it
@@ -579,45 +601,58 @@ circuit from Wire to VHDL and back:
   circuit around a big process stays readable. Open the chip for its logic.
 - **Rams.** An array signal written in one clocked process at one address
   (`if we = '1' then mem(to_integer(a)) <= d; end if;`) and read only at that
-  address becomes a ram part, not a register per element. It may be written
+  address becomes a ram part, not a register per element. The process can
+  do more beside it (a registered read, `dout <= mem(to_integer(a))`, as
+  block-ram templates have it; counters, other arrays, a reset of those). It may be written
   a byte at a time, with each write its own ram part: `mem(i)(7 downto 0) <=
   ...` under `if be(0) = '1'`, inside an `if we = '1'` as deep as you like, as
   long as the writes give every bit of a word once. One process can write
   several rams, and a read can be part of a longer expression
   (`mem3(i) & mem2(i) & mem1(i) & mem0(i)`).
 - **Types:** enumerations (`type state is (idle, run, done)`, for state
-  machines, coded in binary) and arrays (`type regs is array (0 to 3) of
-  std_logic_vector(7 downto 0)`): a constant array read with a signal is a
-  rom, a signal array is a register per element.
-- **Functions** with `return` anywhere but in a loop, put in place where they
-  are called.
+  machines, coded in binary), arrays (`type regs is array (0 to 3) of
+  std_logic_vector(7 downto 0)`, with two indexes `array (0 to 3, 0 to 7)`,
+  arrays of arrays `g(i)(j)`, and without a range, `array (natural range
+  <>)`): a constant array read with a signal is a rom, a signal array is a
+  register per element, picked by a mux (a mux of muxes past 32); records
+  (`r.a`, `r.f.z`, whole records given field by field,
+  aggregates `(a => '0', others => '1')`), a signal per field.
+- **Functions and procedures**, put in place where they are called:
+  overloaded by type, with defaults and named arguments, arrays in and out,
+  `return` anywhere (in loops too), calling themselves (stopping on a
+  constant, like `clog2(n)`); a procedure's `out` and `inout` parameters
+  (variables or signals) give their values back, and a procedure can be
+  called on its own as a statement.
 - **Expressions:** `and or xor nand nor xnor not`, `= /= < <= > >=`, `+ - *`
-  (with `ieee.numeric_std`, or `std_logic_unsigned`), `&`, bits and slices
+  (with `ieee.numeric_std`, or `std_logic_unsigned`), `abs`, `&`, bits and slices
   (also picked by a signal: `x(to_integer(i))`, on either side of `<=`),
   aggregates like `(others => '0')`, `unsigned() signed()
   std_logic_vector() to_unsigned() to_signed() to_integer() resize()`, and
-  shifts (`shift_left`, `shift_right`, `sll`, `srl`, `sra`, `rol`, `ror`).
+  shifts (`shift_left`, `shift_right`, `sll`, `srl`, `sra`, `rol`, `ror`,
+  by a constant or a signal of any width).
 - **Multiplication** gives the whole product, as wide as both sides
   together, as numeric_std does: `signed(a) * signed(b)` of two 32-bit values
   is 64 bits, one `mul` part. Operands widened by a bit, as RISC-V cores
   write MULHSU (`signed(a(31) & a) * signed('0' & b)`), are still one part;
-  wider operands (up to 64 bits) are multiplied 32 bits at a time and added
-  up. `/`, `mod` and `rem` work on constant integers only (Vivado too only
-  divides by constants).
-- **Values wider than 32 bits** (up to 128) work in signals and variables,
-  slices, `&`, `resize`, the conversions, logic, comparisons, `+ - *`,
-  shifts by a constant, `when ... else`, `with ... select` and processes, so
-  `variable p : signed(65 downto 0)` and a 64-bit multiply-accumulate
-  register read as they are. A Wire wire has up to 32 bits, so such a signal
-  is a wire per 32 bits on the page: `prod(63 downto 0)` is `prod_31_0` and
-  `prod_63_32`. Ports are up to 32 bits.
+  wider operands (up to 128 bits) are multiplied 32 bits at a time and added
+  up. Integer signals multiply too. `/`, `mod` and `rem` by a power of 2 are
+  shifts and bits; by anything else (signed or not, up to 32 bits) a divider,
+  a subtractor per bit. `**` works for `2 ** n` and `x ** k` (a constant `k`).
+- **Values wider than 32 bits** (up to 256) work in ports, signals and
+  variables, slices, `&`, `resize`, the conversions, logic, comparisons,
+  `+ - *`, shifts, bits picked by a signal, `when ... else`, `with ... select`
+  and processes, so `variable p : signed(65 downto 0)` and a 64-bit
+  multiply-accumulate register read as they are. A Wire wire has up to 32
+  bits, so such a signal (or port) is a wire per 32 bits on the page:
+  `prod(63 downto 0)` is `prod_31_0` and `prod_63_32`.
 
-Not yet: `'Z'` (tri-state), ports wider than 32 bits, procedures, `wait`
-and connecting part of a port (`x(0) => a`). A file that uses one says so,
-at its line:
+What Wire does not read (`wait for 10 ns` and other simulation-only VHDL,
+part of a value `'Z'` and part not, an `else` after `if rising_edge(clk)`,
+which is not hardware either) is refused at its line, with what to write
+instead:
 
 ```
-bus.vhd:30:44: error: 'Z' (tri-state) is not supported yet
+bus.vhd:30:44: error: "ZZ01" has some bits 'Z' and some not; give the 'Z' bits and the others to slices of the signal in two assignments
 ```
 
 VHDL's own rules are checked too, with the messages in VHDL's words: widths

@@ -25,7 +25,7 @@
  * asserts the same outputs, before and after every rising edge. GHDL runs
  * it; any difference fails. Unknown bits in Wire are don't-cares.
  *
- * In the .wire file:
+ * In the .wire file (or, for --vhdl-in, as -- test: lines in the .vhd):
  *   # vhdl ports: hexin=hex          a Wire name that is a VHDL port of another name
  *   # test: steps=400 reset=0.02 start=0.05     how many steps; how often a
  *                                    1-bit input is 1 (default: flips 30% of steps)
@@ -119,10 +119,13 @@ function vhdlPorts(text, name) {
   return ports;
 }
 
+/* a value as Wire has it: known bits, '-' where unknown (a don't-care) and
+ * 'Z' where nothing drives it (unknown with v = 1), which VHDL must have too */
+const bit = (b, v, k) => (k >>> b) & 1 ? (v >>> b) & 1 : (v >>> b) & 1 ? "Z" : "-";
 const lit = (w, v, k) => {
-  if (!w) return (k & 1) ? `'${v & 1}'` : "'-'";
+  if (!w) return `'${bit(0, v, k)}'`;
   let s = "";
-  for (let b = w - 1; b >= 0; b--) s += (k >>> b) & 1 ? (v >>> b) & 1 : "-";
+  for (let b = w - 1; b >= 0; b--) s += bit(b, v, k);
   return `"${s}"`;
 };
 
@@ -167,7 +170,10 @@ for (const file of files) {
     }
   }
   const sib = file.replace(/\.vhd$/, ".wire");
-  const src = VIN ? (fs.existsSync(sib) ? fs.readFileSync(sib, "utf8") : "") : fs.readFileSync(file, "utf8"), vtext = fs.readFileSync(vfile, "utf8");
+  const vtext = fs.readFileSync(vfile, "utf8");
+  /* reading VHDL, the options can also be in the .vhd itself:  -- test: apart oe_a oe_b */
+  const src = VIN ? (fs.existsSync(sib) ? fs.readFileSync(sib, "utf8") : "") + vtext.replace(/^--\s*test:/gm, "# test:")
+                  : fs.readFileSync(file, "utf8");
   let ports;
   try { ports = vhdlPorts(vtext, top); } catch (e) { fail(`${vfile}: ${e.message}`); continue; }
   /* options from the .wire file */
@@ -195,8 +201,31 @@ for (const file of files) {
   const wouts = top0.filter(x => ["output", "led", "hex", "seg7"].includes(x.n.kind)).map(x => ({ net: x.n.in[0], name: vname(x.n.name), w: D.nets[x.n.in[0]].w }));
   /* every VHDL input must be a Wire input or clock; outputs are compared where both have them */
   let bad = null;
-  const ins = [], outs = [];
+  const ins = [], outs = [], inouts = [];
   for (const p of ports) {
+    if (p.dir === "inout") {
+      /* Wire reads it as p_in and p_oe (the outside drives it with p_in while p_oe
+       * is 1) and shows the bus as the output p: the testbench drives it the same way */
+      const i = wins.find(i => i.name === p.name + "_in"), e = wins.find(i => i.name === p.name + "_oe");
+      const o = wouts.find(o => o.name === p.name);
+      if (!i || !e || !o) { bad = `the VHDL inout ${p.name} is not ${p.name}_in, ${p.name}_oe and ${p.name} in Wire`; break; }
+      ins.push({ ...i, vw: p.w }, { ...e, vw: 0 });
+      outs.push({ ...o, vw: p.w, inout: true });
+      inouts.push(p);
+      continue;
+    }
+    /* wider than 32 bits: Wire has a pin per 32 bits, p_31_0, p_63_32 ...: each a slice of the VHDL port */
+    if (p.w > 32 && !wins.some(i => i.name === p.name) && !wouts.some(o => o.name === p.name)) {
+      const list = p.dir === "in" ? wins : wouts, parts = [];
+      for (let lo = 0; lo < p.w; lo += 32) {
+        const hi = Math.min(lo + 31, p.w - 1), x = list.find(i => i.name === `${p.name}_${hi}_${lo}`);
+        if (!x) { if (p.dir === "in") bad = `the VHDL input ${p.name} is not ${p.name}_${hi}_${lo} ... in the Wire circuit`; break; }
+        parts.push({ ...x, vw: hi - lo + 1, ref: `${p.name}(${hi} downto ${lo})`, port: p.name, pw: p.w });
+      }
+      if (bad) break;
+      if (parts.length * 32 >= p.w) (p.dir === "in" ? ins : outs).push(...parts);
+      continue;
+    }
     if (p.dir === "in") {
       const c = clocks.find(c => c.name === p.name);
       const i = wins.find(i => i.name === p.name);
@@ -226,8 +255,9 @@ for (const file of files) {
   const check = (when, step) => {
     for (const o of outs) {
       const v = sim.v(o.net), k = sim.k(o.net);
-      if (!k) continue;
-      body.push(`    assert std_match(${o.name}, ${lit(o.vw, v, k)}) report "step ${step} ${when}: ${o.name} is " & to_string(${o.name}) & ", Wire says ${lit(o.vw, v, k).replace(/"/g, "")}" severity error;`);
+      if (!k && !(v & mask(o.w))) continue;
+      const ref = o.ref || o.name;
+      body.push(`    assert wmatch(${ref}, ${lit(o.vw, v, k)}) report "step ${step} ${when}: ${ref} is " & to_string(${ref}) & ", Wire says ${lit(o.vw, v, k).replace(/"/g, "")}" severity error;`);
     }
   };
   for (let step = 0; step < steps; step++) {
@@ -244,7 +274,7 @@ for (const file of files) {
     for (const i of ins) sim.setState(i.j, val[i.name]);
     if (!sim.simulate()) unstable = true;
     body.push(`    -- step ${step}`);
-    body.push("    " + ins.map(i => `${i.name} <= ${lit(i.vw, val[i.name], mask(i.w))};`).join(" ") + " wait for 1 ns;");
+    body.push("    " + ins.map(i => `${i.ref || i.name} <= ${lit(i.vw, val[i.name], mask(i.w))};`).join(" ") + " wait for 1 ns;");
     check("before the clock", step);
     if (clocks.length) {
       clocks.forEach(c => sim.setState(c.j, 1)); if (!sim.simulate()) unstable = true;
@@ -268,10 +298,30 @@ use ieee.numeric_std.all;
 entity cosim_tb is end cosim_tb;
 architecture sim of cosim_tb is
 ${clocks.map(c => `  signal ${c.name} : std_logic := '0';`).join("\n")}
-${ins.map(i => `  signal ${i.name} : ${sig(i)} := ${i.vw ? "(others => '0')" : "'0'"};`).join("\n")}
-${outs.map(o => `  signal ${o.name} : ${sig(o)};`).join("\n")}
+${ins.filter((i, k) => !i.port || ins.findIndex(j => j.port === i.port) === k).map(i => i.port
+  ? `  signal ${i.port} : std_logic_vector(${i.pw - 1} downto 0) := (others => '0');`
+  : `  signal ${i.name} : ${sig(i)} := ${i.vw ? "(others => '0')" : "'0'"};`).join("\n")}
+${outs.filter((o, k) => !o.port || outs.findIndex(j => j.port === o.port) === k).map(o => o.port
+  ? `  signal ${o.port} : std_logic_vector(${o.pw - 1} downto 0);`
+  : `  signal ${o.name} : ${sig(o)};`).join("\n")}
+  -- std_match, and 'Z' (nothing drives it) must be 'Z'
+  function wmatch(got, want : std_logic) return boolean is
+  begin
+    if want = 'Z' then return got = 'Z'; end if;
+    return std_match(got, want);
+  end function;
+  function wmatch(got, want : std_logic_vector) return boolean is
+    alias g : std_logic_vector(got'length - 1 downto 0) is got;
+    alias w : std_logic_vector(want'length - 1 downto 0) is want;
+  begin
+    for i in g'range loop
+      if not wmatch(g(i), w(i)) then return false; end if;
+    end loop;
+    return true;
+  end function;
 begin
-  dut: entity work.${top} port map(${[...clocks.map(c => c.name), ...ins.map(i => i.name), ...outs.map(o => o.name)].map(n => `${n} => ${n}`).join(", ")});
+  dut: entity work.${top} port map(${[...new Set([...clocks.map(c => c.name), ...ins.filter(i => !inouts.some(p => i.name === p.name + "_in" || i.name === p.name + "_oe")).map(i => i.port || i.name), ...outs.map(o => o.port || o.name)])].map(n => `${n} => ${n}`).join(", ")});
+${inouts.map(p => `  ${p.name} <= ${p.name}_in when ${p.name}_oe = '1' else ${p.w ? "(others => 'Z')" : "'Z'"};`).join("\n")}
   process
   begin
 ${body.join("\n")}

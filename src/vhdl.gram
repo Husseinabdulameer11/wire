@@ -4,7 +4,14 @@
 # <=); the translator turns them into registers and logic.
 
 design    <- unit* ;
-unit      <^ library / use / entity / arch ;
+unit      <^ library / use / entity / arch / pkgbody / package ;
+
+# package p is <declarations> end package;  package body p is <functions> end package body;
+# (use work.p.all; before an entity makes them visible in it)
+package   <- ~PACKAGE ident ~IS pkdecl* ~END ~PACKAGE? ident? ~';' ;
+pkgbody     <- ~PACKAGE ~BODY ident ~IS pkdecl* ~END ~PACKAGE? ~BODY? ident? ~';' ;
+pkdecl    <^ signal / constant / typedecl / subtype / alias / compdecl / funcdecl / procdecl / subspec
+             / attrdecl / attrspec / other ;
 
 library   <- ~LIBRARY ident (~',' ident)* ~';' ;
 use       <- ~USE selname (~',' selname)* ~';' ;
@@ -17,12 +24,15 @@ ports     <- ~PORT ~'(' pdecl (~';' pdecl)* ~';'? ~')' ~';' ;
 pdecl     <- idlist ~':' mode? type (~':=' expr)? ;
 idlist    <- ident (~',' ident)* ;
 mode      <= ('inout'i / 'in'i / 'out'i / 'buffer'i / 'linkage'i) ![A-Za-z0-9_] ;
-type      <- ident (~'(' drange ~')' / ~RANGE drange)? ;
+type      <- ident (~'(' (drange / rangeof) (~',' (drange / rangeof))* ~')' / ~RANGE (drange / rangeof))? ;
+# x'range, x'reverse_range: the range of x
+rangeof   <- name ;
 drange    <- expr dir expr ;
 dir       <= ('downto'i / 'to'i) ![A-Za-z0-9_] ;
 
 arch      <- ~ARCHITECTURE ident ~OF ident ~IS adecl* ~BEGIN cstmt* ~END ~ARCHITECTURE? ident? ~';' ;
-adecl     <^ signal / constant / typedecl / compdecl / funcdecl / attrdecl / attrspec / other ;
+adecl     <^ signal / constant / typedecl / subtype / alias / compdecl / funcdecl / procdecl / subspec
+             / attrdecl / attrspec / other ;
 # attribute wire_screen : integer;   attribute wire_screen of pixels : signal is 16;
 # Wire draws an array written like a ram as a screen when it has wire_screen
 # (its width); other attributes (keep, mark_debug...) are for the tools
@@ -32,13 +42,30 @@ attrclass <= [A-Za-z]+ ;
 signal    <- ~SIGNAL idlist ~':' type (~':=' expr)? ~';' ;
 constant  <- ~CONSTANT idlist ~':' type ~':=' expr ~';' ;
 # type state is (idle, run);   type mem is array (0 to 15) of std_logic_vector(7 downto 0);
-typedecl  <- ~TYPE ident ~IS (enumdef / arraydef) ~';' ;
+typedecl  <- ~TYPE ident ~IS (enumdef / arraydef / recdef / rangedef) ~';' ;
 enumdef   <- ~'(' ident (~',' ident)* ~')' ;
-arraydef  <- ~ARRAY ~'(' drange ~')' ~OF type ;
+# array (0 to 15) of ..., array (0 to 3, 0 to 7) of ..., array (natural range <>) of ...
+arraydef  <- ~ARRAY ~'(' adim (~',' adim)* ~')' ~OF type ;
+adim      <^ unbound / drange / rangeof ;
+unbound   <- ident ~RANGE ~'<>' ;
+# type regs is record a : std_logic; b : unsigned(3 downto 0); end record;
+recdef    <- ~RECORD recel+ ~END ~RECORD ident? ;
+recel     <- idlist ~':' type ~';' ;
+# type small is range 0 to 15;
+rangedef  <- ~RANGE drange ;
+# subtype byte is std_logic_vector(7 downto 0);
+subtype   <- ~SUBTYPE ident ~IS type ~';' ;
+# alias op : std_logic_vector(3 downto 0) is ir(7 downto 4);
+alias     <- ~ALIAS ident (~':' type)? ~IS expr ~';' ;
 # function x8(e : std_logic) return std_logic_vector is begin return (7 downto 0 => e); end function;
 funcdecl  <- ~(PURE / IMPURE)? ~FUNCTION ident fparams? ~RETURN type ~IS pdecls ~BEGIN sstmt* ~END ~FUNCTION? ident? ~';' ;
-fparams   <- ~'(' fparam (~';' fparam)* ~')' ;
-fparam    <- ~(CONSTANT / SIGNAL)? idlist ~':' ~IN? type ;
+fparams   <- ~'(' fparam (~';' fparam)* ~';'? ~')' ;
+fparam    <- fclass? idlist ~':' mode? type (~':=' expr)? ;
+fclass    <= ('constant'i / 'signal'i / 'variable'i) ![A-Za-z0-9_] ;
+# procedure add(a, b : in unsigned; signal s : out unsigned) is ... begin ... end procedure;
+procdecl  <- ~PROCEDURE ident fparams? ~IS pdecls ~BEGIN sstmt* ~END ~PROCEDURE? ident? ~';' ;
+# function f(x : t) return t;  in a package: its body comes in the package body
+subspec   <- (~(PURE / IMPURE)? ~FUNCTION ident fparams? ~RETURN type / ~PROCEDURE ident fparams?) ~';' ;
 compdecl  <- ~COMPONENT ident ~IS? generics? ports? ~END ~COMPONENT ident? ~';' ;
 # type, subtype, alias, attribute, function...: recognised, then refused
 other     <- subprog / otherkw (!';' .)* ~';' ;
@@ -50,16 +77,19 @@ subprog   <= ('pure'i [ \t\r\n]+ / 'impure'i [ \t\r\n]+)? ('function'i / 'proced
 endsub    <= 'end'i ![A-Za-z0-9_] [ \t\r\n]* !(('if'i / 'loop'i / 'case'i / 'record'i / 'units'i) ![A-Za-z0-9_]) ;
 
 # ---- concurrent statements ---------------------------------------------
-cstmt     <^ process / generate / inst / selassign / condassign / assert ;
+cstmt     <^ process / generate / inst / selassign / condassign / assert / cpcall ;
+# a procedure called outside a process: a process of its own
+cpcall    <- label? name ~';' ;
 label     <- ident ~':' !'=' ;
 process   <- label? ~POSTPONED? PROCESS sens? ~IS? pdecls ~BEGIN sstmt* ~END ~POSTPONED? ~PROCESS ident? ~';' ;
 sens      <- ~'(' (ALL / name (~',' name)*) ~')' ;
-pdecls    <- (variable / constant / typedecl / funcdecl / other)* ;
+pdecls    <- (variable / constant / typedecl / subtype / alias / funcdecl / procdecl / other)* ;
 variable  <- ~SHARED? ~VARIABLE idlist ~':' type (~':=' expr)? ~';' ;
 
 # ---- sequential statements (inside a process) --------------------------
-sstmt     <^ ifst / casest / loopst / exitst / nullst / waitst / retst / vassign / sassign / assert ;
-retst     <- ~RETURN expr ~';' ;
+sstmt     <^ ifst / casest / loopst / exitst / nullst / waitst / retst / vassign / sassign / assert / pcall ;
+retst     <- ~RETURN expr? ~';' ;
+pcall     <- name ~';' ;
 sassign   <- target ~'<=' wave ~';' ;
 vassign   <- target ~':=' expr ~';' ;
 ifst      <- label? ~IF expr ~THEN sbody elsifp* elsep? ~END ~IF ident? ~';' ;
@@ -68,13 +98,14 @@ elsep     <- ~ELSE sbody ;
 sbody     <- sstmt* ;
 casest    <- label? ~CASE expr ~IS casew+ ~END ~CASE ident? ~';' ;
 casew     <- ~WHEN choices ~'=>' sbody ;
-loopst    <- label? ~FOR ident ~IN drange ~LOOP sbody ~END ~LOOP ident? ~';' ;
+loopst    <- label? ~FOR ident ~IN (drange / rangeof) ~LOOP sbody ~END ~LOOP ident? ~';' ;
 exitst    <- EXIT ident? (~WHEN expr)? ~';' ;
 nullst    <- NULL ~';' ;
-waitst    <- WAIT (!';' .)* ~';' ;
+# wait until rising_edge(clk);  (a clocked process without a sensitivity list); other waits are for simulation
+waitst    <- WAIT (~UNTIL expr ~';' / (!';' .)* ~';') ;
 # for i in 0 to 7 generate ... end generate;   if N > 4 generate ... end generate;
 generate  <- label (forgen / ifgen) ;
-forgen    <- ~FOR ident ~IN drange ~GENERATE gdecls? cstmt* ~END ~GENERATE ident? ~';' ;
+forgen    <- ~FOR ident ~IN (drange / rangeof) ~GENERATE gdecls? cstmt* ~END ~GENERATE ident? ~';' ;
 ifgen     <- ~IF expr ~GENERATE gdecls? cstmt* ~END ~GENERATE ident? ~';' ;
 gdecls    <- adecl* ~BEGIN ;
 assert    <- label? ASSERT (!';' .)* ~';' ;
@@ -96,7 +127,7 @@ choice    <^ OTHERS / drange / expr ;
 wave      <^ expr after? ;
 after     <- ~AFTER (!(WHEN / ELSE / ';' / ',') .)* ;
 
-target    <- ident (~'(' (drange / expr) ~')')* ;
+target    <- ident (~'(' (drange / expr) (~',' expr)* ~')' / field)* ;
 
 # ---- expressions, loosest first (VHDL's own order) ---------------------
 expr      <^ relation (logop relation)* ;
@@ -116,7 +147,8 @@ absx      <- ~ABS primary ;
 primary   <^ ~'(' expr ~')' / aggregate / chr / bitstr / str / number / name ;
 aggregate <- ~'(' agel (~',' agel)* ~')' ;
 agel      <- (choices ~'=>')? expr ;
-name      <^ ident (args / qual / attr)* ;
+name      <^ ident (args / qual / attr / field)* ;
+field     <- ~'.' ident ;   # r.a: a field of a record
 qual      <- ~'\'' (~'(' expr ~')' / aggregate) ;      # unsigned'("1001"), unsigned'(0 => x)
 args      <- ~'(' arg (~',' arg)* ~')' ;
 arg       <^ drange / named / expr ;
@@ -179,6 +211,13 @@ FUNCTION  <= 'function'i ![A-Za-z0-9_] ;
 RETURN    <= 'return'i ![A-Za-z0-9_] ;
 PURE      <= 'pure'i ![A-Za-z0-9_] ;
 IMPURE    <= 'impure'i ![A-Za-z0-9_] ;
+UNTIL     <= 'until'i ![A-Za-z0-9_] ;
+PACKAGE   <= 'package'i ![A-Za-z0-9_] ;
+BODY      <= 'body'i ![A-Za-z0-9_] ;
+PROCEDURE <= 'procedure'i ![A-Za-z0-9_] ;
+RECORD    <= 'record'i ![A-Za-z0-9_] ;
+SUBTYPE   <= 'subtype'i ![A-Za-z0-9_] ;
+ALIAS     <= 'alias'i ![A-Za-z0-9_] ;
 
 keyword   <= ('abs'i / 'access'i / 'after'i / 'alias'i / 'all'i / 'and'i / 'architecture'i
              / 'array'i / 'assert'i / 'attribute'i / 'begin'i / 'block'i / 'body'i
