@@ -409,7 +409,8 @@ $("see").onclick = async () => {
   try {
     const c = await wire(["-o", "/out.html", "answer.vhd"], ta.value);
     if (c.code !== 0) { showCompileErrors(c.err); return; }
-    const html = c.read("/out.html");
+    /* an exercise has no book */
+    const html = c.read("/out.html").replace("<head>", () => "<head><script>window.WIRE_NO_BOOK=true<\/script>");
     if (frameUrl) URL.revokeObjectURL(frameUrl);
     frameUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     $("ovframe").src = frameUrl;

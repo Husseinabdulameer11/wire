@@ -834,6 +834,8 @@ function show(html) {
                    sel: sel.filter(n => sh.parts.some(p => p.name === n)) };
     html = html.replace("<head>", () => "<head><script>window.WIRE_EDIT=" + JSON.stringify(edit).replace(/</g, "\\u003c") + "<\/script>");
   }
+  /* a lesson has no book (the playground and the examples do) */
+  if (LEARN) html = html.replace("<head>", () => "<head><script>window.WIRE_NO_BOOK=true<\/script>");
   /* in Write, the chip you were looking at stays on screen when the code is compiled again */
   if (mode === "write") try { const w = frames[front].contentWindow; if (w.wireViewComp && !switchedTo) writeAt = w.wireViewComp(); } catch (e) {}
   switchedTo = false;
@@ -846,8 +848,6 @@ function show(html) {
     frontUrl = url;
     front = 1 - front;
     $("loading").hidden = true;
-    /* the page's Source is the drawing's Wire: not shown without Wire */
-    if (!DEV && mode === "draw") try { frames[front].contentWindow.document.getElementById("srcbtn").hidden = true; } catch (e) {}
     readPageCpu();
     if (mode === "write") { try { if (writeAt) frames[front].contentWindow.wireGoComp(writeAt); } catch (e) {} showWriteChips(); }
     if (window.wireLearn) window.wireLearn.shown();

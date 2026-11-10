@@ -107,8 +107,8 @@ Nothing is installed and nothing leaves the browser.
   Wire reads it, and as a drawing when it has none.
 - **Wire, for developers:** the playground offers Draw and VHDL only. Open
   `playground.html?dev=1` once and that browser gets **Write** instead of
-  VHDL, with a menu for Wire or VHDL, **Save .wire**, the Wire a drawing
-  makes and the page's Source; `?dev=0` turns it off again. Wire runs
+  VHDL, with a menu for Wire or VHDL, **Save .wire** and the Wire a drawing
+  makes; `?dev=0` turns it off again. Wire runs
   underneath either way (the drawing is Wire, and VHDL is read into Wire).
 
 Draw, Wire and VHDL are three views of **one design**: the circuit and
@@ -166,7 +166,9 @@ exactly like the circuit it came from.
 - **Book** shows a pdf beside the circuit, and turns to the pages about the
   part you select or the chip you open (see `books/README.md`). A page can
   carry several books (pick one at the top of the panel). Build with
-  `wire --book notes.pdf --topics notes.topics`, or use **Open PDF**.
+  `wire --book notes.pdf --topics notes.topics`, or use **Open PDF**. The
+  example pages and the playground have it; a lesson and an exercise do not
+  (the page that shows one sets `window.WIRE_NO_BOOK`).
 - **Truth table** lists every input combination for circuits without
   memory (up to 12 input bits); click a row to set the inputs to it.
   Select a part (a gate, a mux, an adder...) and the truth table is for
@@ -188,8 +190,8 @@ exactly like the circuit it came from.
   while the scope is open, so a fast circuit runs a little slower.
 - **Screens** show their pixels as the circuit writes them; click one to see
   them as memory words (see [Screens](#screens)).
-- **Source** shows the `.wire` file. Click a part to find its line, or a
-  line to find its part.
+- **There is no Source panel:** a page shows a circuit and its VHDL (the
+  VHDL button, with Copy), not the Wire it was written in.
 - **Chips** (your own components) open when you click them; see below.
 - **Built-in parts open too.** Double-click a counter, an adder, a mux, a
   decoder, an encoder, a demux, a comparator or a flip-flop (or click the
@@ -554,8 +556,8 @@ wire --to-wire alu4.vhd        # prints the Wire it was turned into
 ```
 
 It turns the VHDL into Wire and goes on from there, so the checks, the
-page, the truth table and the VHDL panel all work as usual (the Source and
-VHDL panels show your VHDL, and clicking a part finds its line in it). It
+page, the truth table and the VHDL panel all work as usual (the VHDL panel
+shows your VHDL, and clicking a part finds its entity in it). It
 reads the VHDL Vivado turns into hardware, the kind written in a digital
 design course (every example of Chu's *FPGA Prototyping by VHDL Examples*
 reads), and the VHDL Wire writes itself, so the playground can switch a
@@ -922,7 +924,7 @@ The site and the playground carry the add-on with the example.
 A component shows as a chip with its name and ports. Click it to go inside:
 you see its gates live, with dashed pins for its inputs and outputs, and a
 path at the top (Circuit › s add4 › f2 full_adder) to climb back out; Escape
-also goes up a level. Source shows the file the component is written in.
+also goes up a level.
 Moving parts inside one chip moves them in every use of that component.
 
 ## Errors

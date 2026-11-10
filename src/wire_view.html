@@ -137,13 +137,6 @@ select { font: inherit; color: var(--ink); background: transparent; border: 0; b
 .drawer .scroll { overflow: auto; flex: 1; }
 .drawer .note { padding: 10px 14px; color: var(--ink-soft); max-width: 60ch; }
 
-#src { margin: 0; padding: 8px 0; font: 13px/1.55 "IBM Plex Mono", ui-monospace, monospace; }
-#src .ln { display: flex; padding: 0 14px 0 0; cursor: pointer; }
-#src .ln:hover { background: var(--hi-soft); }
-#src .ln.sel { background: var(--hi-soft); box-shadow: inset 3px 0 var(--hi); }
-#src .no { width: 3.2em; text-align: right; padding-right: 1em; color: var(--ink-soft); flex: none; user-select: none; }
-#src .tx { white-space: pre; }
-#src .cm { color: var(--ink-soft); }
 #vhdl { margin: 0; padding: 8px 0; font: 12.5px/1.55 "IBM Plex Mono", ui-monospace, monospace; }
 #vhdl .ln { display: flex; padding: 0 14px 0 0; }
 #vhdl .ln.sel { background: var(--hi-soft); box-shadow: inset 3px 0 var(--hi); }
@@ -304,7 +297,6 @@ table.tt td.one { color: var(--on); font-weight: 500; }
     <button id="reset" title="Inputs to 0, flip-flops cleared">Reset</button>
     <button id="tablebtn" title="Truth table">Truth table</button>
     <button id="scopebtn" title="Scope: the wires you probe, over time">Scope</button>
-    <button id="srcbtn" title="Show the .wire source">Source</button>
     <button id="membtn" title="Contents of the roms and rams" hidden>Memory</button>
     <button id="vhdlbtn" title="The VHDL for this example" hidden>VHDL</button>
     <button id="bookbtn" title="Read the book beside the circuit; the pages follow what you select">Book</button>
@@ -386,10 +378,6 @@ table.tt td.one { color: var(--on); font-weight: 500; }
     <span class="info" id="scopeinfo"></span>
   </div>
   <div class="scroll"><div id="scoperows"></div><p id="scopeempty" hidden>Click a wire on the circuit to probe it, or pick one above. The scope records every clock edge and every input you change while it is open.</p></div>
-</section>
-<section class="drawer" id="srcdrawer" aria-label="Source">
-  <header><h2 id="srctitle">Source</h2><button data-close="srcdrawer">Close</button></header>
-  <div class="scroll"><div id="src"></div></div>
 </section>
 
 <script>
@@ -1483,7 +1471,7 @@ function setPicks(list, quiet) {
   list.forEach(n => { if (n && n.name) { picked.add(n); n.el.classList.add("selected"); } });
   pickWire(null);
   if (selected && !picked.has(selected)) { selected.el.classList.remove("selected"); selected = null; }
-  if (picked.size === 1) { selected = [...picked][0]; markSource(selected.line); }
+  if (picked.size === 1) selected = [...picked][0];
   if (!quiet && editing()) {
     hostCall("selectedMany", [...picked].map(n => n.name));
     hostCall("selected", picked.size === 1 ? [...picked][0].name : null);
@@ -1743,7 +1731,6 @@ function select(n) {
   selected = n;
   if (editing()) hostCall("selected", n && n.name ? n.name : null);
   if (n) n.el.classList.add("selected");
-  markSource(n ? n.line : 0);
   if (tableOpen) { buildTable(); markRow(); }
   markVhdl();
   bookFollow();
@@ -2046,7 +2033,7 @@ function showTable(c, title, comp) {
 }
 const addonDrawers = [];   /* drawers an add-on made (wirePage.addDrawer) */
 function openDrawer(id) {
-  ["tabledrawer", "srcdrawer", "memdrawer", "vhdldrawer", "scopedrawer", ...addonDrawers].forEach(d => $(d).classList.toggle("open", d === id));
+  ["tabledrawer", "memdrawer", "vhdldrawer", "scopedrawer", ...addonDrawers].forEach(d => $(d).classList.toggle("open", d === id));
   addonDrawers.forEach(d => { const b = document.querySelector(`[data-drawer="${d}"]`); if (b) b.setAttribute("aria-pressed", d === id); });
   showScope(id === "scopedrawer");
   $("scopebtn").setAttribute("aria-pressed", id === "scopedrawer");
@@ -2057,13 +2044,11 @@ function openDrawer(id) {
   $("vhdlbtn").setAttribute("aria-pressed", vhdlOpen);
   if (vhdlOpen && !wasVhdl) buildVhdl();
   $("tablebtn").setAttribute("aria-pressed", tableOpen);
-  $("srcbtn").setAttribute("aria-pressed", id === "srcdrawer");
   $("membtn").setAttribute("aria-pressed", memOpen);
   requestAnimationFrame(fit);
 }
 $("tableall").onclick = () => select(null);
 $("tablebtn").onclick = () => { if (tableOpen) return openDrawer(null); buildTable(); openDrawer("tabledrawer"); markRow(); };
-$("srcbtn").onclick = () => openDrawer($("srcdrawer").classList.contains("open") ? null : "srcdrawer");
 
 /* ================================================================ memory */
 /* 256 words at a time, 16 to a row; the word being read is lit. Click a
@@ -2162,37 +2147,8 @@ $("memgo").onkeydown = e => {
 };
 document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => openDrawer(null));
 
-/* ================================================================ source */
-let srcFile = -1;
 const baseName = f => f.replace(/^.*[\\/]/, "");
 function viewFile(id) { return id === 0 ? 0 : D.insts[id].defFile; }
-function buildSource(fi) {
-  if (fi === srcFile) return;
-  srcFile = fi;
-  const box = $("src"), f = (D.files || [{ name: D.file, source: D.source }])[fi];
-  box.textContent = "";
-  f.source.replace(/\n$/, "").split("\n").forEach((line, i) => {
-    const row = document.createElement("div"); row.className = "ln"; row.dataset.line = i + 1;
-    const no = document.createElement("span"); no.className = "no"; no.textContent = i + 1;
-    const tx = document.createElement("span"); tx.className = "tx";
-    const c = line.search(/#|\/\//);
-    if (c >= 0) { tx.append(line.slice(0, c)); const s = document.createElement("span"); s.className = "cm"; s.textContent = line.slice(c); tx.append(s); }
-    else tx.textContent = line || " ";
-    row.append(no, tx);
-    row.onclick = () => {
-      const hit = V.items.filter(n => n.line === i + 1 && (n.file || 0) === srcFile);
-      if (hit.length) select(hit.find(n => n.name) || hit[0]);
-      markSource(i + 1);
-    };
-    box.append(row);
-  });
-  $("srctitle").textContent = baseName(f.name);
-}
-function markSource(line) {
-  document.querySelectorAll("#src .ln").forEach(r => r.classList.toggle("sel", +r.dataset.line === line));
-  const r = document.querySelector(`#src .ln[data-line="${line}"]`);
-  if (r && $("srcdrawer").classList.contains("open")) r.scrollIntoView({ block: "nearest" });
-}
 
 /* ============================================================ navigation */
 const instLabel = id => { const i = D.insts[id]; return i.name || i.comp; };
@@ -2282,8 +2238,6 @@ function openView(id) {
     ab.append(b, ins.about + ". It runs beside the part, on the same inputs. Double-click a part here to go further in.");
   }
   $("tb-view").textContent = id === 0 ? "the circuit" : `${instLabel(id)}${D.insts[id].name ? " (" + D.insts[id].comp + ")" : ""}, ${baseName((D.files || [])[viewFile(id)] ? D.files[viewFile(id)].name : D.file)}`;
-  buildSource(viewFile(id));
-  markSource(id === 0 ? 0 : D.insts[id].defLine);
   if (tableOpen) { buildTable(); markRow(); }
   markVhdl();
   bookFollow();
@@ -2527,7 +2481,11 @@ async function bookFollow(force) {
   const first = found.find(t => t.book === bk.cur) || found[0];
   if (first) goBook(first.book, first.first); else goBook(bk.cur);
 }
+/* A lesson or an exercise has no book: the page that shows one says
+ * window.WIRE_NO_BOOK, and the Book button is gone. */
+if (window.WIRE_NO_BOOK) $("bookbtn").hidden = true;
 function showBook(on) {
+  if (window.WIRE_NO_BOOK) on = false;
   $("book").hidden = !on;
   document.body.classList.toggle("book-open", on);
   $("bookbtn").setAttribute("aria-pressed", on);
