@@ -151,6 +151,7 @@ static char **vlabs;       /* instance -> its label in the entity being written 
 static int *vreaders;      /* net -> parts reading it in this entity */
 static int *vdriver;       /* net -> the part writing it (-1: none here) */
 static char *vsignal;      /* net -> 1: declare it as a signal */
+static char *vksig;        /* net -> 1: a constant a process reads, so a signal of its own (not a literal) */
 static char *vportnet;     /* net -> 1: it is a port of this entity */
 static unsigned long *vinitv; /* net -> value it starts with (loops, flip-flops) */
 static char *vhasinit;
@@ -185,7 +186,7 @@ static const char *vlit(unsigned long v, int w, char *buf)
     return buf;
 }
 
-static int vis_const(int net) { return vdriver[net] >= 0 && nodes[vdriver[net]].kind == K_CONST; }
+static int vis_const(int net) { return vdriver[net] >= 0 && nodes[vdriver[net]].kind == K_CONST && !vksig[net]; }
 
 static const char *N(int net) { return vn[find(net)] ? vn[find(net)] : "open"; }
 
@@ -651,7 +652,10 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
     const char *op = NULL;
 
     switch (n->kind) {
-    case K_CONST: case K_INPUT: case K_BUTTON: case K_CLOCK: case K_KEYPAD:
+    case K_CONST:
+        if (vksig[o]) { char lit[80]; vbf(b, "  %s <= %s;\n", N(o), vlit(n->value, w, lit)); }   /* a constant as a signal */
+        return;
+    case K_INPUT: case K_BUTTON: case K_CLOCK: case K_KEYPAD:
         return;                                 /* literals and ports */
     case K_AND: op = "and"; goto gate;
     case K_NAND: op = "and"; goto gate;
@@ -961,7 +965,7 @@ static void vscope_reset(void)
     int i;
     for (i = 0; i < nnets; i++) {
         if (vn[i]) free(vn[i]);
-        vn[i] = NULL; vreaders[i] = 0; vdriver[i] = -1; vsignal[i] = 0; vportnet[i] = 0;
+        vn[i] = NULL; vreaders[i] = 0; vdriver[i] = -1; vsignal[i] = 0; vportnet[i] = 0; vksig[i] = 0;
     }
     for (i = 0; i < nvtaken; i++) free(vtaken[i]);
     nvtaken = 0;
@@ -1029,12 +1033,28 @@ static void vemit_entity(int inst, const char *ename)
         np++;
     }
 
-    /* constants are literals */
+    /* constants are literals; but a part written as a process (an encoder, an
+     * adder, a flip-flop ...) names what it reads in its sensitivity list and
+     * indexes it, which a literal cannot be: a constant it reads is a signal
+     * (an unwired encoder in the playground is encoder(0b0000)) */
     for (j = 0; j < nnodes; j++) {
         Node *n = &nodes[j];
         char lit[80];
+        int o, r;
         if (n->dead || n->inst != inst || n->kind != K_CONST) continue;
-        vn[find(n->out[0])] = vdup(vlit(n->value, net_w(n->out[0]), lit));
+        o = find(n->out[0]);
+        for (r = 0; r < nnodes; r++) {
+            const Node *m = &nodes[r];
+            int k;
+            if (m->dead || m->inst != inst) continue;
+            if (!(m->kind == K_DECODER || m->kind == K_ENCODER || m->kind == K_ADD || m->kind == K_MUL || m->kind == K_COMPARE
+                  || (m->kind >= K_DFF && m->kind <= K_COUNTER) || m->kind == K_ROM || m->kind == K_RAM || m->kind == K_DEMUX))
+                continue;
+            for (k = 0; k < m->nin; k++) if (find(m->in[k]) == o) break;
+            if (k < m->nin) break;
+        }
+        if (r < nnodes) { vksig[o] = 1; continue; }   /* named with the signals below */
+        vn[o] = vdup(vlit(n->value, net_w(n->out[0]), lit));
     }
     /* ports that can stand for a net: inputs always; an output when only it
      * reads the net (VHDL-93 cannot read an out port) */
@@ -1291,6 +1311,7 @@ static char *vhdl_generate(const char *top, const char *fname)
     vdriver = (int *)calloc((size_t)nnets + 1, sizeof *vdriver);
     vsignal = (char *)calloc((size_t)nnets + 1, 1);
     vportnet = (char *)calloc((size_t)nnets + 1, 1);
+    vksig = (char *)calloc((size_t)nnets + 1, 1);
     vinitv = (unsigned long *)calloc((size_t)nnets + 1, sizeof *vinitv);
     vhasinit = (char *)calloc((size_t)nnets + 1, 1);
 

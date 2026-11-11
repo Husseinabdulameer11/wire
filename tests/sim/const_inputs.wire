@@ -1,0 +1,18 @@
+circuit "Parts fed by constants"
+
+# What the playground writes for a part nothing is wired to yet: encoder(0b0000).
+# VHDL Wire writes for these must be VHDL (a constant a process reads is a
+# signal, not a literal in its sensitivity list): tests/vhdl/cosim.js
+input  a[4], b
+clock  clk
+output e[2], ev, d[4], s[4], m[4], q[4], c[4], lt, r[4]
+
+e  = encoder(0b0000)
+ev = encoder(0b0100).valid
+d  = decoder(0b10)
+s  = add(a, 0b0011)
+m  = mul(0b0101, a)
+q  = dff(0b1010, clk, en = b)
+c  = counter(clk, bits = 4, en = 0b1)
+lt = compare(0b0110, a).lt
+r  = rom(0b01, bits = 4, data = "3 9 5 7")
