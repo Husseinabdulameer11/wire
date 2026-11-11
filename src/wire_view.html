@@ -641,8 +641,10 @@ function editPlace(V) {
     const t = V.items[r.node], ip = t.g.ins[r.port];
     n.x = t.x + ip.x - n.g.w;
     n.y = t.y + ip.y - n.g.outs[0].y;
-    /* and a tri-state that never talks, on a bus pin nothing is wired to */
-    if (n.kind === "const" || (n.kind === "tri" && !n.name)) n.hidden = true;
+    /* and a tri-state that never talks, on a bus pin nothing is wired to.
+     * A constant with a name (k1 = 0b001) is a part of the drawing, even
+     * before it has a place (a chip opened for the first time): it is drawn. */
+    if ((n.kind === "const" || n.kind === "tri") && !n.name) n.hidden = true;
   });
 }
 
