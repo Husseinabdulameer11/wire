@@ -182,6 +182,7 @@ typedef struct {
     int bits;                     /* counter */
     int sgn;                      /* mul: 1 a is signed, 2 b is signed */
     const char *opt; int optlen;  /* led colour */
+    int seglow, segrev;           /* seg7: on = 0 (a 0 lights a segment), a = 6 (segment a is bit 6, g bit 0) */
     long hz;                      /* clock, in hundredths */
     int membits, memabits;        /* rom, ram: bits per word, address bits */
     int screenw;                  /* a ram made by screen(): its width in pixels */
@@ -1342,8 +1343,16 @@ static void declare(gram_node *d)
             gram_node *key = o->child;
             if (dk == D_LED && same(key, "color", 5)) continue;
             if (dk == D_CLOCK && same(key, "hz", 2)) continue;
+            if (dk == D_SEG7 && (same(key, "on", 2) || same(key, "a", 1))) {
+                gram_node *v = key->next;
+                int on = same(key, "on", 2), x = v->rule == WIRE_R_number ? number(v) : -1;
+                if (on ? x != 0 && x != 1 : x != 0 && x != 6)
+                    fail(v, on ? "on is 1 (a 1 lights a segment) or 0 (a 0 does, as on most boards)"
+                               : "a is the bit segment a is on: 0 (a is bit 0, g bit 6) or 6 (a is bit 6, g bit 0)");
+                continue;
+            }
             fail(key, "%s has no setting called %.*s%s", dkind_names[dk], TEXT(key),
-                 dk == D_LED ? " (it has color)" : dk == D_CLOCK ? " (it has hz)" : "");
+                 dk == D_LED ? " (it has color)" : dk == D_CLOCK ? " (it has hz)" : dk == D_SEG7 ? " (it has on and a)" : "");
         }
     }
 }
@@ -1504,6 +1513,8 @@ static void write_json(void)
         }
         if (n->kind == K_CLOCK) fprintf(jf, ",\"hz\":%ld.%02ld", n->hz / 100, n->hz % 100);
         if (n->opt) { fputs(",\"color\":", jf); jstr(n->opt, n->optlen); }
+        if (n->kind == K_SEG7 && n->seglow) fputs(",\"on\":0", jf);
+        if (n->kind == K_SEG7 && n->segrev) fputs(",\"a\":6", jf);
         fputc('}', jf);
     }
     fputs("]}", jf);
@@ -2278,6 +2289,13 @@ static void compile_scope(gram_node *first, int top)
         n = new_node(kind, s->decl);
         name_node(n, s);
         if (kind == K_LED) opt_color(n, s->opts);
+        if (kind == K_SEG7) {
+            gram_node *o;
+            for (o = s->opts ? s->opts->child : NULL; o; o = o->next) {
+                if (same(o->child, "on", 2)) n->seglow = number(o->child->next) == 0;
+                if (same(o->child, "a", 1)) n->segrev = number(o->child->next) == 6;
+            }
+        }
         node_in(n, "in", s->net);
         n_out++;
     }

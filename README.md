@@ -259,6 +259,7 @@ clock  clk (hz = 2)       # square wave, 1 Hz unless given
 output y, total[4]        # shows a value; width is inferred if left out
 led    ok, err (color = red)      # err is red; red green blue yellow orange white or #rrggbb
 seg7   disp               # 7 bits: bit 0 = segment a ... bit 6 = g (8 bits adds the dot)
+seg7   sseg[8] (on = 0, a = 6)   # wired like a board: a 0 lights a segment, a is bit 6 ... g bit 0
 hex    digit              # a 7-segment display that shows a 4-bit value as 0..F
 keypad k                  # 16 keys 0..F: k[3:0] is the last key, k[4] is 1 while held
 wire   w[16]              # a named wire, only needed to fix its width
@@ -608,6 +609,13 @@ circuit from Wire to VHDL and back:
   inverse is one NOT gate that every AND shares. A register that resets to
   something other than 0 is a flip-flop with `init` (preset and clear).
   Up to 6 select bits; a bigger table stays a multiplexer.
+- **7-segment displays.** An output of the top entity of 7 bits (or 8 with
+  the dot) called like one (`seg`, `sseg`, `segments`, `disp`, `hex0` ...)
+  is shown as a 7-segment display, not a row of bits. How the board is
+  wired is read from the patterns in the VHDL: its 7- and 8-bit literals
+  are tried lit-by-1 and lit-by-0 (Basys-3), with segment a on bit 0 and on
+  bit 6 (Chu's `sseg`), and the wiring that makes most of them digits is
+  the one the display uses (`seg7 sseg[8] (on = 0, a = 6)`).
 - **Processes.** A clocked process (`if rising_edge(clk) then`, or with an
   asynchronous reset first: `if reset = '1' then ... elsif rising_edge(clk)
   then`, or `wait until rising_edge(clk);` first or last) becomes

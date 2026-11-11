@@ -617,6 +617,9 @@ function cpuText(c) {
 }
 const DECL = { input: "input ", button: "button", clock: "clock ", keypad: "keypad", output: "output", led: "led   ", hex: "hex   ", seg7: "seg7  " };
 const bitsOf = p => (p.bits || 1) > 1 ? `[${p.bits}]` : "";
+/* a 7-segment display wired as a board wires it: lit by 0, segment a on bit 6 */
+const segOpts = p => p.kind !== "seg7" || (p.on !== 0 && p.a !== 6) ? ""
+  : ` (${[p.on === 0 ? "on = 0" : "", p.a === 6 ? "a = 6" : ""].filter(Boolean).join(", ")})`;
 function componentText(m, name) {
   const sh = m.chips[name], { ins, outs } = chipPins(m, name), { body, sinks } = sheetLines(m, sh);
   const pins = l => l.map(([n, w]) => n + (w > 1 ? `[${w}]` : "")).join(", ");
@@ -629,7 +632,7 @@ function circuitText(m, sh, title, chips) {
   for (const c of chips) lines.push(componentText(m, c), "");
   for (const k of Object.keys(DECL)) {
     const ps = sh.parts.filter(p => p.kind === k);
-    if (ps.length) lines.push(`${DECL[k]} ${ps.map(p => p.name + bitsOf(p)).join(", ")}`);
+    if (ps.length) lines.push(`${DECL[k]} ${ps.map(p => p.name + bitsOf(p) + segOpts(p)).join(", ")}`);
   }
   const { body, sinks } = sheetLines(m, sh);
   if (body.length) lines.push("", ...body);
@@ -1383,6 +1386,20 @@ function showProps() {
       if (v !== (p.bits || 1)) change(() => { p.bits = v; if (k === "const" && v < 32) p.value = (p.value || 0) % 2 ** v; });
     });
   }
+  if (k === "seg7") {
+    /* how the display is wired: 7 bits or 8 (with the dot), what lights a segment, where a is */
+    const pick = (label, opts, cur, set, tip) => {
+      const s = document.createElement("select");
+      opts.forEach(([t, v]) => s.append(new Option(t, String(v), false, v === cur)));
+      field(label, s).title = tip;
+      s.addEventListener("change", () => { const v = +s.value; if (v !== cur) change(() => set(v)); });
+    };
+    pick("Bits", [["7 (a to g)", 7], ["8 (and the dot)", 8]], p.bits === 8 ? 8 : 7, v => { p.bits = v; }, "The dot is bit 7");
+    pick("Lit by", [["1", 1], ["0 (most boards)", 0]], p.on === 0 ? 0 : 1, v => { if (v) delete p.on; else p.on = 0; },
+         "Basys-3 and most boards light a segment with a 0");
+    pick("Segment a is", [["bit 0 (g is bit 6)", 0], ["bit 6 (g is bit 0)", 6]], p.a === 6 ? 6 : 0, v => { if (v) p.a = 6; else delete p.a; },
+         "Which end of the bits segment a is on");
+  }
   if (GATE_NAMES[k] || k === "mux" || k === "demux" || k === "bus") {
     /* a bus: how many tri-states may talk on it */
     const sel = document.createElement("select");
@@ -1736,6 +1753,7 @@ function buildSheet(D, scope, lay, comps) {
     place(p, lay && lay[i], SOURCE.has(k), SINK.has(k));
     if (k === "input") p.bits = D.nets[n.out[0]].w;
     if (k === "output") p.bits = D.nets[n.in[0]].w;
+    if (k === "seg7") { p.bits = D.nets[n.in[0]].w; if (n.on === 0) p.on = 0; if (n.a === 6) p.a = 6; }
     if (k === "counter") { p.bits = n.bits || D.nets[n.out[0]].w; p.load = n.inNames.includes("load"); p.down = n.inNames.includes("down"); }
     if (k === "bus") { p.bits = D.nets[n.out[0]].w; p.n = n.in.length; }
     if (k === "demux") p.n = n.out.length;

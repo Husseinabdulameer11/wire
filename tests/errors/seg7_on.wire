@@ -1,0 +1,4 @@
+# expect: on is 1 (a 1 lights a segment) or 0
+input d[7]
+seg7 s (on = 2)
+s = d

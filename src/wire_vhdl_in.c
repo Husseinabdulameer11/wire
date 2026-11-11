@@ -6609,6 +6609,74 @@ static void vi_drv_scan(gram_node *first, int mult)
 
 /* ---- the design ---------------------------------------------------------------- */
 
+/* ---- 7-segment displays ---------------------------------------------------
+ * An output of the top entity that is a 7-segment pattern (7 bits, or 8 with
+ * the dot, and called seg, sseg, segments, disp, hex0 ...) is shown as a
+ * 7-segment display (seg7), not as a row of bits. How the board is wired is
+ * read from the patterns the VHDL writes: every "0110000"-like literal of 7
+ * or 8 bits is tried as lit-by-1 and lit-by-0, segment a on bit 0 and on bit
+ * 6, and the wiring that makes the most of them digits (0-9, A-F) wins. */
+static int vi_is_prefix(const gram_node *n, const char *s, size_t len)   /* starts with s, ignoring case */
+{
+    size_t i;
+    if (n->len < len) return 0;
+    for (i = 0; i < len; i++) if (vi_lower(n->text[i]) != vi_lower(s[i])) return 0;
+    return 1;
+}
+
+static const unsigned char vi_digits[] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x7C, 0x07, 0x27, 0x6F, 0x67,
+                                            0x77, 0x39, 0x5E, 0x79, 0x71, 0x58, 0x40 };
+
+static int vi_seg_name(const gram_node *id)
+{
+    static const char *pre[] = { "seg", "sseg", "seven", "7seg", "disp", "hex" };
+    size_t i, n;
+    for (i = 0; i < sizeof pre / sizeof pre[0]; i++) {
+        n = strlen(pre[i]);
+        if (id->len < n) continue;
+        if (!vi_is_prefix(id, pre[i], n)) continue;
+        if (!strcmp(pre[i], "hex")) {   /* hex0, HEX1 (DE boards), not hex itself (a value) */
+            return id->len == n + 1 && id->text[n] >= '0' && id->text[n] <= '9';
+        }
+        if (!strcmp(pre[i], "seg") && id->len > n && !(id->text[n] == '_' || id->text[n] == 's' || id->text[n] == 'S'
+            || (id->text[n] >= '0' && id->text[n] <= '9') || vi_is_prefix(id, "segment", 7))) return 0;
+        return 1;
+    }
+    return 0;
+}
+
+static void vi_seg_style(int *low, int *rev)
+{
+    static int done, slow, srev;
+    int score[4] = { 0, 0, 0, 0 }, k, best = 0;
+    const char *p;
+    if (!done) {
+        done = 1;
+        const char *end = vi_src + vi_len;
+        for (p = vi_src; p < end; p++) {
+            const char *q = p + 1;
+            unsigned v = 0;
+            int nb = 0, j, c;
+            if (*p == '-' && p + 1 < end && p[1] == '-') { while (p < end && *p != '\n') p++; continue; }   /* a comment */
+            if (*p != '"') continue;
+            while (q < end && (*q == '0' || *q == '1' || *q == '_')) { if (*q != '_') { v = v << 1 | (unsigned)(*q - '0'); nb++; } q++; }
+            if (q >= end) break;
+            if (*q != '"' || (nb != 7 && nb != 8)) { p = *q == '"' ? q : p; continue; }
+            p = q;
+            v &= 0x7F;
+            if (v == 0 || v == 0x7F) continue;   /* blank and 8 look the same either way */
+            for (c = 0; c < 4; c++) {
+                unsigned x = c & 1 ? v ^ 0x7F : v, r = 0;
+                if (c & 2) { for (j = 0; j < 7; j++) if (x >> j & 1) r |= 1u << (6 - j); x = r; }
+                for (j = 0; j < (int)sizeof vi_digits; j++) if (vi_digits[j] == x) { score[c]++; break; }
+            }
+        }
+        for (k = 1; k < 4; k++) if (score[k] > score[best]) best = k;
+        if (score[best] >= 3) { slow = best & 1; srev = best >> 1 & 1; }
+    }
+    *low = slow; *rev = srev;
+}
+
 static void vi_ports(gram_node *ports, int is_generic, int emit)
 {
     gram_node *d;
@@ -6651,7 +6719,7 @@ static void vi_ports(gram_node *ports, int is_generic, int emit)
         vi_type(ty, &proto, 0);
         vi_wide_ok = 0;
         {
-            VBuf c = { 0, 0, 0 };
+            VBuf c = { 0, 0, 0 }, g = { 0, 0, 0 };
             for (id = ids->child; id; id = id->next) {
                 VSym *s = vi_declare(id, out ? VK_OUT : VK_IN);
                 s->ty = proto.ty; s->w = proto.w; s->left = proto.left; s->right = proto.right; s->down = proto.down;
@@ -6700,10 +6768,18 @@ static void vi_ports(gram_node *ports, int is_generic, int emit)
                     s->inout = 1;
                 }
                 if (!out && s->w == 1 && !vi_vec(s->ty) && vi_is_clock(id)) { vbf(&c, "%s%s", c.n ? ", " : "", s->wname); continue; }
+                if (out && emit && (s->w == 7 || s->w == 8) && vi_vec(s->ty) && vi_seg_name(id)) {   /* a 7-segment display */
+                    int low, rev;
+                    vi_seg_style(&low, &rev);
+                    vbf(&g, "%s%s[%d]%s%s%s%s", g.n ? ", " : "", s->wname, s->w, low || rev ? " (" : "", low ? "on = 0" : "",
+                        low && rev ? ", " : "", rev ? "a = 6)" : low ? ")" : "");
+                    continue;
+                }
                 if (s->w > 1 || vi_vec(s->ty) || (out && vi_is_reg(id))) vbf(&b, "%s%s[%d]", b.n ? ", " : "", s->wname, s->w);
                 else vbf(&b, "%s%s", b.n ? ", " : "", s->wname);
             }
             if (emit && c.n) vi_emit(ids, "clock %s", c.s);   /* a clock of a process: Run and Step on the page */
+            if (emit && g.n) vi_emit(ids, "seg7 %s", g.s);
             if (emit && b.n) vi_emit(ids, "%s %s", out ? "output" : "input", b.s);
         }
     }

@@ -1189,8 +1189,10 @@ function buildPart(n) {
     upd.push(() => {
       let bits = net.v, kn = known(net);
       if (k === "hex") bits = kn ? HEXSEG[net.v & 15] : 0;
-      segs.forEach((s, i) => s.setAttribute("stroke", kn && (bits >>> i) & 1 ? "var(--seg-on)" : "var(--seg-off)"));
-      dp.setAttribute("fill", k === "seg7" && net.w === 8 && kn && (net.v >>> 7) & 1 ? "var(--seg-on)" : "var(--seg-off)");
+      /* seg7 (on = 0): a 0 lights a segment; (a = 6): a is bit 6 ... g bit 0, as boards wire them */
+      const lit = i => ((bits >>> (k === "seg7" && n.a === 6 && i < 7 ? 6 - i : i)) & 1) === (k === "seg7" && n.on === 0 ? 0 : 1);
+      segs.forEach((s, i) => s.setAttribute("stroke", kn && lit(i) ? "var(--seg-on)" : "var(--seg-off)"));
+      dp.setAttribute("fill", k === "seg7" && net.w === 8 && kn && lit(7) ? "var(--seg-on)" : "var(--seg-off)");
     });
     label(n.name, 20, -7);
   } else if (k === "ram" && n.screen) {

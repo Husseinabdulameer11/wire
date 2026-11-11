@@ -1,0 +1,12 @@
+circuit "7-segment displays wired like boards"
+
+# seg7 (on = 0): a 0 lights a segment; (a = 6): a is bit 6, g bit 0 (Chu's
+# sseg). All four show the same digit as d, for tests/sim/simtest.js
+input  d[4]
+seg7   plain, low (on = 0), turned (a = 6), board[8] (on = 0, a = 6)
+
+pat    = rom(d, bits = 7, data = "3F 06 5B 4F 66 6D 7D 07 7F 6F 77 7C 39 5E 79 71")
+plain  = pat
+low    = ~pat
+turned = {pat[0], pat[1], pat[2], pat[3], pat[4], pat[5], pat[6]}
+board  = ~{0b0, pat[0], pat[1], pat[2], pat[3], pat[4], pat[5], pat[6]}
