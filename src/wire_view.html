@@ -1827,7 +1827,7 @@ $("step").onclick = stepClock;
 $("speed").onchange = () => { if (timer) setRun(true); };
 $("reset").onclick = () => {
   setRun(false);
-  nodes.forEach(n => { if (SOURCES.has(n.kind) || SEQ.has(n.kind)) n.state = 0; n.lastClk = 0; });
+  nodes.forEach(n => { if (SOURCES.has(n.kind) || SEQ.has(n.kind)) n.state = n.start || 0; n.lastClk = 0; });
   nets.forEach(n => { n.v = 0; n.k = mask(n.w); });
   sim.resetMem();
   insides.forEach(initInside);     /* the latches of an opened flip-flop: as cleared */

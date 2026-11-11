@@ -178,7 +178,7 @@ typedef struct {
     char inname[MAXIO][NAMEW], outname[MAXIO][NAMEW];
     int range[MAXIO][2];          /* split: per output, merge: per input */
     int inst, file;               /* which instance it belongs to; its source file */
-    unsigned long value;          /* const */
+    unsigned long value;          /* const; dff: init, where it starts and resets to */
     int bits;                     /* counter */
     int sgn;                      /* mul: 1 a is signed, 2 b is signed */
     const char *opt; int optlen;  /* led colour */
@@ -357,6 +357,7 @@ typedef struct {
     gram_node *call, *id;
     int npos; gram_node *pos[MAXIO];
     gram_node *sel, *en, *rst, *cin;
+    gram_node *init;               /* dff: the value it starts at, and goes back to on rst */
     gram_node *load, *d, *down;    /* counter */
     gram_node *data;               /* rom, ram: the `data = "..."` or `file = "..."` setting */
     int bits;
@@ -541,6 +542,10 @@ static void analyze(gram_node *call, Call *c, int check)
             } else if (same(k, "sel", 3) && (c->kind == K_MUX || c->kind == K_DEMUX)) c->sel = v;
             else if (same(k, "en", 2) && (c->kind == K_DECODER || c->kind == K_DFF || c->kind == K_COUNTER)) c->en = v;
             else if (same(k, "rst", 3) && c->kind >= K_DFF && c->kind <= K_COUNTER) c->rst = v;
+            else if (same(k, "init", 4) && c->kind == K_DFF) {
+                if (v->rule != WIRE_R_number) fail(v, "init is a number: dff(d, clk, rst = r, init = 0b001)");
+                c->init = v;
+            }
             else if (same(k, "cin", 3) && c->kind == K_ADD) c->cin = v;
             else if (same(k, "load", 4) && c->kind == K_COUNTER) c->load = v;
             else if (same(k, "d", 1) && c->kind == K_COUNTER) c->d = v;
@@ -1094,6 +1099,12 @@ static Node *build_call(gram_node *call, int dst, Sym *s)
     name_node(n, s);
     n->bits = c.bits ? c.bits : 4;
     n->sgn = c.sgn;
+    if (c.init) {   /* a flip-flop that starts (and resets) at a value of its own */
+        int fixed;
+        n->value = literal(c.init, &fixed);
+        if (c.outw[0] && c.outw[0] < MAXW && n->value >> c.outw[0])
+            fail(c.init, "init = %.*s does not fit in this flip-flop's %d bit%s", TEXT(c.init), c.outw[0], c.outw[0] == 1 ? "" : "s");
+    }
     if (c.kind == K_ROM || c.kind == K_RAM) {
         n->membits = c.outw[0];
         n->memabits = c.inw[0];
@@ -1471,6 +1482,7 @@ static void write_json(void)
         }
         if (n->kind == K_BUS && n->bus) { fputs(",\"bus\":", jf); jstr(n->bus, n->blen); }
         if (n->kind == K_CONST) fprintf(jf, ",\"value\":%lu", n->value);
+        if (n->kind == K_DFF && n->value) fprintf(jf, ",\"start\":%lu", n->value);
         if (n->kind == K_COUNTER) fprintf(jf, ",\"bits\":%d", n->bits);
         if (n->kind == K_MUL && n->sgn) fprintf(jf, ",\"sa\":%d,\"sb\":%d", n->sgn & 1, n->sgn >> 1 & 1);
         if (n->kind == K_ROM || n->kind == K_RAM) {
@@ -2391,6 +2403,18 @@ static void make_buses(void)
 static void finish(void)
 {
     int i, j;
+
+    /* v[0] read in ten places is one wire: so ~v[0] written in ten places is
+     * one inverter too (the splitter is made below) */
+    for (i = 0; i < ntaps; i++) {
+        if (taps[i].src < 0) continue;
+        for (j = i + 1; j < ntaps; j++)
+            if (taps[j].src >= 0 && find(taps[j].src) == find(taps[i].src) && taps[j].inst == taps[i].inst
+                && taps[j].hi == taps[i].hi && taps[j].lo == taps[i].lo) {
+                join(taps[i].out, taps[j].out);
+                taps[j].src = -1;   /* the splitter gives it through taps[i] */
+            }
+    }
 
     /* `~b` written in ten places is one inverter: share identical unnamed
      * gates (same kind, same inputs), until nothing changes */

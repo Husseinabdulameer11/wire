@@ -38,7 +38,8 @@ function about(n, D) {
   if (k === "tff") return "a D flip-flop that takes q xor t";
   if (k === "jkff") return "a D flip-flop that takes (j and not q) or (not k and q)";
   if (k === "dff") {
-    if (w(n.out[0]) > 1) return `${w(n.out[0])} one-bit D flip-flops sharing the clock`;
+    const st = n.start ? `; it starts at ${n.start}${inBy(n, "rst") >= 0 ? " and rst sets it back there (preset on its 1 bits, clear on its 0 bits)" : ""}` : "";
+    if (w(n.out[0]) > 1) return `${w(n.out[0])} one-bit D flip-flops sharing the clock${st}`;
     if (inBy(n, "en") >= 0) return "a D flip-flop that takes its own q back while en is 0";
     return "two latches of NAND gates: the master follows d while the clock is 0, the slave shows it once the clock rises";
   }
@@ -128,7 +129,7 @@ function build(T, n, p, W, inits) {
     const ins = [["d", d], ["clk", clk]];
     if (opts.en != null) ins.push(["en", opts.en]);
     if (opts.rst != null) ins.push(["rst", opts.rst]);
-    S.node("dff", ins, [["q", q], ["nq", nq]], { name: opts.name || "" });
+    S.node("dff", ins, [["q", q], ["nq", nq]], Object.assign({ name: opts.name || "" }, opts.start ? { start: 1 } : {}));
     return S.last();
   };
   const holds = (j, bit) => inits.push((s, lc) => [["state", j, bit == null ? s : (s >>> bit) & 1], ["lastClk", j, lc]]);
@@ -209,7 +210,7 @@ function build(T, n, p, W, inits) {
       const d = T.bits(p.d), q = [], nq = [];
       for (let i = 0; i < w; i++) {
         const qi = T.net(1, "q" + i), nqi = T.net(1);
-        holds(flip(T, d[i], p.clk, { en, rst, name: "ff" + i }, qi, nqi), i);
+        holds(flip(T, d[i], p.clk, { en, rst, name: "ff" + i, start: (n.start >>> i) & 1 }, qi, nqi), i);
         q.push(qi); nq.push(nqi);
       }
       return { q: T.merge(q, "q"), nq: T.merge(nq, "nq") };
@@ -217,19 +218,22 @@ function build(T, n, p, W, inits) {
     if (en != null) {
       const q = T.net(1, "q"), nq = T.net(1, "nq");
       const d = T.mux2(q, p.d, en, "d or q");
-      holds(flip(T, d, p.clk, { rst, name: "ff" }, q, nq));
+      holds(flip(T, d, p.clk, { rst, name: "ff", start: n.start & 1 }, q, nq));
       return { q, nq };
     }
-    /* master-slave, of NAND gates; rst (async) clears both latches */
-    const nr = rst != null ? T.not(rst, "not rst") : null, r = xs => nr != null ? [...xs, nr] : xs;
+    /* master-slave, of NAND gates; rst (async) clears both latches, or sets
+     * them for a flip-flop that starts at 1 (init = 1): Logisim's clear and
+     * preset. not rst goes into the gates of the side it forces. */
+    const nr = rst != null ? T.not(rst, "not rst") : null, r = xs => nr != null ? [...xs, nr] : xs, id = xs => xs;
+    const pre = (n.start | 0) & 1, sset = pre ? id : r, sclr = pre ? r : id;
     const nclk = T.not(p.clk, "not clk"), nd = T.not(p.d, "not d");
     const m = T.net(1, "master"), mn = T.net(1, "not master"), q = T.net(1, "q"), nq = T.net(1, "nq");
-    const s1 = T.gate("nand", r([p.d, nclk])), r1 = T.gate("nand", [nd, nclk]);
-    T.node("nand", [["", s1], ["", mn]], [["out", m]]);
-    T.node("nand", r([r1, m]).map(x => ["", x]), [["out", mn]]);
-    const s2 = T.gate("nand", r([m, p.clk])), r2 = T.gate("nand", [mn, p.clk]);
-    T.node("nand", [["", s2], ["", nq]], [["out", q]]);
-    T.node("nand", r([r2, q]).map(x => ["", x]), [["out", nq]]);
+    const s1 = T.gate("nand", sset([p.d, nclk])), r1 = T.gate("nand", sclr([nd, nclk]));
+    T.node("nand", sclr([s1, mn]).map(x => ["", x]), [["out", m]]);
+    T.node("nand", sset([r1, m]).map(x => ["", x]), [["out", mn]]);
+    const s2 = T.gate("nand", sset([m, p.clk])), r2 = T.gate("nand", sclr([mn, p.clk]));
+    T.node("nand", sclr([s2, nq]).map(x => ["", x]), [["out", q]]);
+    T.node("nand", sset([r2, q]).map(x => ["", x]), [["out", nq]]);
     inits.push(s => [["net", m, s & 1], ["net", mn, ~s & 1], ["net", q, s & 1], ["net", nq, ~s & 1]]);
     return { q, nq };
   }

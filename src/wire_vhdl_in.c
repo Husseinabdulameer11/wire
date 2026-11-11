@@ -1982,6 +1982,155 @@ static VX vi_wcompare(VX a, VX b, const char *o)
     return r;
 }
 
+/* ---- truth tables as gates -------------------------------------------------
+ * A table of constants (with value select ... "0110" when "001", ...) or a
+ * comparison with a constant (roll = 6, r >= 1) depends only on a few bits.
+ * Logisim draws those as gates, the way its Combinational Analysis makes them
+ * from a truth table: for each output bit an OR of ANDs of the input bits or
+ * their inverses, as few and as small as they can be (Quine-McCluskey). So
+ * does this, instead of a mux fed by constants or a comparator and a
+ * constant. The bits are read as x[i] of a signal; each inverse is one NOT
+ * gate, shared by every AND that uses it. */
+
+#define VI_SOP_BITS 6            /* input bits a table is made of gates for, at most */
+#define VI_SOP_COST 96           /* AND inputs in all the terms of one table, at most */
+#define VI_SOP_IMP 729           /* implicants of 6 bits, at most (3 to the 6th) */
+
+static int vi_ones(unsigned x) { int n = 0; for (; x; x &= x - 1) n++; return n; }
+
+/* x as something its bits can be read from with x[i]: a signal's name */
+static int vi_bitable(const VX *x)
+{
+    const char *p = x->s;
+    if (!p || x->cst || vi_wide(x) || x->z || x->zen) return 0;
+#define VI_ID0(c) (((c) >= 'a' && (c) <= 'z') || ((c) >= 'A' && (c) <= 'Z') || (c) == '_')
+    if (!VI_ID0(*p)) return 0;
+    for (p++; *p; p++) if (!VI_ID0(*p) && !(*p >= '0' && *p <= '9')) return 0;
+#undef VI_ID0
+    return 1;
+}
+
+/* the ORs of ANDs that are 1 exactly where on[] is (on has 1 << nb entries),
+ * over the bits of x; literals counts the AND inputs. A 0 or 1 everywhere is
+ * a constant. */
+static VX vi_sop(const VX *x, int nb, const unsigned char *on, int *literals)
+{
+    unsigned v[VI_SOP_IMP], m[VI_SOP_IMP], pv[VI_SOP_IMP], pm[VI_SOP_IMP], nv[VI_SOP_IMP], nm[VI_SOP_IMP];
+    unsigned char used[VI_SOP_IMP], cov[1 << VI_SOP_BITS], pick[VI_SOP_IMP];
+    int n = 0, np = 0, i, j, k, full = 1 << nb, ones = 0, nterm = 0;
+    VBuf b = { 0, 0, 0 };
+    for (i = 0; i < full; i++) if (on[i]) ones++;
+    if (!ones || ones == full) return vi_const(ones ? 1 : 0, 1, T_SL);
+    /* the minterms, then merge pairs that differ in one bit until none do;
+     * what is never merged is a prime implicant */
+    for (i = 0; i < full; i++) if (on[i]) { v[n] = (unsigned)i; m[n] = 0; n++; }
+    while (n) {
+        int nn = 0;
+        memset(used, 0, sizeof used);
+        for (i = 0; i < n; i++)
+            for (j = i + 1; j < n; j++) {
+                unsigned d = v[i] ^ v[j];
+                if (m[i] != m[j] || !d || (d & (d - 1))) continue;
+                used[i] = used[j] = 1;
+                for (k = 0; k < nn; k++) if (nv[k] == (v[i] & ~d) && nm[k] == (m[i] | d)) break;
+                if (k == nn && nn < (int)(sizeof nv / sizeof nv[0])) { nv[nn] = v[i] & ~d; nm[nn] = m[i] | d; nn++; }
+            }
+        for (i = 0; i < n; i++)
+            if (!used[i] && np < (int)(sizeof pv / sizeof pv[0])) {
+                for (k = 0; k < np; k++) if (pv[k] == v[i] && pm[k] == m[i]) break;
+                if (k == np) { pv[np] = v[i]; pm[np] = m[i]; np++; }
+            }
+        memcpy(v, nv, (size_t)nn * sizeof *v);
+        memcpy(m, nm, (size_t)nn * sizeof *m);
+        n = nn;
+    }
+    /* cover the minterms: first the primes that alone cover one, then the
+     * prime covering most of what is left (fewest inputs on a tie) */
+    memset(cov, 0, sizeof cov);
+    memset(pick, 0, sizeof pick);
+    for (i = 0; i < full; i++) {
+        int only = -1, cnt = 0;
+        if (!on[i]) continue;
+        for (k = 0; k < np; k++) if (((unsigned)i & ~pm[k]) == pv[k]) { only = k; cnt++; }
+        if (cnt == 1) pick[only] = 1;
+    }
+    for (;;) {
+        int best = -1, bestn = 0;
+        for (k = 0; k < np; k++) if (pick[k])
+            for (i = 0; i < full; i++) if (on[i] && ((unsigned)i & ~pm[k]) == pv[k]) cov[i] = 1;
+        for (k = 0; k < np; k++) {
+            int c = 0;
+            if (pick[k]) continue;
+            for (i = 0; i < full; i++) if (on[i] && !cov[i] && ((unsigned)i & ~pm[k]) == pv[k]) c++;
+            if (c > bestn || (c == bestn && c && vi_ones(pm[k]) > vi_ones(pm[best]))) { best = k; bestn = c; }
+        }
+        if (best < 0) break;
+        pick[best] = 1;
+    }
+    /* write it: terms in order of their value, bits from the top */
+    *literals = 0;
+    for (i = 0; i < full; i++)
+        for (k = 0; k < np; k++) {
+            int lits = 0;
+            if (!pick[k] || pv[k] != (unsigned)i) continue;
+            pick[k] = 0;
+            vbf(&b, "%s", nterm++ ? " | " : "");
+            for (j = nb - 1; j >= 0; j--) {
+                if (pm[k] >> j & 1) continue;
+                vbf(&b, "%s%s%s", lits++ ? " & " : "", pv[k] >> j & 1 ? "" : "~",
+                    x->w == 1 ? x->s : vi_fmt("%s[%d]", x->s, j));
+            }
+            *literals += lits;
+        }
+    if (nterm == 1 && !strchr(b.s, '&')) return vi_mk(b.s, T_SL, 1, b.s[0] == '~' ? 1 : 2);
+    return vi_mk(vi_fmt("(%s)", b.s), T_SL, 1, 2);
+}
+
+/* x (o) c, c a constant, as gates over the bits of x, when x is small enough */
+static int vi_cmp_gates(VX *r, const VX *x, unsigned long c, const char *o, int flipped)
+{
+    unsigned char on[1 << VI_SOP_BITS];
+    int i, full, lits, sgn = vi_signed(x->ty);
+    long cv = (long)c;
+    if (x->w > VI_SOP_BITS || !vi_bitable(x)) return 0;
+    full = 1 << x->w;
+    if (sgn && cv >> (x->w - 1) & 1) cv -= 1L << x->w;
+    for (i = 0; i < full; i++) {
+        long a = i, p, q;
+        if (sgn && (i >> (x->w - 1) & 1)) a -= 1L << x->w;
+        p = flipped ? cv : a; q = flipped ? a : cv;   /* c (o) x when the constant came first */
+        on[i] = !strcmp(o, "=") ? p == q : !strcmp(o, "/=") ? p != q : !strcmp(o, "<") ? p < q
+              : !strcmp(o, "<=") ? p <= q : !strcmp(o, ">") ? p > q : p >= q;
+    }
+    *r = vi_sop(x, x->w, on, &lits);
+    r->ty = T_BOOL;
+    return 1;
+}
+
+/* a table of constants, tab[value of sel] (1 << sel.w of them), as gates:
+ * one OR of ANDs per bit of the result; 0 when it is too big for that */
+static int vi_table_gates(VX *r, const VX *sel, const VX *tab, int n, int w, int ty)
+{
+    unsigned char on[1 << VI_SOP_BITS];
+    VBuf b = { 0, 0, 0 };
+    VX bit[MAXW];
+    int i, j, cost = 0, lits;
+    if (sel->w > VI_SOP_BITS || w > MAXW || !vi_bitable(sel)) return 0;
+    for (i = 0; i < n; i++) if (!tab[i].cst || vi_wide(&tab[i]) || tab[i].z) return 0;
+    for (j = 0; j < w; j++) {
+        for (i = 0; i < n; i++) on[i] = (unsigned char)(tab[i].v >> j & 1);
+        bit[j] = vi_sop(sel, sel->w, on, &lits);
+        cost += lits;
+    }
+    if (cost > VI_SOP_COST) return 0;
+    if (w == 1) { *r = bit[0]; r->ty = ty; return 1; }
+    vb_add(&b, "{", 1);
+    for (j = w - 1; j >= 0; j--) vbf(&b, "%s%s", j < w - 1 ? ", " : "", bit[j].s);
+    vb_add(&b, "}", 1);
+    *r = vi_mk(b.s, ty, w, 2);
+    return 1;
+}
+
 static VX vi_relation(gram_node *n)
 {
     gram_node *ln = n->child, *op = ln->next, *rn = op->next;
@@ -2026,7 +2175,11 @@ static VX vi_relation(gram_node *n)
     if (!strcmp(o, "<") || !strcmp(o, "<=") || !strcmp(o, ">") || !strcmp(o, ">=")) {
         if (a.ty == T_SL || a.ty == T_BOOL) vi_fail(op, "%s compares numbers; these are single bits", o);
     }
-    sgn = vi_signed(a.ty) && strcmp(o, "=") && strcmp(o, "/=");
+    if (a.cst != b.cst) {   /* with a constant: gates over the few bits of the other side */
+        const VX *c = a.cst ? &a : &b, *x = a.cst ? &b : &a;
+        if (vi_cmp_gates(&r, x, c->v, o, a.cst)) return r;
+    }
+    sgn =vi_signed(a.ty) && strcmp(o, "=") && strcmp(o, "/=");
     if (sgn) {   /* signed: flip the sign bits and compare as unsigned */
         VX *p[2];
         int i;
@@ -3318,6 +3471,10 @@ static void vi_selassign(gram_node *st)
                 vi_emit_target(tn, &t, r);
             }
             return;
+        }
+        if (!zsel) {   /* a table of constants: gates, as Logisim draws a truth table */
+            VX r;
+            if (vi_table_gates(&r, &sel, tab, n, t.w, t.ty)) { vi_emit_target(tn, &t, r); return; }
         }
         vb_add(&b, "mux(", 4);
         for (i = 0; i < n; i++) vbf(&b, "%s, ", tab[i].s);
@@ -5353,11 +5510,11 @@ static void vi_emit_reg(gram_node *at, VSym *s, VX next, const char *clk, const 
     if (rst && !has_reset)   /* not reset: keeps its value while the reset is on */
         en = en ? vi_fmt("(%s) & ~(%s)", en, rst) : vi_fmt("~(%s)", rst);
     k &= vi_mask(s->w);
-    ds = !k ? d.s : k == vi_mask(s->w) ? vi_fmt("~(%s)", d.s) : vi_fmt("(%s) ^ %s", d.s, vi_lit(k, s->w));
-    call = vi_fmt("dff(%s, %s%s%s%s%s)", ds, clk, en ? ", en = " : "", en ? en : "", rst && has_reset ? ", rst = " : "",
-                  rst && has_reset ? rst : "");
-    /* a register that resets (or starts) at k, not 0: it keeps the value ^ k */
-    if (k) call = k == vi_mask(s->w) ? vi_fmt("~%s", call) : vi_fmt("%s ^ %s", call, vi_lit(k, s->w));
+    ds = d.s;
+    /* a register that resets (or starts) at k, not 0: init = k, the way
+     * Logisim presets the 1 bits and clears the others */
+    call = vi_fmt("dff(%s, %s%s%s%s%s%s%s)", ds, clk, en ? ", en = " : "", en ? en : "", rst && has_reset ? ", rst = " : "",
+                  rst && has_reset ? rst : "", k ? ", init = " : "", k ? vi_lit(k, s->w) : "");
     vi_emit(at, "%s = %s", q, call);
 }
 

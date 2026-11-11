@@ -428,7 +428,7 @@ function compile(D) {
       const rst = inBy(n, "rst"), w = width(n.out[0]);
       if (rst >= 0) {
         known(rst).ld(V(rst)).k(0).op(OP.ne).op(OP.and).if_();
-        f.st(S(j), () => f.k(0));
+        f.st(S(j), () => f.k(n.start | 0));   /* a dff with init = goes back to it */
         f.end();
       }
       f.ld(S(j)).set(Lv); out(n.out[0], -1);
@@ -639,6 +639,7 @@ function compile(D) {
       const n = nodes[j];
       for (let i = 0; i < n.in.length - 1; i++) mem[(addr >> 2) + i] = V(n.in[i]);
     });
+    nodes.forEach((n, j) => { if (n.start) mem[S(j) >> 2] = n.start; });   /* dff(..., init = k) starts at k */
     resetMem(mem);
   };
   /* rom and ram back to the contents written in the circuit */

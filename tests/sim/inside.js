@@ -28,6 +28,11 @@ for (const w of [1, 2, 4, 8, 32]) {
   add(`dff${w}`, `input d[${w}]\nq = dff(d, clk)\noutput y[${w}], ny[${w}]\ny = q\nny = q.nq`);
   add(`dffer${w}`, `input d[${w}], e\nq = dff(d, clk, en = e, rst = rst)\noutput y[${w}], ny[${w}]\ny = q\nny = q.nq`);
   add(`dffr${w}`, `input d[${w}]\nq = dff(d, clk, rst = rst)\noutput y[${w}]\ny = q`);
+  /* init: starts at, and rst gives, a value of its own (preset on the 1 bits) */
+  const k = 0x5A5A5A5A >>> (32 - w);
+  add(`dffi${w}`, `input d[${w}]\nq = dff(d, clk, rst = rst, init = ${k})\noutput y[${w}], ny[${w}]\ny = q\nny = q.nq`);
+  add(`dffie${w}`, `input d[${w}], e\nq = dff(d, clk, en = e, rst = rst, init = ${k ^ 1})\noutput y[${w}]\ny = q`);
+  add(`dffin${w}`, `input d[${w}]\nq = dff(d, clk, init = ${k ^ 1})\noutput y[${w}]\ny = q`);
   add(`mux2_${w}`, `input a[${w}], b[${w}], s\noutput y[${w}]\ny = mux(a, b, sel = s)`);
   add(`mux8_${w}`, `input a[${w}], b[${w}], c[${w}], d[${w}], s[3]\noutput y[${w}]\ny = mux(a, b, c, d, b, a, d, c, sel = s)`);
   add(`demux${w}`, `input d[${w}], s[2]\nm = demux(d, sel = s)\noutput o0[${w}], o1[${w}], o2[${w}], o3[${w}]\no0 = m[0]\no1 = m[1]\no2 = m[2]\no3 = m[3]`);

@@ -781,7 +781,9 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
         int o2 = n->nout > 1 ? find(n->out[1]) : -1, f = 1;
         const char *zero = w == 1 ? "'0'" : "(others => '0')";
         const char *ind = "      ";
+        char rv[80];
         int lifted = n->kind == K_COUNTER && load >= 0;
+        if (n->kind == K_DFF && n->value) zero = vlit(n->value, w, rv);   /* init = k: rst gives k */
         vbf(b, "  process (");
         vsens_add(b, clk, &f); vsens_add(b, rst, &f);
         if (f) vbf(b, "%s", N(clk));
@@ -1336,7 +1338,7 @@ static char *vhdl_generate(const char *top, const char *fname)
     for (i = 0; i < nnodes; i++) {
         Node *n = &nodes[i];
         if (n->dead || !is_seq(n->kind)) continue;
-        vinitv[find(n->out[0])] = 0;
+        vinitv[find(n->out[0])] = n->kind == K_DFF ? n->value : 0;   /* dff(..., init = k) */
         vhasinit[find(n->out[0])] = 1;
     }
 

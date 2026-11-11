@@ -12,7 +12,7 @@
 "use strict";
 module.exports = function refSim(D) {
 const nets = D.nets.map((n, i) => ({ id: i, w: n.w, name: n.name, v: 0, k: 0, driver: null, readers: [] }));
-const nodes = D.nodes.map((n, i) => Object.assign({ id: i, x: 0, y: 0, state: 0, lastClk: 0 }, n));
+const nodes = D.nodes.map((n, i) => Object.assign({ id: i, x: 0, y: 0, state: n.start || 0, lastClk: 0 }, n));
 const SOURCES = new Set(["input", "button", "clock"]);
 const SEQ = new Set(["dff", "tff", "jkff", "counter"]);
 nodes.forEach(n => {
@@ -125,7 +125,7 @@ function evalNode(n) {
   }
   case "dff": case "tff": case "jkff": case "counter": {
     const rst = inByName(n, "rst");
-    if (rst && known(rst) && rst.v) n.state = 0;
+    if (rst && known(rst) && rst.v) n.state = n.start || 0;
     const w = nets[n.out[0]].w;
     ch = setOut(n, 0, n.state, 0xFFFFFFFF);
     if (k === "counter") {

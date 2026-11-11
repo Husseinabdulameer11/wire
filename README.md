@@ -328,6 +328,7 @@ number like `5` takes whatever width it is used at, and it must fit.
 | `compare(a, b)` | `.lt`, `.eq`, `.gt` | unsigned |
 | `mul(a, b, signed = 1)` | low half, `.hi` | the whole product, 2w bits: the value is the low half, `.hi` the high half; `signed = 1` both signed, `sa = 1` or `sb = 1` one of them (RISC-V's MUL, MULH, MULHSU, MULHU) |
 | `dff(d, clk, en = e, rst = r)` | q, `.nq` | rising edge; any width (`reg` is the same) |
+| `dff(d, clk, rst = r, init = 0b001)` | q, `.nq` | starts at `init`, and `rst` gives `init` (Logisim's preset on the 1 bits, clear on the 0 bits) |
 | `tff(t, clk, rst = r)` | q, `.nq` | |
 | `jkff(j, k, clk, rst = r)` | q, `.nq` | |
 | `counter(clk, bits = 4, en = e, rst = r)` | q, `.carry` | carry is 1 on the last value |
@@ -338,7 +339,7 @@ number like `5` takes whatever width it is used at, and it must fit.
 | `screen(addr, px, we, clk, width = 32)` | q | a ram the page shows as pixels; see [Screens](#screens) |
 
 Name a component to use its other outputs: `s = add(x, y)` then `s.cout`.
-`rst` is asynchronous; flip-flops start at 0.
+`rst` is asynchronous; flip-flops start at 0, or at `init` when a `dff` has one.
 
 ### Buses
 
@@ -598,6 +599,15 @@ circuit from Wire to VHDL and back:
 - **Concurrent statements:** assignments (`<=`), `when ... else` and
   `with ... select`, each becoming gates, multiplexers, adders and
   comparators.
+- **Drawn the way Logisim would.** A `with ... select` whose choices are all
+  constants is a truth table, so it becomes gates: for each bit an OR of
+  ANDs of the select's bits and their inverses, as few and as small as they
+  can be (what Logisim's Combinational Analysis makes), not a multiplexer
+  fed by constants. A comparison with a constant on a few bits (`roll = 6`,
+  `r >= 1`) is gates too, not a comparator and a constant, and each bit's
+  inverse is one NOT gate that every AND shares. A register that resets to
+  something other than 0 is a flip-flop with `init` (preset and clear).
+  Up to 6 select bits; a bigger table stays a multiplexer.
 - **Processes.** A clocked process (`if rising_edge(clk) then`, or with an
   asynchronous reset first: `if reset = '1' then ... elsif rising_edge(clk)
   then`, or `wait until rising_edge(clk);` first or last) becomes

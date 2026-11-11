@@ -1,0 +1,11 @@
+circuit "Flip-flops that start at a value"
+
+# dff(..., init = k): starts at k, and rst gives k (Logisim: preset the 1
+# bits, clear the others), for tests/sim/simtest.js
+input  d[3], b, en, rst
+clock  clk
+output roll[3], one, held[8]
+
+roll = dff(d, clk, rst = rst, init = 0b001)
+one  = dff(b, clk, rst = rst, init = 1)
+held = dff({d, d, b, en}, clk, en = en, init = 0xA5)

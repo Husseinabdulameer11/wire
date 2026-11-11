@@ -566,7 +566,7 @@ function sheetLines(m, sh) {
     else if (k === "add") body.push(`${p.name} = add(${from(p, "a")}, ${from(p, "b")}${p.cin ? opt("cin", "cin") : ""})`);
     else if (k === "mul") body.push(`${p.name} = mul(${from(p, "a")}, ${from(p, "b")}${p.sa && p.sb ? ", signed = 1" : p.sa ? ", sa = 1" : p.sb ? ", sb = 1" : ""})`);
     else if (k === "compare") body.push(`${p.name} = compare(${from(p, "a")}, ${from(p, "b")})`);
-    else if (k === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""})`);
+    else if (k === "dff") body.push(`${p.name} = dff(${from(p, "d")}, ${from(p, "clk")}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""}${p.init ? `, init = ${p.w ? lit(p.init, p.w) : p.init}` : ""})`);
     else if (k === "counter") {
       const d = from(p, "d");
       body.push(`${p.name} = counter(${from(p, "clk")}, bits = ${p.bits || 4}${p.en ? opt("en", "en") : ""}${p.rst ? opt("rst", "rst") : ""}` +
@@ -1485,6 +1485,21 @@ function showProps() {
     });
   }
   if (k === "dff" || k === "counter") { tick("Enable input", "en"); tick("Reset input", "rst"); }
+  if (k === "dff") {
+    /* the value it starts at, and rst gives (Logisim: preset the 1 bits, clear the others) */
+    const show = () => p.init ? "0b" + (p.init >>> 0).toString(2) : "0";
+    const v = field("Starts at", Object.assign(document.createElement("input"), { type: "text", spellcheck: false, value: show() }));
+    v.title = "The value it holds at the start and goes back to on rst: 0, 5, 0x5 or 0b101";
+    v.addEventListener("change", () => {
+      const t = v.value.trim().replace(/_/g, "");
+      const n = /^0x[0-9a-f]+$/i.test(t) ? parseInt(t.slice(2), 16) : /^0b[01]+$/i.test(t) ? parseInt(t.slice(2), 2) : /^\d+$/.test(t) ? parseInt(t, 10) : NaN;
+      if (!(n >= 0) || n > 0xFFFFFFFF || (p.w && p.w < 32 && n >= 2 ** p.w)) {
+        msg.className = "err"; msg.textContent = `Write a number${p.w ? ` that fits in ${p.w} bits` : ""}, like 0, 5 or 0b101.`;
+        v.value = show(); return;
+      }
+      if (n !== (p.init || 0)) change(() => { if (n) p.init = n; else delete p.init; });
+    });
+  }
   if (k === "counter") { tick("Load input (load, d)", "load", ["load", "d"]); tick("Count down input", "down"); }
   if (k === "tff" || k === "jkff") tick("Reset input", "rst");
   if (k === "decoder") tick("Enable input", "en");
@@ -1731,6 +1746,7 @@ function buildSheet(D, scope, lay, comps) {
     if (k === "dff" || k === "counter") { p.en = n.inNames.includes("en"); p.rst = n.inNames.includes("rst"); }
     if (k === "tff" || k === "jkff") p.rst = n.inNames.includes("rst");
     if (k === "dff") p.w = D.nets[n.out[0]].w;   /* in a loop its width must be written */
+    if (k === "dff" && n.start) p.init = n.start >>> 0;
     if (k === "decoder") p.en = n.inNames.includes("en");
     if (k === "decoder" || k === "encoder") p.bits = D.nets[n.in[0]].w;
     if (k === "split") { p.bits = D.nets[n.in[0]].w; p.ranges = n.ranges.map(r => [r[0], r[1]]); }

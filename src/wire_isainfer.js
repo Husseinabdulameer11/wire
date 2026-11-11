@@ -95,9 +95,72 @@ function infer(D, info, sim) {
   const nreg = Math.max(0, ...[...regMuxes.values()].map(d => d.length));
   slices.forEach(s => { s.reg = regMuxes.has(s); });
 
+  /* the values a slice is decoded into by gates: VHDL read as Logisim draws
+   * it (op = "0101" is an AND of the bits and their inverses, a with/select
+   * table of constants an OR of ANDs per bit). Every gate whose inputs are
+   * only bits of the slice is worked out for each value the slice can have;
+   * the gates whose outputs go on to other logic tell the values apart, and
+   * a value that makes them give something else than most values do is one
+   * the hardware decodes. */
+  const GATE1 = new Set(["not", "buf", "and", "or", "xor", "nand", "nor", "xnor"]);
+  const gateValues = (s, vals) => {
+    if (s.w > 8) return;
+    const bitOf = new Map();
+    same(s.net).forEach(x => readers[x].forEach(([j]) => {
+      const n = nodes[j];
+      if (n.kind === "split" && n.ranges) n.out.forEach((o, i) => { if (n.ranges[i][0] === n.ranges[i][1]) bitOf.set(base(o), n.ranges[i][0]); });
+    }));
+    slices.forEach(t => { if (t.src === s.src && t.w === 1 && t.hi >= s.lo && t.hi <= s.hi) bitOf.set(base(t.net), t.hi - s.lo); });
+    if (!bitOf.size) return;
+    const pureGate = j => GATE1.has(nodes[j].kind) && nets[nodes[j].out[0]].w === 1;
+    /* the gates fed only by bits of the slice (and by such gates) */
+    const pure = new Set(), seen = new Set();
+    const isPureNet = x => bitOf.has(base(x)) || (driver[base(x)] >= 0 && pure.has(driver[base(x)]));
+    let grew = true;
+    const cand = new Set();
+    bitOf.forEach((_, x) => uses(x).forEach(([j]) => { if (pureGate(j)) cand.add(j); }));
+    while (grew) {
+      grew = false;
+      for (const j of cand) {
+        if (pure.has(j) || !nodes[j].in.every(isPureNet)) continue;
+        pure.add(j); grew = true;
+        uses(nodes[j].out[0]).forEach(([k]) => { if (pureGate(k) && !seen.has(k)) { seen.add(k); cand.add(k); } });
+      }
+    }
+    const front = [...pure].filter(j => uses(nodes[j].out[0]).some(([k]) => !pure.has(k)));
+    if (!front.length) return;
+    const ev = (x, v, memo) => {
+      const b = base(x);
+      if (bitOf.has(b)) return (v >> bitOf.get(b)) & 1;
+      if (memo.has(b)) return memo.get(b);
+      const n = nodes[driver[b]], a = n.in.map(y => ev(y, v, memo));
+      const k = n.kind, all = a.every(Boolean), any = a.some(Boolean), par = a.reduce((p, q) => p ^ q, 0);
+      const r = k === "not" ? 1 - a[0] : k === "buf" ? a[0] : k === "and" ? +all : k === "nand" ? +!all
+              : k === "or" ? +any : k === "nor" ? +!any : k === "xor" ? par : 1 - par;
+      memo.set(b, r);
+      return r;
+    };
+    const sigs = [];
+    for (let v = 0; v < 2 ** s.w; v++) { const memo = new Map(); sigs.push([...pure].map(j => ev(nodes[j].out[0], v, memo))); }
+    /* a gate that is 1 for one value only is a comparison with it (op = "0101") */
+    const one = [...pure].map((j, i) => sigs.map(x => x[i])).filter(col => col.reduce((p, q) => p + q, 0) === 1);
+    one.forEach(col => vals.add(col.indexOf(1)));
+    if (one.length) return;
+    /* no such gate: a table (with ... select of constants); the values whose
+     * outputs differ from what most values give */
+    const fi = front.map(j => [...pure].indexOf(j));
+    const sig = sigs.map(x => fi.map(i => x[i]).join(""));
+    const count = new Map();
+    sig.forEach(x => count.set(x, (count.get(x) || 0) + 1));
+    const top = [...count].sort((a, b) => b[1] - a[1]);
+    if (top.length > 1 && top[0][1] === top[1][1]) return;   /* no one value most of them give */
+    sig.forEach((x, v) => { if (x !== top[0][0]) vals.add(v); });
+  };
+
   /* the opcode: the slice compared with the most constants (and picked on by with/select) */
   const valuesOf = s => {
     const vals = new Set();
+    gateValues(s, vals);
     uses(s.net).forEach(([j, k]) => {
       const n = nodes[j];
       if (n.kind === "compare") { const c = constOf(n.in[1 - k]); if (c !== null) vals.add(c); }
@@ -203,7 +266,7 @@ function infer(D, info, sim) {
   let romFill = null, flagVals = null;
   function start(word, regVals, ramVals) {
     D.nets.forEach((n, i) => { sim.setV(i, 0); sim.setK(i, mask(n.w)); });
-    seqNodes.forEach(j => { sim.setState(j, 0); sim.setLastClk(j, 0); });
+    seqNodes.forEach(j => { sim.setState(j, nodes[j].start || 0); sim.setLastClk(j, 0); });
     rams.forEach(j => sim.setLastClk(j, 0));
     inputs.forEach(j => sim.setState(j, /(_n|_b|n)$/i.test(nodes[j].name || "") && /rst|reset|clr/i.test(nodes[j].name || "") ? 1 : 0));
     /* the instruction at the address the CPU starts at, other words random (a CPU with one memory reads its data there) */
