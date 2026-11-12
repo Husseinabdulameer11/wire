@@ -973,7 +973,10 @@ function routeFree(V) {
     }
     behind.forEach(p => {
       const ex = x1 + 10, ix = p.x - 10 - (under % 3) * 4;
-      const yb = Math.max(dn.y + dn.g.h, p.t.y + p.t.g.h) + 20 + (under++ % 4) * 6;
+      /* round underneath both; but with the driver well above the part it
+       * feeds, the way down would cut through that part: go between them */
+      const k = (under++ % 4) * 6, between = dn.y + dn.g.h + 30 <= p.t.y;
+      const yb = between ? p.t.y - 14 - k : Math.max(dn.y + dn.g.h, p.t.y + p.t.g.h) + 20 + k;
       seg(net, `M${x1} ${y1}H${ex}M${ex} ${y1}V${yb}M${ex} ${yb}H${ix}M${ix} ${yb}V${p.y}M${ix} ${p.y}H${p.x}`);
     });
   });
@@ -1336,7 +1339,9 @@ const pinRef = (n, dir, i) => ({ name: n.name, dir, port: i,
 
 let wireEls = new Map();
 function drawWires() {
-  if (editing()) routeFree(V); else route(V, false);
+  /* route() keeps the columns layout() made; once a part is moved, wires go
+   * from pin to pin as in drawing mode, or they run under the gates */
+  if (editing() || V.free) routeFree(V); else route(V, false);
   wiresG.textContent = "";
   dotsG.textContent = "";
   wireEls = new Map();
@@ -1588,6 +1593,7 @@ sheet.addEventListener("pointermove", e => {
   if (drag.group) {   /* the picked parts move together */
     const w = toWorld(e.clientX, e.clientY);
     drag.group.forEach(({ m, ox, oy }) => { m.x = Math.round((w.x - ox) / 10) * 10; m.y = Math.round((w.y - oy) / 10) * 10; place(m); });
+    V.free = true;
     drawWires();
     if (pickedWire != null) pickWire(pickedWire);
     return;
@@ -1597,6 +1603,7 @@ sheet.addEventListener("pointermove", e => {
   n.x = Math.round((w.x - drag.ox) / 10) * 10;
   n.y = Math.round((w.y - drag.oy) / 10) * 10;
   place(n);
+  V.free = true;
   drawWires();
 });
 /* a button goes back to 0; a keypad keeps its last key, with "held" off */
@@ -2211,7 +2218,16 @@ function openView(id) {
   if (selected) selected = null;
   $("valform").hidden = true;
   V = viewOf(id);
-  if (!V.laid) { layout(V); if (editing()) editPlace(V); else load(V); }
+  if (!V.laid) {
+    layout(V);
+    if (editing()) editPlace(V);
+    else {
+      /* parts put somewhere else earlier (a saved layout) no longer sit in the
+       * columns route() was made for: route them like a drawing */
+      const at = V.items.map(n => n.x + "," + n.y);
+      if (load(V)) V.free = V.items.some((n, i) => n.x + "," + n.y !== at[i]);
+    }
+  }
   partsG.textContent = "";
   V.items.forEach(buildPart);
   if (editing()) V.items.forEach(n => { if (n.hidden) n.el.style.display = "none"; else addPins(n); });
@@ -2889,6 +2905,7 @@ $("tidy").onclick = () => {
   shared.delete(compOf(V.id));
   try { localStorage.removeItem(keyBase + compOf(V.id)); } catch (e) {}
   layout(V);
+  V.free = false;
   V.items.forEach(place);
   drawWires();
   fit();
