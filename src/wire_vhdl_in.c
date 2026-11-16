@@ -1491,6 +1491,7 @@ static VX vi_call(gram_node *n, int want)
             int hi, lo, one = vi_bitrange(s, id, args->child, &hi, &lo);
             if (!one && hi == v.w - 2 && lo == 0) return vi_mk(v.csum, s->ty, v.w - 1, 2);
             if (one && hi == v.w - 1) return vi_mk(vi_fmt("%s.cout", v.csum), T_SL, 1, 2);
+            if (one && hi == 0 && v.w == 2) return vi_mk(v.csum, T_SL, 1, 2);   /* a 1-bit adder's sum: sum(0) */
         }
         tmp.wname = vi_wrap(&v, 2);
         return vi_index(&tmp, id, args->child);
@@ -1774,6 +1775,7 @@ static VX vi_aggregate(gram_node *n, int want)
         }
         if (i < 0) return vi_const(v, w, T_STR);
     }
+    if (w == 1) return vi_mk(bit[0], T_STR, 1, 2);   /* unsigned'(0 => a) is just a, not a 1-bit {a} */
     vb_add(&b, "{", 1);
     for (i = w - 1; i >= 0; ) {   /* runs of constant bits become one literal */
         int j = i;
