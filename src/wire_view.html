@@ -1390,7 +1390,13 @@ function redraw() {
 }
 
 /* ================================================================ view */
+/* The view follows the circuit on its own (autoView): it fits when the page
+ * opens, when the window or a drawer changes the room there is, and when the
+ * drawing grows past the screen. Panning or zooming by hand stops that, so a
+ * view you chose stays put; Fit (or F) turns it back on. */
 let view = { x: 0, y: 0, s: 1 };
+let autoView = true;
+const byHand = () => { autoView = false; };
 const sheet = $("sheet");
 function applyView() {
   world.setAttribute("transform", `translate(${view.x},${view.y}) scale(${view.s})`);
@@ -1400,6 +1406,7 @@ function applyView() {
   gr.setAttribute("transform", world.getAttribute("transform"));
 }
 function bbox() {
+  if (!V) return { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };   /* not drawn yet */
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   V.items.forEach(n => {
     if (n.hidden) return;
@@ -1413,8 +1420,9 @@ function bbox() {
   if (b.width || b.height) { x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height); }
   return { x0, y0, x1, y1 };
 }
-function fit() {
-  const b = bbox();
+/* the part of the screen the circuit can use: not under the toolbar, an
+ * open drawer, the book or the title block */
+function room() {
   let W = sheet.clientWidth, H = sheet.clientHeight;
   const open = document.querySelector(".drawer.open");
   if (open) { const r = open.getBoundingClientRect(); if (r.top < 10) W -= r.width; else H = r.top; }
@@ -1423,12 +1431,50 @@ function fit() {
   W -= bookW;
   const top = $("bar").getBoundingClientRect().bottom + 16;
   const tb = $("titleblock").getBoundingClientRect();
-  const availW = W - 40, availH = H - top - (open && H < sheet.clientHeight ? 16 : bookW ? 16 : tb.height + 24);
-  const s = Math.min(2, availW / (b.x1 - b.x0), availH / (b.y1 - b.y0));
+  const availH = H - top - (open && H < sheet.clientHeight ? 16 : bookW ? 16 : tb.height + 24);
+  return { left: bookW, W, top, availW: W - 40, availH };
+}
+function fit() {
+  const b = bbox();
+  if (!isFinite(b.x0) || sheet.clientWidth < 10 || sheet.clientHeight < 10) return;   /* nothing drawn, or a hidden frame */
+  const r = room();
+  const s = Math.min(2, r.availW / Math.max(1, b.x1 - b.x0), r.availH / Math.max(1, b.y1 - b.y0));
   view.s = s;
-  view.x = bookW + (W - (b.x1 - b.x0) * s) / 2 - b.x0 * s;
-  view.y = top + Math.max(0, (availH - (b.y1 - b.y0) * s) / 2) - b.y0 * s;
+  view.x = r.left + (r.W - (b.x1 - b.x0) * s) / 2 - b.x0 * s;
+  view.y = r.top + Math.max(0, (r.availH - (b.y1 - b.y0) * s) / 2) - b.y0 * s;
   applyView();
+}
+/* Fit, the button and the key: the view follows the circuit again */
+function fitNow() { autoView = true; fit(); }
+/* is the whole circuit on screen (with the view as it is)? */
+function allShown() {
+  const b = bbox(), r = room(), m = 4;
+  if (!isFinite(b.x0)) return true;
+  const sx = x => x * view.s + view.x, sy = y => y * view.s + view.y;
+  return sx(b.x0) >= r.left + m && sx(b.x1) <= r.left + r.W - m && sy(b.y0) >= r.top - 16 + m && sy(b.y1) <= r.top + r.availH + m;
+}
+/* does any of it show? */
+function someShown() {
+  const b = bbox(), r = room();
+  if (!isFinite(b.x0)) return true;
+  const sx = x => x * view.s + view.x, sy = y => y * view.s + view.y;
+  return sx(b.x1) > r.left && sx(b.x0) < r.left + r.W && sy(b.y1) > r.top - 16 && sy(b.y0) < r.top + r.availH;
+}
+/* the room changed (a drawer, the book): fit if the view follows the circuit;
+ * a view chosen by hand stays, unless the circuit has gone off screen */
+function follow() {
+  if (autoView || !someShown()) fitNow(); else applyView();
+}
+/* the window (or the playground's pane) changed size */
+let lastSize = null;
+function resized() {
+  const w = sheet.clientWidth, h = sheet.clientHeight;
+  if (lastSize && lastSize.w === w && lastSize.h === h) return;
+  if (!autoView && lastSize) {   /* keep the middle of what you were looking at in the middle */
+    view.x += (w - lastSize.w) / 2; view.y += (h - lastSize.h) / 2;
+  }
+  lastSize = { w, h };
+  if (autoView) fit(); else applyView();
 }
 const toWorld = (cx, cy) => ({ x: (cx - view.x) / view.s, y: (cy - view.y) / view.s });
 
@@ -1565,7 +1611,7 @@ sheet.addEventListener("pointermove", e => {
     view.s = s;
     view.x = cx - (pinch.cx - pinch.vx) * s / pinch.s;
     view.y = cy - (pinch.cy - pinch.vy) * s / pinch.s;
-    applyView(); return;
+    byHand(); applyView(); return;
   }
   if (wiring) {
     const w = toWorld(e.clientX, e.clientY);
@@ -1580,7 +1626,7 @@ sheet.addEventListener("pointermove", e => {
   const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
   if (!drag.moved && Math.hypot(dx, dy) < 6) return;
   drag.moved = true;
-  if (drag.pan) { view.x = drag.vx + dx; view.y = drag.vy + dy; applyView(); return; }
+  if (drag.pan) { view.x = drag.vx + dx; view.y = drag.vy + dy; byHand(); applyView(); return; }
   if (drag.box) {
     const w = toWorld(e.clientX, e.clientY);
     if (!drag.el) drag.el = el("rect", { id: "selbox" }, world);
@@ -1675,13 +1721,13 @@ sheet.addEventListener("wheel", e => {
   if (EDIT && !e.ctrlKey && !e.metaKey) {
     const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? sheet.clientHeight : 1;
     const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * k, dy = (e.shiftKey && !e.deltaX ? 0 : e.deltaY) * k;
-    view.x -= dx; view.y -= dy; applyView();
+    view.x -= dx; view.y -= dy; byHand(); applyView();
     return;
   }
   const f = Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0015)), s = Math.max(.2, Math.min(4, view.s * f));
   view.x = e.clientX - (e.clientX - view.x) * s / view.s;
   view.y = e.clientY - (e.clientY - view.y) * s / view.s;
-  view.s = s; applyView();
+  view.s = s; byHand(); applyView();
 }, { passive: false });
 
 let e_x = 0, e_y = 0;
@@ -2056,7 +2102,7 @@ function openDrawer(id) {
   if (vhdlOpen && !wasVhdl) buildVhdl();
   $("tablebtn").setAttribute("aria-pressed", tableOpen);
   $("membtn").setAttribute("aria-pressed", memOpen);
-  requestAnimationFrame(fit);
+  requestAnimationFrame(follow);
 }
 $("tableall").onclick = () => select(null);
 $("tablebtn").onclick = () => { if (tableOpen) return openDrawer(null); buildTable(); openDrawer("tabledrawer"); markRow(); };
@@ -2262,10 +2308,19 @@ function openView(id) {
   markVhdl();
   bookFollow();
   if (editing() && EDIT.view && !EDIT.viewUsed) {
+    /* the drawing made again after a change: the view stays where it was, so
+     * nothing jumps; if the view follows the circuit and the circuit has
+     * grown past the screen, it zooms out to show all of it. A view chosen
+     * by hand stays, unless the circuit is no longer on screen at all. */
     EDIT.viewUsed = true;
-    view = Object.assign({}, EDIT.view);
-    requestAnimationFrame(applyView);
-  } else requestAnimationFrame(fit);
+    const { x, y, s, auto } = EDIT.view;
+    view = { x, y, s };
+    autoView = auto !== false;
+    requestAnimationFrame(() => {
+      applyView();
+      if (autoView ? !allShown() : !someShown()) fitNow();
+    });
+  } else { autoView = true; requestAnimationFrame(fit); }   /* another chip: shown whole */
 }
 function goUp() { if (V && V.id !== 0) openView(Math.max(0, D.insts[V.id].parent)); }   /* a spare chip (parent -2) goes up to the circuit */
 
@@ -2516,7 +2571,7 @@ function showBook(on) {
     }
     bookFollow(true);
   }
-  requestAnimationFrame(fit);
+  requestAnimationFrame(follow);
 }
 books.forEach((b, i) => {
   b.short = b.name.length <= 12 ? b.name : (b.name.match(/^\S+/) || [b.name])[0];
@@ -2900,7 +2955,7 @@ WireSim.create(D).then(s => {
   w.style.display = "block";
   w.textContent = "This browser could not run the simulator (WebAssembly): " + e.message;
 });
-$("fit").onclick = fit;
+$("fit").onclick = fitNow;
 $("tidy").onclick = () => {
   shared.delete(compOf(V.id));
   try { localStorage.removeItem(keyBase + compOf(V.id)); } catch (e) {}
@@ -2908,10 +2963,11 @@ $("tidy").onclick = () => {
   V.free = false;
   V.items.forEach(place);
   drawWires();
-  fit();
+  fitNow();
   if (editing()) hostCall("movedAll", Object.fromEntries(V.items.filter(n => n.name).map(n => [n.name, [n.x, n.y]])));
 };
-addEventListener("resize", applyView);
+addEventListener("resize", resized);
+if (window.ResizeObserver) new ResizeObserver(() => resized()).observe(sheet);
 addEventListener("blur", () => spaceUp(true));
 /* with a keypad, the keys 0-9 and a-f press it */
 const keypad = nodes.find(n => n.kind === "keypad");
@@ -2925,7 +2981,7 @@ addEventListener("keydown", e => {
   if (keypad && sim && hexKey(e) >= 0) { if (!e.repeat) { keypad.state = 16 | hexKey(e); simulate(); } return; }
   if (EDIT && e.key === " ") { spaceDown(e); return; }
   if (e.key === " " && clocks.length) { e.preventDefault(); stepClock(); }
-  if (e.key === "f") fit();
+  if (e.key === "f") fitNow();
   if (e.key === "Escape") {
     if (document.querySelector(".drawer.open")) openDrawer(null);
     else if (V.id !== 0) goUp();
@@ -2975,7 +3031,7 @@ window.wireDrawKey = e => {
   if (EDIT && e.key === " ") return spaceDown(e);
   if (!editing()) return false;
   if (e.key === "Escape") { if (picked.size || pickedWire != null) { setPicks([]); select(null); return true; } return !!hostCall("disarm"); }
-  if (e.key === "f" && !e.ctrlKey && !e.metaKey) { fit(); return true; }
+  if (e.key === "f" && !e.ctrlKey && !e.metaKey) { fitNow(); return true; }
   return drawKey(e);
 };
 window.wireDrawKeyUp = e => EDIT && e.key === " " ? spaceUp(!!e.noStep) : false;
@@ -3096,7 +3152,7 @@ if (EDIT) {
   });
   /* what the playground keeps when it makes the page again */
   window.wireEditState = () => ({
-    view: Object.assign({}, view),
+    view: Object.assign({ auto: autoView }, view),
     states: Object.fromEntries(nodes.filter(n => SOURCES.has(n.kind) && n.kind !== "clock" && n.name && inCircuit(n)).map(n => [n.name, n.state]))
   });
   window.wireCentre = () => toWorld(sheet.clientWidth / 2, sheet.clientHeight / 2);

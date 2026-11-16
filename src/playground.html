@@ -1735,9 +1735,11 @@ function buildSheet(D, scope, lay, comps) {
     keep(i, name);
   }
   const parts = [], links = [], idOf = new Map();
-  let next = 1, row = 0;
+  /* a part the page gave no place gets a stand-in one, and the sheet is
+   * marked loose: the page then lays it all out in columns when it opens */
+  let next = 1, row = 0, loose = false;
   const place = (p, at, src, sink) => {
-    if (at) { p.x = at[0]; p.y = at[1]; } else { p.x = src ? 0 : sink ? 400 : 200; p.y = 70 * row++; }
+    if (at) { p.x = at[0]; p.y = at[1]; } else { loose = true; p.x = src ? 0 : sink ? 400 : 200; p.y = 70 * row++; }
   };
   for (const i of order) { idOf.set(i, next++); }
   for (const { c } of chips) idOf.set("c" + c, next++);
@@ -1794,7 +1796,7 @@ function buildSheet(D, scope, lay, comps) {
     cp.ins.forEach(x => linkTo(x[2], { id: p.id, pin: x[0] }));
     comps[ins.comp] = { ins: p.ins, outs: p.outs };
   }
-  return { parts, links, next };
+  return { parts, links, next, loose };
 }
 /* a netlist (wire --json) as a drawing: the circuit, and a sheet for each
  * chip written in this Wire (an imported chip stays a box, as it is) */
@@ -1826,7 +1828,7 @@ function netlistToModel(D, lay, defs, dir) {
   const dc = D.cpu;
   const cpu = dc ? { isa: dc.isa.file.slice(dc.isa.file.lastIndexOf("/") + 1), text: dc.text, textBase: dc.textBase || 0,
                      data: (dc.data || []).slice().reverse(), dataBase: dc.dataBase || 0, pc: dc.pc || "", halt: dc.halt || "", regs: dc.regs || "" } : null;
-  return { model: { title: D.title || "My circuit", cpu, next: main.next, parts: main.parts, links: main.links,
+  return { model: { title: D.title || "My circuit", cpu, next: main.next, parts: main.parts, links: main.links, ...(main.loose ? { tidy: true } : {}),
                     defs: Object.keys(comps).length ? text : "", dir: Object.keys(comps).length ? dir : "", comps, chips, at: null, path: [] } };
 }
 async function makeView(to) {
