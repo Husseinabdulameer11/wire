@@ -744,8 +744,8 @@ static void emit_node(VBuf *b, VBuf *decl, int j)
         vbf(b, "    %s := resize(%s, %d) + %s", var, U(a, t1, sizeof t1), w + 1, U(bb, t2, sizeof t2));
         if (c >= 0) vbf(b, " + %s", U(c, t3, sizeof t3));
         vbf(b, ";\n");
-        snprintf(sum, sizeof sum, "%s(%d downto 0)", var, w - 1);
-        vassign_u(b, "    ", o, sum);
+        if (w == 1) vbf(b, "    %s <= %s(0);\n", N(o), var);   /* not sum(0 downto 0)(0): VHDL reads that, Wire does not */
+        else { snprintf(sum, sizeof sum, "%s(%d downto 0)", var, w - 1); vassign_u(b, "    ", o, sum); }
         if (vreaders[co]) vbf(b, "    %s <= %s(%d);\n", N(co), var, w);
         vbf(b, "  end process;\n");
         return;
