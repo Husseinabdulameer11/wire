@@ -165,7 +165,7 @@ whenParsed(() => window.wirePage.ready(page => {
 .asm-status a { color: inherit; cursor: pointer; text-decoration: underline; display: block; }
 .asm-ed { display: flex; height: min(260px, 32vh); min-height: 120px; resize: vertical; overflow: hidden; border-bottom: 1px solid var(--panel-line); font: 13px/1.5 "IBM Plex Mono", ui-monospace, monospace; }
 .asm-pane .asm-ed { height: min(380px, 44vh); border: 1px solid var(--panel-line); border-radius: 4px; }
-.asm-gut { margin: 0; padding: 6px 8px 6px 6px; text-align: right; color: var(--ink-soft); background: var(--paper); user-select: none; overflow: hidden; min-width: 3.2em; box-sizing: border-box; font: inherit; }
+.asm-gut { margin: 0; padding: 6px 8px 56px 6px; text-align: right; color: var(--ink-soft); background: var(--paper); user-select: none; overflow: hidden; min-width: 3.2em; box-sizing: border-box; font: inherit; }
 .asm-gut .err { color: #fff; background: #c0392b; border-radius: 2px; }
 .asm-ed textarea { flex: 1; border: 0; margin: 0; padding: 6px 8px; resize: none; font: inherit; color: var(--ink); background: var(--panel); outline: none; white-space: pre; overflow: auto; tab-size: 8; }
 .asm-tabs { display: flex; gap: 0; padding: 0 12px; border-bottom: 1px solid var(--panel-line); overflow-x: auto; }
