@@ -87,6 +87,15 @@ for (const s of sections) s.items = s.items.map(rel => {
 const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const bookNote = books.length ? ` The <b>Book</b> button opens ${books.map(b => esc(b.name || b.url)).join(" and ")} beside the circuit, at the pages about what you select${books.some(b => !b.book) ? " (a book that is not in the site asks for your own copy with <b>Open PDF</b>)" : ""}.` : "";
 
+/* the three ways in, beside the examples: each one only when make site made its page */
+function modes() {
+  const cards = [
+    ["playground.html", "Playground", "Build your own circuit by dragging parts or writing VHDL, try it, and save it as VHDL for Vivado."],
+    ["learn.html", "Learn", "New to logic gates? Start here: 50 short lessons that build on each other, by dragging parts or in VHDL."],
+    ["exam.html", "Exercises", "Practise for the exam: write the VHDL each question asks for, at easy, medium or hard, and Wire checks it."]
+  ].filter(([f]) => fs.existsSync(path.join(out, f)));
+  return cards.length ? `<div class="modes">${cards.map(([f, t, d]) => `<a href="${f}"><b>${t} →</b><span>${d}</span></a>`).join("")}</div>\n` : "";
+}
 fs.writeFileSync(path.join(out, "index.html"), `<!doctype html>
 <html lang="en">
 <head>
@@ -115,6 +124,11 @@ li span { display: block; color: var(--soft); font-size: 13.5px; margin-top: 2px
 li code { font-family: ui-monospace, monospace; font-size: 12px; color: var(--soft); }
 footer { margin-top: 40px; color: var(--soft); font-size: 14px; }
 p.play { margin: 18px 0 0; padding: 12px 14px; background: var(--card); border: 1.5px solid var(--ink); border-left: 6px solid var(--hi); border-radius: 6px; }
+.modes { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin: 20px 0 0; }
+.modes a { display: block; background: var(--card); border: 1.5px solid var(--ink); border-left: 6px solid var(--hi); border-radius: 6px; padding: 12px 14px; color: inherit; text-decoration: none; }
+.modes a:hover, .modes a:focus-visible { border-color: var(--hi); box-shadow: 0 0 0 3px color-mix(in srgb, var(--hi) 30%, transparent); outline: none; }
+.modes b { display: block; font-size: 17px; }
+.modes span { display: block; color: var(--soft); font-size: 14px; margin-top: 2px; }
 p.play a { font-weight: 600; color: var(--ink); text-decoration-color: var(--hi); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 </style>
 </head>
@@ -122,7 +136,7 @@ p.play a { font-weight: 600; color: var(--ink); text-decoration-color: var(--hi)
 <main>
 <h1>Wire circuits</h1>
 <p class="lead">Digital circuits written in <a href="https://github.com/Husseinabdulameer11/wire">Wire</a> and simulated in your browser, following my FPGA notes and the examples of Pong P. Chu's <i>FPGA Prototyping by VHDL Examples</i>. Click the inputs, run the clock, open the chips; <b>VHDL</b> shows the same circuit in VHDL, checked against it with GHDL.</p>
-${fs.existsSync(path.join(out, "playground.html")) ? `<p class="play"><a href="playground.html">Open the playground</a> to write your own circuit, try it here, and save it as VHDL for Vivado.</p>\n` : ""}<nav>${sections.map((s, i) => `<a href="#s${i}">${esc(s.title.replace(/^Chu, chapter (\d+):.*/, "Chu ch. $1").replace(/,.*$/, ""))}</a>`).join("")}</nav>
+${modes()}<nav>${sections.map((s, i) => `<a href="#s${i}">${esc(s.title.replace(/^Chu, chapter (\d+):.*/, "Chu ch. $1").replace(/,.*$/, ""))}</a>`).join("")}</nav>
 ${sections.map((s, i) => `<h2 id="s${i}">${esc(s.title)}</h2>
 ${s.about ? `<p class="about">${esc(s.about)}</p>\n` : ""}<ul>
 ${s.items.map(p => `<li><a href="${p.page}"><b>${esc(p.title)}</b>${p.about ? `<span>${esc(p.about)}</span>` : ""}<code>${esc(p.rel)}.wire${p.vhdl ? " · .vhd" : ""}</code></a></li>`).join("\n")}
