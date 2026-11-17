@@ -100,6 +100,9 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
 .parts button svg .f { fill: var(--panel); }
 .parts button svg text { fill: var(--ink); stroke: none; font: 600 11px "IBM Plex Mono", monospace; }
 .parts button:hover { border-color: var(--hi); background: var(--hi-soft); }
+.parts button { position: relative; }
+.parts button .x { position: absolute; top: 0; right: 3px; padding: 0 3px; font-size: 14px; line-height: 1.2; color: var(--ink-soft); border-radius: 4px; cursor: pointer; }
+.parts button .x:hover { color: var(--paper); background: var(--bad); }
 .parts button[aria-pressed="true"] { border-color: var(--hi); background: var(--hi-soft); color: var(--ink); box-shadow: inset 0 0 0 1px var(--hi); }
 .how { color: var(--ink-soft); font-size: 14px; margin: 10px 0 0; }
 #sheets, #wsheets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -195,6 +198,26 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
 #props .cpubox h3 { font-size: 14px; margin: 0 0 6px; }
 #props .cpubox .row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 #props .cpubox label { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--ink-soft); }
+/* ---- the tour: a spotlight on one thing, and a card that says what it does */
+nav.links button { min-height: 0; padding: 0; font: inherit; font-weight: 400; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 2px; }
+nav.links button:hover { background: none; color: var(--ink); }
+#tour-hole { position: fixed; z-index: 50; border-radius: 8px; pointer-events: none;
+  box-shadow: 0 0 0 200vmax rgba(8, 14, 22, .55); outline: 2px solid var(--hi); outline-offset: 2px;
+  transition: left .2s, top .2s, width .2s, height .2s; }
+#tour-hole.none { outline: 0; }
+#tour-hole.invite { box-shadow: none; }
+#tour-card { position: fixed; z-index: 51; width: min(370px, calc(100vw - 24px)); background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 12px; box-shadow: 0 12px 34px rgba(0,0,0,.28); }
+#tour-card h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+#tour-card p { margin: 0 0 8px; font-size: 14.5px; }
+#tour-card p.try { color: var(--ink-soft); }
+#tour-card p.try b { color: var(--ink); }
+#tour-card .foot { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+#tour-card .count { color: var(--ink-soft); font-size: 13px; margin-right: auto; }
+#tour-card .foot button { border: 1px solid var(--line); border-radius: 6px; min-height: 32px; padding: 4px 12px; }
+#tour-card .foot button.go { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+#tour-card .skip { position: absolute; top: 6px; right: 6px; min-height: 0; padding: 2px 7px; color: var(--ink-soft); font-size: 18px; line-height: 1; }
+@media (prefers-reduced-motion: reduce) { #tour-hole { transition: none; } }
 #props .cpubox input[type=text] { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); width: 11em; }
 </style>
 </head>
@@ -225,6 +248,7 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
   </div>
   <div class="spacer"></div>
   <nav class="links">
+    <button id="tourbtn" title="A short walk through the playground: drawing, chips, saved chips, truth table, scope, the book and more">Tour</button>
     <a href="index.html">All examples</a>
     <a href="https://github.com/Husseinabdulameer11/wire#the-language" target="_blank" rel="noopener">Language</a>
     <a href="https://github.com/Husseinabdulameer11/wire" target="_blank" rel="noopener">GitHub</a>
@@ -251,6 +275,9 @@ main { display: grid; grid-template-columns: minmax(340px, 34%) 1fr; min-height:
       <div class="parts" data-group="buses"></div>
       <h2 id="chips-h" hidden>Chips</h2>
       <div class="parts" data-group="chips"></div>
+      <h2 id="saved-h">Saved chips</h2>
+      <p class="how" id="saved-how">Nothing saved yet. <b>Save as chip</b> (under Circuit and chips) keeps the circuit on screen here, in this browser, to drag into any drawing: it stays when you start a new one or open an example.</p>
+      <div class="parts" data-group="saved"></div>
       <p class="how" id="how"><b>Drag a part</b> onto the circuit (or tap it, then tap the circuit). <b>Drag from pin to pin</b> to wire them; drag from an input pin to empty space to unwire it (an unwired input reads 0). Click a part to change it. <b>Drag on empty space</b> to pick several (Shift-click adds one). <b>Space+drag</b>, two-finger scroll or right-drag moves the view; Ctrl+scroll or a pinch zooms, then drag them together; <b>Delete</b> or <b>Backspace</b> removes what is picked, a wire too. <b>Ctrl+C</b>, <b>V</b>, <b>D</b> copy, paste and duplicate; <b>Ctrl+Z</b> and <b>Ctrl+Shift+Z</b> undo and redo. Keys place parts: <b>A</b> AND, <b>O</b> OR, <b>N</b> NOT, <b>X</b> XOR, <b>I</b> input, <b>U</b> output, <b>L</b> LED, <b>C</b> clock, <b>B</b> button, <b>M</b> mux, <b>D</b> flip-flop, <b>T</b> counter, <b>K</b> constant, <b>S</b> split, <b>J</b> join, <b>H</b> hex digit.</p>
       <h2>Selected part</h2>
       <div id="props"><span class="how">Click a part in the circuit to rename it or change its size.</span></div>
@@ -954,6 +981,7 @@ window.wireCanvas = {
     set(text) { isaUser.text = text; persist(); }
   },
   add(kind, x, y) {
+    if (kind.startsWith("saved:")) { placeSaved(kind.slice(6), x, y); return; }
     const comp = kind.startsWith("chip:") ? kind.slice(5) : null;
     if (comp ? !((model.comps && model.comps[comp]) || (model.chips && model.chips[comp])) : !KINDS[kind] || !KINDS[kind].group) return;
     if (comp && model.at && model.chips[comp] && uses(model, comp, model.at)) {
@@ -1064,7 +1092,7 @@ function arm(kind) {
   document.querySelectorAll(".parts button").forEach(b => b.setAttribute("aria-pressed", b.dataset.kind === armed));
   if (armed) {
     msg.className = "";
-    const what = armed.startsWith("chip:") ? `chip ${armed.slice(5)}` : GATE_NAMES[armed] || armed === "not" ? `${KINDS[armed].label} gate` : KINDS[armed].label.toLowerCase();
+    const what = armed.startsWith("chip:") ? `chip ${armed.slice(5)}` : armed.startsWith("saved:") ? `saved chip ${armed.slice(6)}` : GATE_NAMES[armed] || armed === "not" ? `${KINDS[armed].label} gate` : KINDS[armed].label.toLowerCase();
     msg.textContent = `Now ${narrow() ? "tap" : "click"} the circuit where the ${what} goes.`;
     if (narrow()) pane("circuit");
   }
@@ -1123,6 +1151,10 @@ function showWriteChips() {
     showWriteChips();
   };
   btn(fileName(), !on, () => pick(null, 0), "The circuit itself", 0);
+  const sv = document.createElement("button");
+  sv.textContent = "Save as chip"; sv.style.borderStyle = "dashed";
+  sv.title = "Keep this circuit in this browser under Saved chips in Draw, to drag into any drawing, also after New or another example";
+  sv.onclick = saveChip; box.append(sv);
   let label = false;
   for (const c of list) {
     row();
@@ -1188,6 +1220,7 @@ function showSheets() {
   row();
   btn("+ New chip", false, newChip, "Make a chip: draw its inside, its inputs and outputs are its pins").className = "add";
   btn("Rename", false, renameSheet, model.at ? `Give the chip ${model.at} another name` : "Give the circuit another name").className = "add";
+  if (!LEARN) btn("Save as chip", false, saveChip, `Keep ${model.at ? `the chip ${model.at}` : "this circuit"} in this browser under Saved chips, to drag into any drawing, also after New or another example`).className = "add";
   /* inside a chip only inputs and outputs talk to the outside */
   for (const k of ["button", "clock", "led", "hex", "seg7"]) {
     const b = document.querySelector(`.parts button[data-kind="${k}"]`);
@@ -1279,6 +1312,182 @@ function showChips() {
   box.textContent = "";
   $("chips-h").hidden = !names.length;
   for (const c of names) box.append(paletteButton("chip:" + c, c, ICONS.chip, `Drag the chip ${c} onto the circuit, or click it and then the circuit`));
+  showSaved();
+}
+
+/* ============================================== saved chips: your own library
+ * A circuit (or one of its chips) saved for later lives in this browser under
+ * its own key, apart from the circuit on screen: New, an example or a shared
+ * link replace the circuit, and what you saved stays in the palette. Each one
+ * is a whole drawing on its own: its inside and the inside of every chip it
+ * uses, imported ones too, so it needs nothing from the circuit or the example
+ * it came from (an example changed or gone does not change it). Placing one
+ * copies its sheets into the drawing, so the drawing, its links and its VHDL
+ * carry it from then on.
+ *   library[name] = { top: sheet, chips: { name: sheet }, at: time saved } */
+const LIBRARY = "wire-saved-chips";
+const IO_INSIDE = ["button", "clock", "keypad", "led", "hex", "seg7"];   /* not in a chip: they become its pins */
+let library = {};
+function readLibrary() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(LIBRARY) || "null"); } catch (e) {}
+  library = {};
+  if (d && d.chips && typeof d.chips === "object")
+    for (const [n, e] of Object.entries(d.chips))
+      if (/^[A-Za-z_]\w*$/.test(n) && e && validSheet(e.top) && e.chips && typeof e.chips === "object" && Object.values(e.chips).every(validSheet)) library[n] = e;
+}
+function writeLibrary() {
+  try { localStorage.setItem(LIBRARY, JSON.stringify({ version: 1, chips: library })); return true; }
+  catch (e) { msg.className = "err"; msg.textContent = "This browser would not keep the saved chip (its storage is full or turned off)."; return false; }
+}
+/* another tab saved or removed one */
+addEventListener("storage", e => { if (e.key === LIBRARY) { readLibrary(); if (model) showSaved(); } });
+
+function showSaved() {
+  const box = document.querySelector('.parts[data-group="saved"]');
+  if (!box) return;
+  const off = !!LEARN;   /* lessons keep to their own parts */
+  $("saved-h").hidden = off; box.hidden = off;
+  const names = Object.keys(library).sort((a, b) => a.localeCompare(b));
+  $("saved-how").hidden = off || names.length > 0;
+  box.textContent = "";
+  if (off) return;
+  for (const n of names) {
+    const b = paletteButton("saved:" + n, n, ICONS.chip, `Drag your saved chip ${n} onto the circuit, or click it and then the circuit (Delete removes it from your saved chips)`);
+    const x = document.createElement("span");
+    x.className = "x"; x.textContent = "×"; x.title = `Remove ${n} from your saved chips`; x.setAttribute("aria-hidden", "true");
+    x.addEventListener("click", e => { e.stopPropagation(); unsaveChip(n); });
+    b.append(x);
+    b.addEventListener("keydown", e => { if (e.key === "Delete") { e.preventDefault(); unsaveChip(n); } });
+    box.append(b);
+  }
+}
+function unsaveChip(name) {
+  if (!library[name] || !confirm(`Remove ${name} from your saved chips? Drawings that already use it keep their copy.`)) return;
+  delete library[name];
+  if (armed === "saved:" + name) disarm();
+  writeLibrary();
+  showSaved();
+}
+
+/* the chip parts a sheet uses, by name */
+const compsIn = sh => [...new Set(sh.parts.filter(p => p.kind === "chip").map(p => p.comp))];
+/* a sheet compared without where its parts sit (the page lays them out again) */
+const sheetShape = sh => JSON.stringify({ parts: sh.parts.map(p => { const q = clone(p); delete q.x; delete q.y; return q; }), links: sh.links });
+
+/* what is on screen, as a saved chip: { top, chips } or { why } */
+async function snapshot(name) {
+  const drawing = mode === "draw";
+  const path = mainPath(), r = await wire(["--json", path], path, drawing ? canvasCode(model) : src.value);
+  if (r.code !== 0) return { why: "fix the error first (" + firstError(r, path) + ")" };
+  const D = JSON.parse(r.out), scratch = {};
+  /* the sheet itself: the one drawn, or made from what was written */
+  let top;
+  if (drawing) top = clone(sheet(model));
+  else {
+    top = buildSheet(D, 0, null, scratch);
+    if (top.why) return { why: `the drawing cannot show it: ${top.why}` };
+    if (top.loose) top.tidy = true;
+    delete top.loose;
+  }
+  delete top.title; delete top.cpu; delete top.defs; delete top.comps; delete top.chips; delete top.dir; delete top.at; delete top.path;
+  /* buttons, clocks and lights do not go inside a chip: they become its pins,
+   * as wide as they are in the circuit */
+  const widthOf = (n, k) => { const x = D.nodes.find(q => q.inst === 0 && q.name === n && q.kind === k); return x ? D.nets[(x.in.length ? x.in : x.out)[0]].w : 1; };
+  const turned = [];
+  for (const p of top.parts) if (IO_INSIDE.includes(p.kind)) {
+    const out = ["led", "hex", "seg7"].includes(p.kind), w = p.kind === "keypad" ? 5 : widthOf(p.name, p.kind);
+    turned.push(p.name);
+    for (const k of Object.keys(p)) if (!["id", "name", "x", "y"].includes(k)) delete p[k];
+    p.kind = out ? "output" : "input"; p.bits = w;
+  }
+  if (!top.parts.some(p => p.kind === "input" || p.kind === "output")) return { why: "it has no inputs or outputs, so as a chip it would have no pins" };
+  /* every chip it uses, down to the last: the ones drawn here as they are, the
+   * rest (imported, or written) drawn from the compiled circuit */
+  const chips = {}, todo = compsIn(top);
+  while (todo.length) {
+    const c = todo.shift();
+    if (chips[c]) continue;
+    let sh;
+    if (drawing && model.chips && model.chips[c]) sh = clone(model.chips[c]);
+    else {
+      const i = D.insts.findIndex((ins, j) => j > 0 && ins.comp === c);
+      sh = i > 0 ? buildSheet(D, i, null, scratch) : { why: "Wire did not find it in the circuit" };
+      if (sh.why) return { why: `its chip ${c} cannot be drawn (${sh.why})` };
+      delete sh.loose; sh.tidy = true;
+    }
+    chips[c] = sh;
+    todo.push(...compsIn(sh));
+  }
+  if (chips[name]) return { why: `a chip inside it is already called ${name}` };
+  /* it must work on its own: a circuit with just this chip in it */
+  const test = { title: name, next: 2, chips: { ...clone(chips), [name]: clone(top) }, parts: [], links: [] };
+  test.parts.push({ id: 1, kind: "chip", comp: name, name: "c1", x: 0, y: 0, ...chipPins(test, name) });
+  const tp = "saved_" + name + ".wire", t = await wire(["--check", tp], tp, genCode(test));
+  if (t.code !== 0) return { why: "on its own it does not work (" + firstError(t, tp) + ")" };
+  return { top, chips, turned };
+}
+async function saveChip() {
+  const suggest = mode === "draw" && model.at ? model.at : fileName();
+  const name = (prompt("Save as a chip you can drag into any drawing. Its name (letters, digits and _):", suggest) || "").trim();
+  if (!name) return;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || RESERVED.has(name)) {
+    msg.className = "err";
+    msg.textContent = `${name} cannot be a chip's name: use letters, digits and _, starting with a letter, and not a word of Wire.`;
+    return;
+  }
+  if (library[name] && !confirm(`You already saved a chip called ${name}. Replace it? (Drawings that already use it keep their copy.)`)) return;
+  msg.className = ""; msg.textContent = `Saving ${name}…`;
+  let s;
+  try { s = await snapshot(name); } catch (e) { s = { why: String(e.message || e) }; }
+  if (s.why) { msg.className = "err"; msg.textContent = `${name} was not saved: ${s.why}.`; return; }
+  readLibrary();   /* what another tab saved meanwhile stays */
+  library[name] = { top: s.top, chips: s.chips, at: Date.now() };
+  if (!writeLibrary()) return;
+  showSaved();
+  msg.className = "";
+  msg.textContent = `Saved ${name}: it is under Saved chips in Draw, in any drawing, until you remove it (×).` +
+    (s.turned.length ? ` Inside a chip ${s.turned.join(", ")} became ${s.turned.length > 1 ? "pins" : "a pin"}.` : "");
+}
+
+/* a saved chip into the drawing: its sheets join the drawing's chips. One the
+ * drawing already has, the same inside, is used as it is; a different one with
+ * the same name comes in as name_2. */
+function bringSaved(m, name) {
+  const e = library[name], set = { ...clone(e.chips), [name]: clone(e.top) };
+  /* deepest first, so a chip's name is settled before the chips that use it */
+  const order = [], seen = new Set();
+  const visit = c => { if (seen.has(c) || !set[c]) return; seen.add(c); compsIn(set[c]).forEach(visit); order.push(c); };
+  visit(name);
+  m.chips = m.chips || {};
+  const as = {}, taken = n => (m.chips[n] || (m.comps && m.comps[n]) || RESERVED.has(n));
+  for (const c of order) {
+    const sh = set[c];
+    sh.parts.forEach(p => { if (p.kind === "chip" && as[p.comp]) p.comp = as[p.comp]; });
+    if (m.chips[c] && sheetShape(m.chips[c]) === sheetShape(sh)) { as[c] = c; continue; }
+    let n = c;
+    for (let i = 2; taken(n) || Object.values(as).includes(n); i++) n = `${c}_${i}`;
+    as[c] = n;
+    m.chips[n] = sh;
+  }
+  return as[name];
+}
+function placeSaved(name, x, y) {
+  if (!library[name]) { readLibrary(); showSaved(); return; }
+  /* tried first on a copy: inside a chip, it must not hold that chip */
+  const t = clone(model), comp = bringSaved(t, name);
+  if (model.at && uses(t, comp, model.at)) {
+    msg.className = "err"; msg.textContent = `${name} cannot go inside ${model.at}: ${name} has ${model.at} inside it.`; return;
+  }
+  disarm();
+  change(m => {
+    const c = bringSaved(m, name), sh = sheet(m), pins = chipPins(m, c);
+    const p = { id: sh.next++, kind: "chip", comp: c, name: freshName("chip"), x, y, ins: clone(pins.ins), outs: clone(pins.outs) };
+    sh.parts.push(p);
+    selectedName = p.name; selectedNames = [p.name];
+  });
+  msg.className = "";
+  msg.textContent = `Placed your saved chip ${name}; it is in this drawing's chips now, so you can open it and change it here.`;
 }
 for (const [kind, k] of Object.entries(KINDS)) {
   if (!k.group) continue;
@@ -2111,6 +2320,193 @@ addEventListener("keyup", e => {
 /* the window loses the keys (another tab): Space is not held any more */
 addEventListener("blur", () => { try { const w = frames[front].contentWindow; if (w.wireDrawKeyUp) w.wireDrawKeyUp({ key: " ", noStep: true }); } catch (err) {} });
 
+/* ================================================================ the tour
+ * A walk through the playground, one thing at a time: a spotlight on it (in
+ * this page, or in the circuit page beside it: "frame:#id") and a card that
+ * says what it is for. Nothing is blocked: you can try each thing as you go.
+ * A step whose thing is not on screen now (no clock, no CPU ...) says where
+ * it turns up instead. The first visit offers the tour once; Tour in the top
+ * bar starts it again. */
+const TOUR_SEEN = "wire-tour-seen";
+const modeName = () => $("mode-write").textContent.trim();
+const TOUR = [
+  { title: "Welcome to the Wire playground",
+    text: () => [`Build a digital circuit by dragging parts, or by writing VHDL, and try it right here: click its inputs and watch the wires light up. When it works, take it to Vivado as VHDL.`,
+                 `This tour shows where everything is. Use <b>Next</b> and <b>Back</b> (or the arrow keys); <b>Esc</b> stops it, and <b>Tour</b> at the top brings it back.`] },
+  { at: ".mode", mode: "draw", title: "Two ways to make one circuit",
+    text: () => [`<b>Draw</b> is drag and drop. <b>${modeName()}</b> lets you type the circuit instead.`,
+                 `They are two views of the same circuit: draw something, switch, and you see it written; write something, switch back, and it is drawn.`] },
+  { at: "#example", title: "Start from an example",
+    text: () => [`Every example from the course is here: gates, adders, counters, an ALU, a whole CPU. Open one to try it, take it apart or build on it.`,
+                 `Opening one replaces the circuit on screen, so save anything you want to keep as a chip first (it comes up in a moment).`] },
+  { at: '.parts[data-group="io"]', mode: "draw", pane: "side", title: "The parts",
+    text: () => [`Inputs, outputs, LEDs, gates, multiplexers, flip-flops, counters, ROM and RAM, buses. <b>Drag one onto the circuit</b>, or click it and then click where it goes.`,
+                 `Letters place them too: <b>A</b> AND, <b>O</b> OR, <b>N</b> NOT, <b>I</b> input, <b>U</b> output, <b>L</b> LED, <b>C</b> clock and more (listed under the parts).`] },
+  { at: "#view", mode: "draw", pane: "circuit", title: "The circuit",
+    text: () => [`<b>Drag from pin to pin</b> to wire two parts; outputs are on the right of a part, inputs on the left. <b>Click an input</b> to flip it and the circuit runs as you go: lit wires are 1.`,
+                 `Drag on empty space to pick several parts; <b>Delete</b> removes, <b>Ctrl+Z</b> undoes, <b>Ctrl+C</b>/<b>V</b> copy and paste. Space+drag or Ctrl+scroll moves and zooms the view.`] },
+  { at: "#props", mode: "draw", pane: "side", title: "The part you picked",
+    text: () => [`Click a part in the circuit and change it here: its name, how many bits wide it is, how many inputs a gate has, a ROM's contents, and so on.`] },
+  { at: "#sheets", mode: "draw", pane: "side", title: "Chips: circuits inside circuits",
+    text: () => [`<b>+ New chip</b> makes a chip: draw its inside, and its inputs and outputs become its pins. Then place it from <b>Chips</b> in the parts, as often as you like, like a half adder inside a full adder.`,
+                 `This list shows the circuit and every chip in it; click one to open it and change its inside. Double-clicking a chip in the circuit opens it too.`] },
+  { at: () => [...document.querySelectorAll("#sheets button")].find(b => b.textContent === "Save as chip"), mode: "draw", pane: "side", title: "Save a chip for later",
+    text: () => [`<b>Save as chip</b> keeps what is on screen (the whole circuit, or the chip you have open) in this browser, under a name you pick.`,
+                 `Buttons, clocks and lights in it become the chip's pins. In ${modeName()} the same button is in the list above the code.`] },
+  { at: () => Object.keys(library).length ? document.querySelector('.parts[data-group="saved"]') : $("saved-how"), mode: "draw", pane: "side", title: "Where your saved chips are",
+    text: () => [`Under <b>Saved chips</b>, at the end of the parts. Drag one into any drawing, any time: they stay when you start a <b>New</b> circuit or open another example.`,
+                 `<b>×</b> on a saved chip removes it. They live in this browser only, so another computer will not have them; use <b>Copy link</b> to take a circuit elsewhere.`] },
+  { at: "frame:#tablebtn", pane: "circuit", title: "Truth table",
+    text: () => [`Every input combination and what the outputs do, worked out for you. Pick a part first and you get the table of just that part.`],
+    try: "Click <b>Truth table</b> to open it." },
+  { at: "frame:#scopebtn", pane: "circuit", title: "Scope",
+    text: () => [`A logic analyser: <b>click a wire</b> in the circuit (or pick one in the scope) and it draws its value over time, every input you change and every clock tick.`,
+                 `<b>Save .vcd</b> takes the recording to GTKWave.`],
+    try: "Open <b>Scope</b>, then click a few wires." },
+  { at: "frame:#clockgroup", pane: "circuit", title: "Running the clock",
+    text: () => [`<b>Run</b> lets the clock tick at the speed you pick, <b>Step</b> gives one clock cycle at a time, so you can follow a counter or a CPU instruction by instruction.`],
+    missing: "These turn up in the circuit's bar as soon as it has a clock: place a <b>Clock</b> part, or open a counter example." },
+  { at: "frame:#membtn", pane: "circuit", title: "Memory",
+    text: () => [`What is in every ROM and RAM of the circuit, word by word, changing as it runs.`],
+    missing: "This button turns up when the circuit has a ROM or a RAM." },
+  { at: "frame:#bookbtn", pane: "circuit", title: "The book, beside the circuit",
+    text: () => [`<b>Book</b> opens the course book next to the circuit. With <b>Follow selection</b> on, clicking a part turns to the pages about it: a flip-flop, a multiplexer, a decoder.`,
+                 `<b>Open PDF</b> in the book reads any other PDF you have.`],
+    try: "Click <b>Book</b>, then click a part in the circuit." },
+  { at: "frame:#crumbs", pane: "circuit", title: "Where you are",
+    text: () => [`When you look inside a chip, this path shows the way back out: click the circuit's name to return.`],
+    missing: "A path shows up in the circuit's bar when you open a chip (double-click it) to look inside." },
+  { at: "#isabtn", title: "Your own CPU, programmed in assembly",
+    text: () => [`Wire noticed a CPU in your circuit. <b>Instruction set</b> describes its instructions, and the <b>Assembly</b> panel in the circuit assembles a program, puts it in the ROM and runs it.`],
+    missing: "Build or open a CPU (try the RISC-V or SAP examples) and an <b>Instruction set</b> button turns up here, with an <b>Assembly</b> panel in the circuit to write and run programs." },
+  { at: "#savevhd", title: "Take it to Vivado",
+    text: () => [`<b>Save .vhd</b> downloads the circuit as VHDL, chips as their own entities, ready for Vivado or GHDL. The name box beside it is the entity's name.`] },
+  { at: "#share", title: "Share it",
+    text: () => [`<b>Copy link</b> gives a link that opens exactly this circuit, for a classmate, a TA, or yourself on another computer.`] },
+  { at: "#new", title: "Start again",
+    text: () => [`<b>New</b> clears the circuit (Undo brings it back). Your saved chips stay.`,
+                 `That is the tour. Have fun building, and <b>Tour</b> at the top shows it again.`,
+                 `If Wire helps you, <a href="https://github.com/Husseinabdulameer11/wire" target="_blank" rel="noopener"><b>give it a ⭐ on GitHub</b></a>: it helps other students find it. Found a bug or have an idea? Open an issue there, and contributions are welcome.`] }
+];
+let tourAt = -1, tourEls = null, tourTimer = 0;
+function tourTarget(st) {
+  if (!st.at) return null;
+  let el = null, frame = null;
+  if (typeof st.at === "function") el = st.at();
+  else if (st.at.startsWith("frame:")) {
+    frame = frames[front];
+    try { el = frame.contentWindow.document.querySelector(st.at.slice(6)); } catch (e) { el = null; }
+  } else el = document.querySelector(st.at);
+  if (!el || el.hidden || el.closest("[hidden]")) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const f = frame ? frame.getBoundingClientRect() : { left: 0, top: 0 };
+  return { el, frame, r: { left: r.left + f.left, top: r.top + f.top, width: r.width, height: r.height } };
+}
+function tourPlace() {
+  if (tourAt < 0 || !tourEls) return;
+  const st = TOUR[tourAt], t = tourTarget(st), { hole, card } = tourEls;
+  const vw = innerWidth, vh = innerHeight, pad = 6;
+  const missing = st.at && !t;
+  card.querySelector(".miss").hidden = !missing || !st.missing;
+  card.querySelector(".try").hidden = !st.try || missing;
+  hole.className = t ? "" : "none";
+  if (!t) {   /* nothing to point at: the card in the middle */
+    Object.assign(hole.style, { left: vw / 2 + "px", top: vh / 2 + "px", width: "0px", height: "0px" });
+    card.style.left = Math.max(12, (vw - card.offsetWidth) / 2) + "px";
+    card.style.top = Math.max(12, (vh - card.offsetHeight) / 2) + "px";
+    return;
+  }
+  /* clipped to the screen: a tall list may run past it */
+  const r = { left: Math.max(4, t.r.left - pad), top: Math.max(4, t.r.top - pad) };
+  r.right = Math.min(vw - 4, t.r.left + t.r.width + pad); r.bottom = Math.min(vh - 4, t.r.top + t.r.height + pad);
+  Object.assign(hole.style, { left: r.left + "px", top: r.top + "px", width: r.right - r.left + "px", height: r.bottom - r.top + "px" });
+  /* the card beside it: right, left, below, above, whichever has room */
+  const cw = card.offsetWidth, ch = card.offsetHeight, gap = 14;
+  let x, y;
+  if (vw - r.right >= cw + gap + 8) { x = r.right + gap; y = r.top; }
+  else if (r.left >= cw + gap + 8) { x = r.left - gap - cw; y = r.top; }
+  else if (vh - r.bottom >= ch + gap + 8) { x = r.left; y = r.bottom + gap; }
+  else if (r.top >= ch + gap + 8) { x = r.left; y = r.top - gap - ch; }
+  else { x = vw - cw - 12; y = vh - ch - 12; }   /* it fills the screen: the card in a corner over it */
+  card.style.left = Math.min(Math.max(12, x), vw - cw - 12) + "px";
+  card.style.top = Math.min(Math.max(12, y), vh - ch - 12) + "px";
+}
+function tourShow(i) {
+  if (i < 0 || i >= TOUR.length) return tourEnd();
+  tourAt = i;
+  const st = TOUR[i], { card } = tourEls;
+  if (st.mode === "draw" && mode !== "draw") go("draw");
+  if (st.pane && narrow()) pane(st.pane);
+  card.querySelector("h3").textContent = st.title;
+  card.querySelector(".body").innerHTML = st.text().map(t => `<p>${t}</p>`).join("");
+  card.querySelector(".miss").innerHTML = st.missing || "";
+  card.querySelector(".try").innerHTML = st.try ? "Try it: " + st.try : "";
+  card.querySelector(".count").textContent = `${i + 1} of ${TOUR.length}`;
+  card.querySelector(".back").hidden = i === 0;
+  card.querySelector(".go").textContent = i === TOUR.length - 1 ? "Done" : i === 0 ? "Show me" : "Next";
+  /* what it points at, scrolled into view in its own pane */
+  const t = tourTarget(st);
+  if (t && !t.frame) t.el.scrollIntoView({ block: "nearest" });
+  tourPlace();
+  setTimeout(tourPlace, 260);   /* after a mode switch or a scroll has settled */
+  card.querySelector(".go").focus({ preventScroll: true });
+}
+function tourStart(at = 0) {
+  if (LEARN) return;
+  tourEnd();
+  try { localStorage.setItem(TOUR_SEEN, "1"); } catch (e) {}
+  disarm();
+  const hole = document.createElement("div"), card = document.createElement("div");
+  hole.id = "tour-hole";
+  card.id = "tour-card"; card.setAttribute("role", "dialog"); card.setAttribute("aria-label", "Tour of the playground"); card.setAttribute("aria-live", "polite");
+  card.innerHTML = `<button class="skip" title="Stop the tour (Esc)" aria-label="Stop the tour">×</button><h3></h3><div class="body"></div>
+    <p class="miss" hidden></p><p class="try" hidden></p>
+    <div class="foot"><span class="count"></span><button class="back">Back</button><button class="go">Next</button></div>`;
+  card.querySelector(".skip").onclick = tourEnd;
+  card.querySelector(".back").onclick = () => tourShow(tourAt - 1);
+  card.querySelector(".go").onclick = () => tourShow(tourAt + 1);
+  document.body.append(hole, card);
+  tourEls = { hole, card };
+  tourTimer = setInterval(tourPlace, 400);   /* the circuit page is made again as you change things */
+  tourShow(at);
+}
+function tourEnd() {
+  if (!tourEls) return;
+  clearInterval(tourTimer);
+  tourEls.hole.remove(); tourEls.card.remove();
+  tourEls = null; tourAt = -1;
+}
+/* the first visit: offered, not forced */
+function tourInvite() {
+  if (LEARN || tourEls) return;
+  try { if (localStorage.getItem(TOUR_SEEN)) return; localStorage.setItem(TOUR_SEEN, "1"); } catch (e) { return; }
+  const hole = document.createElement("div"), card = document.createElement("div");
+  hole.id = "tour-hole"; hole.className = "invite none";
+  card.id = "tour-card"; card.setAttribute("role", "dialog"); card.setAttribute("aria-label", "Take the tour?");
+  card.innerHTML = `<h3>New here?</h3><p>A two-minute tour shows how to draw a circuit, make and save chips, and use the truth table, the scope and the book.</p>
+    <div class="foot"><span class="count"></span><button class="back">Not now</button><button class="go">Take the tour</button></div>`;
+  card.style.right = "16px"; card.style.bottom = "16px";
+  document.body.append(hole, card);
+  tourEls = { hole, card };
+  card.querySelector(".back").onclick = () => { tourEls = null; hole.remove(); card.remove(); };
+  card.querySelector(".go").onclick = () => { tourEls = null; hole.remove(); card.remove(); tourStart(); };
+}
+$("tourbtn").onclick = () => tourStart();
+if (LEARN) $("tourbtn").hidden = true;
+addEventListener("resize", tourPlace);
+/* its keys come first, before the drawing's */
+addEventListener("keydown", e => {
+  if (tourAt < 0) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+  const k = e.key;
+  if (k === "Escape") tourEnd();
+  else if (k === "ArrowRight") tourShow(tourAt + 1);
+  else if (k === "ArrowLeft") tourShow(Math.max(0, tourAt - 1));
+  else return;
+  e.preventDefault(); e.stopImmediatePropagation();
+}, true);
+
 /* ===================================== start: a shared link, what you had,
  * else a small drawing to begin from */
 const validSheet = m => m && Array.isArray(m.parts) && Array.isArray(m.links) && m.parts.every(p => KINDS[p.kind] && typeof p.name === "string");
@@ -2121,6 +2517,7 @@ function validModel(m) {
   return true;
 }
 (function start() {
+  readLibrary();
   if (LEARN) { model = { title: "Lesson", next: 1, parts: [], links: [] }; setMode("draw"); return; }   /* the lesson sets the drawing */
   const q = new URLSearchParams(location.hash.slice(1));
   const okText = v => v && typeof v.text === "string" ? { text: v.text, dir: typeof v.dir === "string" ? v.dir : "" } : null;
@@ -2173,6 +2570,8 @@ function validModel(m) {
   fitName();
   setMode(m);
   leaveWire();
+  /* a link someone sent opens their circuit: the tour can wait for Tour */
+  if (!q.get("m") && !q.get("c")) setTimeout(tourInvite, 900);
 })();
 ready.catch(fatal);
 </script>
